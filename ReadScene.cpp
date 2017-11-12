@@ -4,7 +4,6 @@
 //#else 
 //mkdir(strPath.c_str(), 0777);
 //#endif
-// TODO: get rid of the weird arrays
 // TODO: input file, output dir
 // TODO: var info and cmd info
 
@@ -90,18 +89,34 @@ int main(int argc, char* argv[]) {
 		sceneDataInfo.push_back(pair);
 	}
 	
-	// Read strings
-	StringList varNames = readStrings(fileStream, header.varNameIndex, header.varName);
-	StringList cmdNames = readStrings(fileStream, header.cmdNameIndex, header.cmdName);
+	// Read var and cmd info
+	assert(header.varInfo.count == header.varNameIndex.count);
+	assert(header.cmdInfo.count == header.cmdNameIndex.count);
+	std::vector<HeaderPair> varInfo, cmdInfo;
+	varInfo.reserve(header.varInfo.count);
+	cmdInfo.reserve(header.cmdInfo.count);
+	fileStream.seekg(header.varInfo.offset);
+	for (unsigned int i = 0; i < header.varInfo.count; i++) {
+		readHeaderPair(fileStream, pair);
+		varInfo.push_back(pair);
+	}
+	fileStream.seekg(header.cmdInfo.offset);
+	for (unsigned int i = 0; i < header.cmdInfo.count; i++) {
+		readHeaderPair(fileStream, pair);
+		cmdInfo.push_back(pair);
+	}
+	// Read the strings
+	StringList varNames = readStrings(fileStream, header.varNameIndex, header.varName, false);
+	StringList cmdNames = readStrings(fileStream, header.cmdNameIndex, header.cmdName, false);
 	StringList sceneNames = readStrings(fileStream, header.sceneNameIndex, header.sceneName);
 	
 	std::ofstream outStream;
 	// Print strings
 	outStream.open(outdir + "/VarNames.txt");
-		outStream << varNames;
+		outStream << varInfo + varNames;
 	outStream.close();
 	outStream.open(outdir + "/CmdNames.txt");
-		outStream << cmdNames;
+		outStream << cmdInfo + cmdNames;
 	outStream.close();
 	
 	// Dump scene scripts

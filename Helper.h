@@ -16,11 +16,23 @@ void readHeaderPair(unsigned char* buf, HeaderPair &pair);
 
 StringList readStrings(std::ifstream &f, HeaderPair index, HeaderPair data, bool decode = false);
 //void printStrings(StringList strings, std::ostream &f = std::cout);
-static std::ostream& operator << (std::ostream& stream, const StringList strings) {
+inline std::ostream& operator << (std::ostream& stream, const StringList strings) {
 	for (auto &string:strings) {
     stream << string << std::endl;
 	}
 	return stream;
+}
+inline std::string operator + (HeaderPair pair, std::string string) {
+	return std::to_string(pair.offset) + ", " + std::to_string(pair.count) + "\t" + string;
+}
+
+inline StringList operator + (std::vector<HeaderPair> pairs, StringList strings) {
+	StringList result; result.reserve(strings.size());
+	int numPairs = pairs.size();
+	for (StringList::iterator it = strings.begin(); it != strings.end(); it++) {
+		result.push_back(pairs.at((it - strings.begin()) % numPairs) + *it);
+	}
+	return result;
 }
 
 StringList readFilenames(std::ifstream &f, unsigned int numFiles);
@@ -49,7 +61,7 @@ namespace Logger {
 		const int INFO = 3;
 		const int DEBUG = 4;
 	//};
-	static int LogLevel = INFO;
+	extern int LogLevel;
 	
 	inline std::ostream& Log(int level) {
 		if (level <= LogLevel) {

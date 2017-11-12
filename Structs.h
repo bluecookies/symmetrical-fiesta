@@ -38,7 +38,7 @@ struct ScriptHeader {
 	HeaderPair labels;
 	HeaderPair markers;
 	HeaderPair functionIndex;     // Function ID + Bytecode offset
-	HeaderPair unknown1;		// could be something to do with function (address/param?)
+	HeaderPair unknown1;		// could be something to do with function (address/param/type?)
 	HeaderPair stringsIndex1;    // string index
 	HeaderPair strings1;    // string data
 	HeaderPair functions;
@@ -46,8 +46,8 @@ struct ScriptHeader {
 	HeaderPair functionName;
 	HeaderPair stringsIndex2;   // string index
 	HeaderPair strings2;   // string data
-	HeaderPair unknown6;   // looks to be EOF
-	HeaderPair unknown7;   // same?
+	HeaderPair unknown6;   // 
+	HeaderPair unknown7;   // 
 };
 
 struct PackHeader {
