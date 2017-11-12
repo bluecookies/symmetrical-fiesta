@@ -1,29 +1,30 @@
-CC=g++
-CFLAGS=-std=c++11 -c
+CXX=g++
+CXXFLAGS=-std=c++11 -c
 TARGETS=readscene readgameexe parsess extractpck
 HEADERS=Structs.h Helper.h
 ifeq ($(OS),Windows_NT)
-EXE = $(TARGETS:=.exe)
+EXE = $(TARGETS:%=$(BINDIR)/%.exe)
 RM=del /Q
 else
-EXE = $(TARGETS)
+EXE = $(TARGETS:%=$(BINDIR)/%)
 #RM=rm -f
 endif
 BINDIR=bin
 
+
 all: $(EXE)
 
-	
-readscene: ReadScene.o
-readgameexe: ReadGameExe.o
-extractpck: ExtractPack.o
-parsess: ParseSiglusScript.o
+# gods this is ugly
+$(BINDIR)/readscene $(BINDIR)/readscene.exe: ReadScene.o
+$(BINDIR)/readgameexe $(BINDIR)/readgameexe.exe: ReadGameExe.o
+$(BINDIR)/extractpck $(BINDIR)/extractpck.exe: ExtractPack.o
+$(BINDIR)/parsess $(BINDIR)/parsess.exe: ParseSiglusScript.o
 
-$(TARGETS): Helper.o
-	$(CC) -o $(BINDIR)/$@ $^
+$(EXE): Helper.o
+	$(CXX) -o $@ $^
 
 %.o: %.cpp $(HEADERS)
-	$(CC) $(CFLAGS) -o $@ $<
+	$(CXX) $(CXXFLAGS) -o $@ $<
 
 os:
 	$(info OS: $(OS))

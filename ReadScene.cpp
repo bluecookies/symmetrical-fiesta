@@ -116,7 +116,10 @@ int main(int argc, char* argv[]) {
 		outStream << varInfo + varNames;
 	outStream.close();
 	outStream.open(outdir + "/CmdNames.txt");
-		outStream << cmdInfo + cmdNames;
+		Logger::Log(Logger::DEBUG, outStream) << cmdInfo + cmdNames;	// TODO: pretty up the notation a bit
+	outStream.close();
+	outStream.open(outdir + "/SceneNames.txt");
+		Logger::Log(Logger::DEBUG, outStream) << sceneNames;
 	outStream.close();
 	
 	// Dump scene scripts
@@ -141,6 +144,16 @@ int main(int argc, char* argv[]) {
 		std::string outfile = outdir + "/" + sceneNames.at(i) + ".ss";
 		outStream.open(outfile, std::ofstream::out | std::ofstream::binary);
 		outStream.write((char*) decompressed, decompressedSize);
+		
+		std::string cmdName;
+		for (auto it = cmdInfo.begin(); it != cmdInfo.end(); it++) {
+			if ((*it).offset == i) {
+				outStream.write((char*) &(*it).count, 4);	// instruction address
+				cmdName = cmdNames.at(it - cmdInfo.begin());
+				outStream.write(cmdName.c_str(), cmdName.length());
+			}
+		}
+		
 		outStream.close();
 	}
 	fileStream.close();

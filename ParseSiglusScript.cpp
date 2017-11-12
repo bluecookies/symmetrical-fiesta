@@ -183,17 +183,18 @@ Instructions parseBytecode(char* bytecode, unsigned int length,
 	return instList;
 }
 
+// TODO: this is getting kind of unwieldy
 void printInstructions(Instructions instList, std::string filename, 
 	const std::vector<unsigned int> &labels,
 	const std::vector<unsigned int> &markers,
 	const std::vector<unsigned int> &functions,
-	StringList functionNames
+	const std::vector<unsigned int> &commands,
+	StringList functionNames, StringList cmdNames
 ){
 	std::ofstream stream(filename);
 	stream << std::setfill('0');
 	
 	Instructions::iterator it;
-	std::vector<unsigned int>::iterator argIt;
 	std::vector<unsigned int>::const_iterator labelIt;
 	Instruction instruction;
 	for (it = instList.begin(); it != instList.end(); it++) {
@@ -218,12 +219,17 @@ void printInstructions(Instructions instList, std::string filename,
 				stream << std::endl;
 			}
 		}
+		for (labelIt = commands.begin(); labelIt != commands.end(); labelIt++) {
+			if (*labelIt == instruction.address) {
+				stream << "\nSetCommand " << cmdNames.at(labelIt - commands.begin()) << std::endl;
+			}
+		}
 		
 		if (instruction.nop)
 			continue;
 		stream << "0x" << std::setw(4) << std::hex << instruction.address << ">\t";
 		stream << std::setw(2) << +instruction.instruction << "|\t" << std::dec;	// +instruction promotes to printable number
-		for (argIt = instruction.args.begin(); argIt != instruction.args.end(); argIt++) {
+		for (auto argIt = instruction.args.begin(); argIt != instruction.args.end(); argIt++) {
 			if (argIt != instruction.args.begin()) stream << ", ";
 			stream << *argIt;
 		}
@@ -310,7 +316,29 @@ int main(int argc, char* argv[]) {
 	char* bytecode = readBytecode(fileStream, header.bytecode);
 	Instructions instList = parseBytecode(bytecode, header.bytecode.count, mainStrings, strings2);
 	
-	printInstructions(instList, outFilename, labels, markers, functions, functionNames);
+	// Read commands
+	std::vector<unsigned int> commands;
+	StringList commandNames;
+	if (header.unknown6.count != 0) {
+		Logger::Log(Logger::WARN) << "Unknown6 is not empty.\n";
+	} else if (header.unknown7.count != 0) {
+		Logger::Log(Logger::WARN) << "Unknown7 is not empty.\n";
+	} else if (header.unknown6.offset != header.unknown7.offset) {
+		Logger::Log(Logger::WARN) << "Check this file out, something's weird\n";
+	} else {
+		fileStream.seekg(header.unknown6.offset, std::ios_base::beg);
+		unsigned int offset;
+		std::string cmdName;
+		fileStream.read((char*) &offset, 4);
+		while (!fileStream.eof()) {
+			commands.push_back(offset);
+			std::getline(fileStream, cmdName, '\0');
+			commandNames.push_back(cmdName);
+			fileStream.read((char*) &offset, 4);
+		}	
+	}
+	
+	printInstructions(instList, outFilename, labels, markers, functions, commands, functionNames, commandNames);
 	
 	fileStream.close();
 	delete[] bytecode;

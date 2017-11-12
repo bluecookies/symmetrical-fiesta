@@ -63,9 +63,9 @@ namespace Logger {
 	//};
 	extern int LogLevel;
 	
-	inline std::ostream& Log(int level) {
+	inline std::ostream& Log(int level, std::ostream& stream = std::cout) {
 		if (level <= LogLevel) {
-			return std::cout;
+			return stream;
 		} else {
 			return nout;
 		}
