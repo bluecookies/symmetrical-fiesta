@@ -2,6 +2,9 @@
 #include <fstream>
 #include <locale>
 #include <codecvt>
+
+#include <limits>
+
 #include <cassert>
 
 #include "Helper.h"

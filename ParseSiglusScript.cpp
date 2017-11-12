@@ -1,11 +1,14 @@
 // TODO: function backup? offset? table index thing
 // TODO: check the ranges are right
 
-#include <cstdlib>
+#define __USE_MINGW_ANSI_STDIO 0
+
 #include <iostream>
 #include <iomanip>
 #include <fstream>
+#include <sstream>
 #include <vector>
+
 #include <cassert>
 #include <unistd.h>
 #include <getopt.h>
@@ -16,7 +19,7 @@
 
 struct Instruction {
 	unsigned int address;
-	unsigned char instruction;
+	unsigned char opcode;
 	std::vector<unsigned int> args;
 	bool nop = false;
 	std::string comment;
@@ -71,7 +74,7 @@ Instructions parseBytecode(char* bytecode, unsigned int length,
 		Instruction inst;
 		inst.address = curr;
 		opcode = bytecode[curr++];
-		inst.instruction = opcode;
+		inst.opcode = opcode;
 		switch (opcode) {
 			case 0x01:
 			case 0x03:
@@ -127,7 +130,7 @@ Instructions parseBytecode(char* bytecode, unsigned int length,
 				if (arg == 0x0a) {
 					arg = readUInt32(bytecode + curr);	curr += 4;
 						inst.args.push_back(arg);
-						stackTop = arg;
+					stackTop = arg;
 				} else if (arg == 0x14) {
 					arg = readUInt32(bytecode + curr);	curr += 4;
 						inst.args.push_back(arg);
@@ -139,7 +142,7 @@ Instructions parseBytecode(char* bytecode, unsigned int length,
 			case 0x15:
 				numArg = arg = readUInt32(bytecode + curr);	curr += 4;
 					inst.args.push_back(arg);
-				for (int counter = 0; counter < numArg; counter++) {
+				for (unsigned int counter = 0; counter < numArg; counter++) {
 					arg = readUInt32(bytecode + curr);	curr += 4;
 					inst.args.push_back(arg);
 				}
@@ -152,13 +155,13 @@ Instructions parseBytecode(char* bytecode, unsigned int length,
 				Logger::Log(Logger::DEBUG) << "Address 0x" << std::hex << std::setw(4) << +inst.address << std::dec;
 				Logger::Log(Logger::DEBUG) << ":  arg count: " << numArg;
 				
-				for (int counter = 0; counter < numArg; counter++) {
+				for (unsigned int counter = 0; counter < numArg; counter++) {
 					arg = readUInt32(bytecode + curr);	curr += 4;
 					inst.args.push_back(arg);
 				}
 				numArg = arg = readUInt32(bytecode + curr);	curr += 4;
 					inst.args.push_back(arg);
-				for (int counter = 0; counter < numArg; counter++) {
+				for (unsigned int counter = 0; counter < numArg; counter++) {
 					arg = readUInt32(bytecode + curr);	curr += 4;
 					inst.args.push_back(arg);
 				}
@@ -183,8 +186,40 @@ Instructions parseBytecode(char* bytecode, unsigned int length,
 	return instList;
 }
 
+void populateMnemonics(StringList &mnemonics) {
+	std::stringstream hexStream;
+	hexStream << std::hex << std::setfill('0');
+	
+	mnemonics.resize(256);
+	// Temporary
+	mnemonics[0] = "nop";
+	for (unsigned char i = 1; i != 0; i++) {	//probs undefined behaviour, but temporary
+		hexStream << std::setw(2) << std::to_string(i);
+		mnemonics[i] = "[" + hexStream.str() + "]";
+		hexStream.str("");
+	}
+	mnemonics[0x10] = "jmp";
+	mnemonics[0x11] = "je";
+	mnemonics[0x12] = "jne";
+	
+}
+
+void readCommands(const std::string filename, std::vector<unsigned int> &offsets, StringList &names) {
+	std::ifstream stream(filename, std::ifstream::in | std::ifstream::binary);	// this is much longer than "rb"
+	std::string cmdName;
+	unsigned int offset;
+	stream.read((char*) &offset, 4);
+	while (!stream.eof()) {
+		offsets.push_back(offset);
+		std::getline(stream, cmdName, '\0');
+		names.push_back(cmdName);
+		stream.read((char*) &offset, 4);
+	}
+	stream.close();
+}
+
 // TODO: this is getting kind of unwieldy
-void printInstructions(Instructions instList, std::string filename, 
+void printInstructions(Instructions instList, StringList mnemonics, std::string filename, 
 	const std::vector<unsigned int> &labels,
 	const std::vector<unsigned int> &markers,
 	const std::vector<unsigned int> &functions,
@@ -228,10 +263,11 @@ void printInstructions(Instructions instList, std::string filename,
 		if (instruction.nop)
 			continue;
 		stream << "0x" << std::setw(4) << std::hex << instruction.address << ">\t";
-		stream << std::setw(2) << +instruction.instruction << "|\t" << std::dec;	// +instruction promotes to printable number
+		stream << std::setw(2) << +instruction.opcode << "| ";	// +instruction promotes to printable number
+		stream << mnemonics[instruction.opcode] << "\t";
 		for (auto argIt = instruction.args.begin(); argIt != instruction.args.end(); argIt++) {
 			if (argIt != instruction.args.begin()) stream << ", ";
-			stream << *argIt;
+			stream << "0x" << *argIt;
 		}
 		if (!instruction.comment.empty())
 			stream << "\t; " << instruction.comment;
@@ -284,7 +320,7 @@ int main(int argc, char* argv[]) {
 	StringList strings2 = readStrings(fileStream, header.stringsIndex2, header.strings2);
 	StringList functionNames = readStrings(fileStream, header.functionNameIndex, header.functionName);
 	
-	Logger::Log(Logger::DEBUG) << strings1;
+	Logger::Log(Logger::INFO) << strings1;
 	
 	// Read labels - TODO: check out of range
 	unsigned int offset;
@@ -316,31 +352,26 @@ int main(int argc, char* argv[]) {
 	char* bytecode = readBytecode(fileStream, header.bytecode);
 	Instructions instList = parseBytecode(bytecode, header.bytecode.count, mainStrings, strings2);
 	
-	// Read commands
-	std::vector<unsigned int> commands;
-	StringList commandNames;
+	// TODO: handle these
 	if (header.unknown6.count != 0) {
 		Logger::Log(Logger::WARN) << "Unknown6 is not empty.\n";
 	} else if (header.unknown7.count != 0) {
 		Logger::Log(Logger::WARN) << "Unknown7 is not empty.\n";
 	} else if (header.unknown6.offset != header.unknown7.offset) {
 		Logger::Log(Logger::WARN) << "Check this file out, something's weird\n";
-	} else {
-		fileStream.seekg(header.unknown6.offset, std::ios_base::beg);
-		unsigned int offset;
-		std::string cmdName;
-		fileStream.read((char*) &offset, 4);
-		while (!fileStream.eof()) {
-			commands.push_back(offset);
-			std::getline(fileStream, cmdName, '\0');
-			commandNames.push_back(cmdName);
-			fileStream.read((char*) &offset, 4);
-		}	
 	}
-	
-	printInstructions(instList, outFilename, labels, markers, functions, commands, functionNames, commandNames);
-	
 	fileStream.close();
+	
+	// Read commands
+	std::vector<unsigned int> commands;
+	StringList commandNames;
+	readCommands(filename + ".commands", commands, commandNames);
+	
+	StringList mnemonics(0x100);
+	populateMnemonics(mnemonics);
+	
+	printInstructions(instList, mnemonics, outFilename, labels, markers, functions, commands, functionNames, commandNames);
+
 	delete[] bytecode;
 	
 	return 0;

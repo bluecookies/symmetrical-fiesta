@@ -37,6 +37,7 @@ inline StringList operator + (std::vector<HeaderPair> pairs, StringList strings)
 
 StringList readFilenames(std::ifstream &f, unsigned int numFiles);
 
+void decodeExtra(unsigned char* debuf, unsigned int desize);
 void decodeData(unsigned char* debuf, unsigned int desize);
 void decompressData(unsigned char* compData, unsigned char* decompBegin, unsigned int decompSize);
 

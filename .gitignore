@@ -10,6 +10,10 @@
 *.ss
 *.dat
 *.asm
+*.commands
+
+# go away
+.DS_Store
 
 Scene/*
 bin/*

@@ -7,8 +7,8 @@
 // TODO: input file, output dir
 // TODO: var info and cmd info
 
+#define __USE_MINGW_ANSI_STDIO 0
 
-#include <cstdlib>
 #include <iostream>
 #include <fstream>
 #include <cstdint>
@@ -54,7 +54,7 @@ int main(int argc, char* argv[]) {
 			Logger::increaseVerbosity();
 			break;
 		case 'd':
-			std::cout << "Wait, don't actually use this yet" << std::endl;
+			std::cout << "Wait, don't actually use this yet: " << optarg << std::endl;
 			return 0;
 		break;
 		default:
@@ -116,17 +116,24 @@ int main(int argc, char* argv[]) {
 		outStream << varInfo + varNames;
 	outStream.close();
 	outStream.open(outdir + "/CmdNames.txt");
-		Logger::Log(Logger::DEBUG, outStream) << cmdInfo + cmdNames;	// TODO: pretty up the notation a bit
+		Logger::Log(Logger::DEBUG, outStream) << cmdNames;	// TODO: pretty up the notation a bit
 	outStream.close();
 	outStream.open(outdir + "/SceneNames.txt");
 		Logger::Log(Logger::DEBUG, outStream) << sceneNames;
 	outStream.close();
 	
 	// Dump scene scripts
+	std::ofstream cmdFile;
+	unsigned int offset;
 	for (unsigned int i = 0; i < header.sceneNameIndex.count; i++) {
-		fileStream.seekg(header.sceneData.offset + sceneDataInfo.at(i).offset);
-		unsigned char buffer[sceneDataInfo.at(i).count];
+		offset = header.sceneData.offset + sceneDataInfo.at(i).offset;
+		fileStream.seekg(offset);
+		unsigned char* buffer = new unsigned char[sceneDataInfo.at(i).count];
 		fileStream.read((char*) buffer, sceneDataInfo.at(i).count);
+		
+		if (header.extraKeyUse) {
+			decodeExtra(buffer, sceneDataInfo.at(i).count);
+		}
 		
 		decodeData(buffer, sceneDataInfo.at(i).count);
 		
@@ -134,9 +141,13 @@ int main(int argc, char* argv[]) {
 		unsigned int compressedSize = readUInt32(buffer);
 		unsigned int decompressedSize = readUInt32(buffer + 4);
 		
-		assert(sizeof(buffer) == compressedSize);
-		
-		unsigned char decompressed[decompressedSize];
+		if (sceneDataInfo.at(i).count != compressedSize) {
+			std::cerr << "Error at pack " << +i << ": " << sceneNames.at(i) << std::endl;
+			std::cerr << "Expected " << std::hex << sceneDataInfo.at(i).count << " at address 0x";
+			std::cerr << offset << ", got " << compressedSize << ".\n";
+			exit(1);
+		}
+		unsigned char* decompressed = new unsigned char[decompressedSize];
 		
 		decompressData(buffer + 8, decompressed, decompressedSize);
 		
@@ -146,15 +157,19 @@ int main(int argc, char* argv[]) {
 		outStream.write((char*) decompressed, decompressedSize);
 		
 		std::string cmdName;
+		cmdFile.open(outfile + ".commands", std::ofstream::out | std::ofstream::binary);
 		for (auto it = cmdInfo.begin(); it != cmdInfo.end(); it++) {
 			if ((*it).offset == i) {
-				outStream.write((char*) &(*it).count, 4);	// instruction address
+				cmdFile.write((char*) &(*it).count, 4);	// instruction address
 				cmdName = cmdNames.at(it - cmdInfo.begin());
-				outStream.write(cmdName.c_str(), cmdName.length());
-				outStream.put('\0');
+				cmdFile.write(cmdName.c_str(), cmdName.length());
+				cmdFile.put('\0');
 			}
 		}
+		cmdFile.close();
 		
+		delete[] buffer;
+		delete[] decompressed;
 		outStream.close();
 	}
 	fileStream.close();
