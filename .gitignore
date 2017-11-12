@@ -1,0 +1,13 @@
+# Object
+*.o
+
+# Executables
+*.exe
+*.out
+
+# Files
+*.pck
+*.ss
+*.dump
+
+Scene/*
