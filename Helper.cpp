@@ -69,10 +69,30 @@ StringList readStrings(std::ifstream &f, HeaderPair index, HeaderPair data, bool
 	return strings;
 }
 
-void printStrings(StringList strings, std::ostream &f) {
-	for (auto &string:strings) {
-    f << string << std::endl;
+// Requires stream pointer to be at beginning of table
+StringList readFilenames(std::ifstream &f, unsigned int numFiles) {
+	uint32_t *filenameLengths = new uint32_t[numFiles];
+	f.read((char*) filenameLengths, numFiles * 4);
+	
+	StringList filenames;
+	filenames.reserve(numFiles);
+	
+	char16_t* strBuf = new char16_t[512];
+	for (unsigned int i = 0; i < numFiles; i++) {
+		f.read((char*) strBuf, filenameLengths[i]);
+
+		std::u16string string16(strBuf, filenameLengths[i] >> 1);
+		try {
+			filenames.push_back(g_UCS2Conv.to_bytes(string16));
+		} catch (std::exception &e) {
+			std::cout << "Exception: " << e.what() << std::endl;
+  	}
 	}
+	
+	delete[] strBuf;
+	delete[] filenameLengths;
+	
+	return filenames;
 }
 
 

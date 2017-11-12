@@ -6,7 +6,7 @@
 //#endif
 // TODO: get rid of the weird arrays
 // TODO: input file, output dir
-// TODO: proper logging
+// TODO: var info and cmd info
 
 
 #include <cstdlib>
@@ -15,44 +15,59 @@
 #include <cstdint>
 
 #include <cassert>
+#include <unistd.h>
+#include <getopt.h>
 
 #include "Helper.h"
 #include "Structs.h"
 
-bool g_Verbose = false;
-
-void readPackHeader(std::ifstream &f, PackHeader &header) {
-	f.read((char*) &header.headerLength, 4);
-	assert(header.headerLength == 0x5C);
+void readScenePackHeader(std::ifstream &f, ScenePackHeader &header) {
+	f.read((char*) &header.headerSize, 4);
+	assert(header.headerSize == 0x5C);
 	
-	readHeaderPair(f, header.VarInfo);
-	readHeaderPair(f, header.VarNameIndex);
-	readHeaderPair(f, header.VarName);
+	readHeaderPair(f, header.varInfo);
+	readHeaderPair(f, header.varNameIndex);
+	readHeaderPair(f, header.varName);
 	
-	readHeaderPair(f, header.CmdInfo);
-	readHeaderPair(f, header.CmdNameIndex);
-	readHeaderPair(f, header.CmdName);
+	readHeaderPair(f, header.cmdInfo);
+	readHeaderPair(f, header.cmdNameIndex);
+	readHeaderPair(f, header.cmdName);
 	
-	readHeaderPair(f, header.SceneNameIndex);
-	readHeaderPair(f, header.SceneName);
-	readHeaderPair(f, header.SceneInfo);
-	readHeaderPair(f, header.SceneData);
+	readHeaderPair(f, header.sceneNameIndex);
+	readHeaderPair(f, header.sceneName);
+	readHeaderPair(f, header.sceneInfo);
+	readHeaderPair(f, header.sceneData);
 	
-	f.read((char*) &header.ExtraKeyUse, 4);
-	f.read((char*) &header.SourceHeaderLength, 4);	// Figure this out. It's at the end of the data, taunting me
-}
-
-
-void readFileInfo(unsigned char* buf, FileInfo &fileInfo) {
-	fileInfo.offset = readUInt32(buf);
-	fileInfo.length = readUInt32(buf+4);
+	f.read((char*) &header.extraKeyUse, 4);
+	f.read((char*) &header.sourceHeaderLength, 4);	// Figure this out. It's at the end of the data, taunting me
 }
 
 int main(int argc, char* argv[]) {
-	std::string filename("Scene.pck");
-	if (argc > 1)
-		filename = argv[1];
+	extern char *optarg;
+	extern int optind;
 	
+	static char usageString[] = "Usage: readscene [-d outdir] [-v] [Scene.pck]";
+	
+	int option = 0;
+	while ((option = getopt(argc, argv, "d:v")) != -1) {
+		switch (option) {
+		case 'v':
+			Logger::increaseVerbosity();
+			break;
+		case 'd':
+			std::cout << "Wait, don't actually use this yet" << std::endl;
+			return 0;
+		break;
+		default:
+			std::cout << usageString << std::endl;
+			return 1;
+		}
+	}
+	
+	std::string filename("Scene.pck");
+	if (optind < argc) {
+		filename = argv[optind];
+	}
 	std::ifstream fileStream(filename, std::ifstream::in | std::ifstream::binary);
 	
 	// TODO: Check Scene.pck.hash
@@ -60,42 +75,42 @@ int main(int argc, char* argv[]) {
 	std::string outdir("Scene");
 	
 	// Read pack header
-	PackHeader packHeader;
-	readPackHeader(fileStream, packHeader);
+	ScenePackHeader header;
+	readScenePackHeader(fileStream, header);
 	
-	assert(packHeader.SceneNameIndex.count == packHeader.SceneInfo.count);
-	HeaderPair SceneDataInfo[packHeader.SceneInfo.count];	// Should be using vectors. VLAs aren't even allowed.
-	fileStream.seekg(packHeader.SceneInfo.offset);
-	for (unsigned int i = 0; i < packHeader.SceneInfo.count; i++) {
-		readHeaderPair(fileStream, SceneDataInfo[i]);
+	// Read file table
+	assert(header.sceneNameIndex.count == header.sceneInfo.count);
+	std::vector<HeaderPair> sceneDataInfo;
+	sceneDataInfo.reserve(header.sceneInfo.count);
+
+	fileStream.seekg(header.sceneInfo.offset);
+	HeaderPair pair;
+	for (unsigned int i = 0; i < header.sceneInfo.count; i++) {
+		readHeaderPair(fileStream, pair);
+		sceneDataInfo.push_back(pair);
 	}
 	
-	// Read var names
-	StringList varNames = readStrings(fileStream, packHeader.VarNameIndex, packHeader.VarName);
-	// Read cmd names
-	StringList cmdNames = readStrings(fileStream, packHeader.CmdNameIndex, packHeader.CmdName);
-	
-	StringList sceneNames = readStrings(fileStream, packHeader.SceneNameIndex, packHeader.SceneName);
+	// Read strings
+	StringList varNames = readStrings(fileStream, header.varNameIndex, header.varName);
+	StringList cmdNames = readStrings(fileStream, header.cmdNameIndex, header.cmdName);
+	StringList sceneNames = readStrings(fileStream, header.sceneNameIndex, header.sceneName);
 	
 	std::ofstream outStream;
 	// Print strings
 	outStream.open(outdir + "/VarNames.txt");
-	printStrings(varNames, outStream);
+		outStream << varNames;
+	outStream.close();
+	outStream.open(outdir + "/CmdNames.txt");
+		outStream << cmdNames;
 	outStream.close();
 	
-	outStream.open(outdir + "/VarNames.txt");
-	printStrings(cmdNames, outStream);
-	outStream.close();
-	
-	unsigned int offset;
 	// Dump scene scripts
-	for (unsigned int i = 0; i < packHeader.SceneNameIndex.count; i++) {
-		offset = packHeader.SceneData.offset + SceneDataInfo[i].offset;
-		fileStream.seekg(offset);
-		unsigned char buffer[SceneDataInfo[i].count];
-		fileStream.read((char*) buffer, SceneDataInfo[i].count);
+	for (unsigned int i = 0; i < header.sceneNameIndex.count; i++) {
+		fileStream.seekg(header.sceneData.offset + sceneDataInfo.at(i).offset);
+		unsigned char buffer[sceneDataInfo.at(i).count];
+		fileStream.read((char*) buffer, sceneDataInfo.at(i).count);
 		
-		decodeData(buffer, SceneDataInfo[i].count);
+		decodeData(buffer, sceneDataInfo.at(i).count);
 		
 		// Decompress
 		unsigned int compressedSize = readUInt32(buffer);

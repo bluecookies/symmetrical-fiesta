@@ -5,19 +5,14 @@
 #include <iostream>
 #include <iomanip>
 #include <fstream>
-
 #include <vector>
-
 #include <cassert>
-
 #include <unistd.h>
 #include <getopt.h>
 
+// maybe put logger by itself
 #include "Helper.h"
 #include "Structs.h"
-
-// TODO: Add an actual logger
-bool g_Verbose = false;
 
 struct Instruction {
 	unsigned int address;
@@ -154,10 +149,9 @@ Instructions parseBytecode(char* bytecode, unsigned int length,
 					inst.args.push_back(arg);
 				numArg = arg = readUInt32(bytecode + curr);	curr += 4;
 					inst.args.push_back(arg);
-				if (g_Verbose) {
-					std::cout << "Address 0x" << std::hex << std::setw(4) << +inst.address << std::dec;
-					std::cout << ":  arg count: " << numArg;
-				}
+				Logger::Log(Logger::DEBUG) << "Address 0x" << std::hex << std::setw(4) << +inst.address << std::dec;
+				Logger::Log(Logger::DEBUG) << ":  arg count: " << numArg;
+				
 				for (int counter = 0; counter < numArg; counter++) {
 					arg = readUInt32(bytecode + curr);	curr += 4;
 					inst.args.push_back(arg);
@@ -169,8 +163,7 @@ Instructions parseBytecode(char* bytecode, unsigned int length,
 					inst.args.push_back(arg);
 				}
 				
-				if (g_Verbose)
-					std::cout << " " << numArg << std::endl;
+				Logger::Log(Logger::DEBUG) << " " << numArg << std::endl;
 				
 				arg = readUInt32(bytecode + curr);	curr += 4;
 					inst.args.push_back(arg);		// something about return type?
@@ -182,11 +175,8 @@ Instructions parseBytecode(char* bytecode, unsigned int length,
 			case 0x00:
 			default:
 				inst.nop = true;
-				if (g_Verbose) {
-					std::cout << "Address 0x" << std::hex << std::setw(4) << +inst.address;
-					std::cout << ":  NOP encountered: 0x" << std::setw(2) << +opcode << std::dec << std::endl;
-				}
-					
+				Logger::Log(Logger::DEBUG) << "Address 0x" << std::hex << std::setw(4) << +inst.address;
+				Logger::Log(Logger::DEBUG) << ":  NOP encountered: 0x" << std::setw(2) << +opcode << std::dec << std::endl;
 		}
 		instList.push_back(inst);
 	}
@@ -256,7 +246,8 @@ int main(int argc, char* argv[]) {
 	int option = 0;
 	while ((option = getopt(argc, argv, "o:v")) != -1) {
 		switch (option) {
-		case 'v': g_Verbose = true;
+		case 'v':
+			Logger::increaseVerbosity();
 			break;
 		case 'o':
 			outFilename = std::string(optarg);
@@ -277,7 +268,7 @@ int main(int argc, char* argv[]) {
 	std::ifstream fileStream(filename, std::ifstream::in | std::ifstream::binary);
 	
 	if (outFilename.empty())
-		outFilename = filename + std::string(".out");
+		outFilename = filename + std::string(".asm");
 	
 	ScriptHeader header;
 	readScriptHeader(fileStream, header);
@@ -287,8 +278,7 @@ int main(int argc, char* argv[]) {
 	StringList strings2 = readStrings(fileStream, header.stringsIndex2, header.strings2);
 	StringList functionNames = readStrings(fileStream, header.functionNameIndex, header.functionName);
 	
-	if (g_Verbose)
-		printStrings(strings1);
+	Logger::Log(Logger::DEBUG) << strings1;
 	
 	// Read labels - TODO: check out of range
 	unsigned int offset;

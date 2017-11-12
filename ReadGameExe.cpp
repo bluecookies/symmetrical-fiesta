@@ -6,7 +6,7 @@
 
 #include "Helper.h"
 
-unsigned char XorKey[256] = {
+static unsigned char XorKey[256] = {
 	0xD8, 0x29, 0xB9, 0x16, 0x3D, 0x1A, 0x76, 0xD0, 0x87, 0x9B, 0x2D, 0x0C, 0x7B, 0xD1, 0xA9, 0x19,
 	0x22, 0x9F, 0x91, 0x73, 0x6A, 0x35, 0xB1, 0x7E, 0xD1, 0xB5, 0xE7, 0xE6, 0xD5, 0xF5, 0x06, 0xD6,
 	0xBA, 0xBF, 0xF3, 0x45, 0x3F, 0xF1, 0x61, 0xDD, 0x4C, 0x67, 0x6A, 0x6F, 0x74, 0xEC, 0x7A, 0x6F,
@@ -33,19 +33,18 @@ int main() {
 	unsigned int length = fileStream.gcount() - 8;
 	fileStream.clear();
 	fileStream.seekg(8, std::ios_base::beg);
-	unsigned char buffer[length];
+	unsigned char *buffer = new unsigned char[length];
 	fileStream.read((char*) buffer, length);
 	fileStream.close();
 	
-	// Xor decode
+	// xor decode
 	for (unsigned int i = 0; i < length; i++) {
 		buffer[i] ^= XorKey[i & 0xFF];
 	}
-
 	
 	assert(readUInt32(buffer) == length);
 	unsigned int decompressedSize = readUInt32(buffer + 4);
-	unsigned char decompressed[decompressedSize];
+	unsigned char *decompressed = new unsigned char[decompressedSize];
 	decompressData(buffer + 8, decompressed, decompressedSize);
 	
 	std::wstring_convert<std::codecvt_utf8<char16_t>, char16_t> ucs2conv;
@@ -55,7 +54,8 @@ int main() {
 	fileStream << ucs2conv.to_bytes(gameExe16);
 	fileStream.close();
 
-
+	delete[] buffer;
+	delete[] decompressed;
 	
 	return 0;
 }

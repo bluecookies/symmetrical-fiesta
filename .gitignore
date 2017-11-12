@@ -8,7 +8,9 @@
 # Files
 *.pck
 *.ss
-*.dump
 *.dat
+*.asm
 
 Scene/*
+bin/*
+Pack/*
