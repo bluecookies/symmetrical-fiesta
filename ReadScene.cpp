@@ -151,6 +151,7 @@ int main(int argc, char* argv[]) {
 				outStream.write((char*) &(*it).count, 4);	// instruction address
 				cmdName = cmdNames.at(it - cmdInfo.begin());
 				outStream.write(cmdName.c_str(), cmdName.length());
+				outStream.put('\0');
 			}
 		}
 		
