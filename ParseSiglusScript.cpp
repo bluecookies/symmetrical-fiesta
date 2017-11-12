@@ -1,15 +1,11 @@
-// labels
-// markers
-// functions
-// function backup? offset?
-// function name
+// TODO: function backup? offset? table index thing
+// TODO: check the ranges are right
 
 #include <cstdlib>
 #include <iostream>
 #include <iomanip>
 #include <fstream>
-#include <locale>
-#include <codecvt>
+
 #include <vector>
 
 #include <cassert>
@@ -20,7 +16,7 @@
 #include "Helper.h"
 #include "Structs.h"
 
-// Add an actual logger
+// TODO: Add an actual logger
 bool g_Verbose = false;
 
 struct Instruction {
@@ -30,10 +26,7 @@ struct Instruction {
 	bool nop = false;
 	std::string comment;
 };
-typedef std::vector<std::string> StringList;
 typedef std::vector<Instruction> Instructions;
-
-std::wstring_convert<std::codecvt_utf8<char16_t>, char16_t> g_UCS2Conv;
 
 void readScriptHeader(std::ifstream &f, ScriptHeader &header) {
 	f.read((char*) &header.headerSize, 4);
@@ -59,55 +52,6 @@ void readScriptHeader(std::ifstream &f, ScriptHeader &header) {
 	
 	readHeaderPair(f, header.unknown6);
 	readHeaderPair(f, header.unknown7);
-}
-
-StringList readStrings(std::ifstream &f, HeaderPair index, HeaderPair data, bool decode = false) {
-	assert(index.count == data.count);
-	
-	f.seekg(index.offset, std::ios_base::beg);
-	
-	// Read offsets and lengths of strings
-	// offset and lengths are in wide chars (2 bytes)
-	HeaderPair* stringIndices = new HeaderPair[index.count];
-	for (unsigned int i = 0; i < index.count; i++) {
-		readHeaderPair(f, stringIndices[i]);
-	}
-	
-	// Maybe read entire string block into buffer first
-	
-	StringList strings;
-	strings.reserve(index.count);
-	
-	// Read data
-	char16_t* strBuf = new char16_t[512]; // I hope that's enough
-	for (unsigned int i = 0; i < index.count; i++) { 
-		f.seekg(data.offset + 2 * stringIndices[i].offset, std::ios_base::beg);
-		f.read((char*) strBuf, 2 * stringIndices[i].count);
-		
-		if (decode) {
-			for (unsigned int j = 0; j < stringIndices[i].count; j++) {
-				strBuf[j] ^= (i * 0x7087);
-			}
-		}
-		
-		std::u16string string16(strBuf, stringIndices[i].count);
-		try {
-			strings.push_back(g_UCS2Conv.to_bytes(string16));
-		} catch (std::exception &e) {
-			std::cout << "Exception: " << e.what() << std::endl;
-  	}
-	}
-	
-	delete[] strBuf;
-	delete[] stringIndices;
-	
-	return strings;
-}
-
-void printStrings(StringList strings) {
-	for (auto &string:strings) {
-    std::cout << string << std::endl;
-	}
 }
 
 char* readBytecode(std::ifstream &f, HeaderPair index) {

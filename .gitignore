@@ -9,5 +9,6 @@
 *.pck
 *.ss
 *.dump
+*.dat
 
 Scene/*

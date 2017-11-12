@@ -1,34 +1,11 @@
+#include <locale>
+#include <codecvt>
+
+#include <cassert>
 #include "Helper.h"
 #include "Structs.h"
 
-void decompressData(unsigned char* compData, unsigned char* decompBegin, unsigned int decompSize) {
-	unsigned char* from = compData;
-	unsigned char* to = decompBegin;
-	unsigned char* decompEnd = decompBegin + decompSize;
-	unsigned int EAX;
-	while (true) {
-		unsigned char marker = (unsigned char) *from;
-		from++;
-		for (int i = 0; i < 8; i++) {	// Iterate over marker's bits
-				if (to == decompEnd)
-					return;
-				if ((marker & 1) == 0) {
-					EAX = from[0] + (from[1] << 8);	// Load word from source
-					from += 2;
-					unsigned int counter = (EAX & 0xF) + 2;
-					EAX >>= 4;
-					while (counter > 0) {
-						*to = *(to - EAX);
-						to++; counter--;
-					}
-				} else {
-					*to = *from;
-					to++; from++;
-				}
-				marker >>= 1;
-		}
-	}
-}
+std::wstring_convert<std::codecvt_utf8<char16_t>, char16_t> g_UCS2Conv;
 
 unsigned int readUInt32(unsigned char* buf) {
 	return buf[0] + (buf[1] << 8) + (buf[2] << 16) + (buf[3] << 24);
@@ -39,7 +16,67 @@ unsigned int readUInt32(char* buf) {
 }
 
 
-void decrypt2(unsigned char* debuf, unsigned int desize) {
+void readHeaderPair(std::ifstream &stream, HeaderPair &pair) {
+	stream.read((char*) &pair.offset, sizeof(uint32_t));
+	stream.read((char*) &pair.count, sizeof(uint32_t));
+}
+
+void readHeaderPair(unsigned char* buf, HeaderPair &pair) {
+	pair.offset = readUInt32(buf);
+	pair.count = readUInt32(buf+4);
+}
+
+StringList readStrings(std::ifstream &f, HeaderPair index, HeaderPair data, bool decode) {
+	assert(index.count == data.count);
+	
+	f.seekg(index.offset, std::ios_base::beg);
+	
+	// Read offsets and lengths of strings
+	// offset and lengths are in wide chars (2 bytes)
+	HeaderPair* stringIndices = new HeaderPair[index.count];
+	for (unsigned int i = 0; i < index.count; i++) {
+		readHeaderPair(f, stringIndices[i]);
+	}
+	
+	// Maybe read entire string block into buffer first
+	
+	StringList strings;
+	strings.reserve(index.count);
+	
+	// Read data
+	char16_t* strBuf = new char16_t[512]; // I hope that's enough
+	for (unsigned int i = 0; i < index.count; i++) { 
+		f.seekg(data.offset + 2 * stringIndices[i].offset, std::ios_base::beg);
+		f.read((char*) strBuf, 2 * stringIndices[i].count);
+		
+		if (decode) {
+			for (unsigned int j = 0; j < stringIndices[i].count; j++) {
+				strBuf[j] ^= (i * 0x7087);
+			}
+		}
+		
+		std::u16string string16(strBuf, stringIndices[i].count);
+		try {
+			strings.push_back(g_UCS2Conv.to_bytes(string16));
+		} catch (std::exception &e) {
+			std::cout << "Exception: " << e.what() << std::endl;
+  	}
+	}
+	
+	delete[] strBuf;
+	delete[] stringIndices;
+	
+	return strings;
+}
+
+void printStrings(StringList strings, std::ostream &f) {
+	for (auto &string:strings) {
+    f << string << std::endl;
+	}
+}
+
+
+void decodeData(unsigned char* debuf, unsigned int desize) {
 	unsigned int key_idx = 0;
 	unsigned int xor_idx = 0;
 
@@ -70,12 +107,31 @@ void decrypt2(unsigned char* debuf, unsigned int desize) {
 	}
 }
 
-void readHeaderPair(std::ifstream &stream, HeaderPair &pair) {
-	stream.read((char*) &pair.offset, sizeof(uint32_t));
-	stream.read((char*) &pair.count, sizeof(uint32_t));
-}
-
-void readHeaderPair(unsigned char* buf, HeaderPair &pair) {
-	pair.offset = readUInt32(buf);
-	pair.count = readUInt32(buf+4);
+void decompressData(unsigned char* compData, unsigned char* decompBegin, unsigned int decompSize) {
+	unsigned char* from = compData;
+	unsigned char* to = decompBegin;
+	unsigned char* decompEnd = decompBegin + decompSize;
+	unsigned int EAX;
+	while (true) {
+		unsigned char marker = (unsigned char) *from;
+		from++;
+		for (int i = 0; i < 8; i++) {	// Iterate over marker's bits
+				if (to == decompEnd)
+					return;
+				if ((marker & 1) == 0) {
+					EAX = from[0] + (from[1] << 8);	// Load word from source
+					from += 2;
+					unsigned int counter = (EAX & 0xF) + 2;
+					EAX >>= 4;
+					while (counter > 0) {
+						*to = *(to - EAX);
+						to++; counter--;
+					}
+				} else {
+					*to = *from;
+					to++; from++;
+				}
+				marker >>= 1;
+		}
+	}
 }
