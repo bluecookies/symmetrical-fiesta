@@ -12,10 +12,11 @@ unsigned int readUInt32(unsigned char* buf) {
 	return buf[0] + (buf[1] << 8) + (buf[2] << 16) + (buf[3] << 24);
 }
 
+/*
 unsigned int readUInt32(char* buf) {
 	return readUInt32((unsigned char*) buf);
 }
-
+*/
 
 void readHeaderPair(std::ifstream &stream, HeaderPair &pair) {
 	stream.read((char*) &pair.offset, sizeof(uint32_t));

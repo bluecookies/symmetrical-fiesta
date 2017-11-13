@@ -3,6 +3,9 @@
 
 #include <cstdint>
 
+// Structure of pack files
+// most of it figured out by Kelebek
+
 struct HeaderPair {
 	uint32_t offset;
 	uint32_t count;

@@ -1,6 +1,8 @@
 // TODO: function backup? offset? table index thing
 // TODO: check the ranges are right
 
+// TODO: show raw bytes
+
 // TODO (but in the future): recognize control structure: switch is
 // [05]
 // dup stack, push val
@@ -42,7 +44,10 @@ typedef std::vector<Instruction> Instructions;
 
 void readScriptHeader(std::ifstream &f, ScriptHeader &header) {
 	f.read((char*) &header.headerSize, 4);
-	assert(header.headerSize == 0x84);
+	if (header.headerSize != 0x84) {
+		Logger::Log(Logger::ERROR) << "Error: Expected script header size 0x84, got 0x" << std::hex << header.headerSize << std::endl;
+		throw std::exception();
+	}
 	readHeaderPair(f, header.bytecode);	// be consistent with naming byteCode vs bytecode
 	readHeaderPair(f, header.stringIndex);
 	readHeaderPair(f, header.stringData);
@@ -66,141 +71,25 @@ void readScriptHeader(std::ifstream &f, ScriptHeader &header) {
 	readHeaderPair(f, header.unknown7);
 }
 
-char* readBytecode(std::ifstream &f, HeaderPair index) {
-	f.seekg(index.offset, std::ios_base::beg);
-	char* bytecode = new char[index.count];
-	f.read(bytecode, index.count);
-	return bytecode;
-}
 
-// Stolen from tanuki
-// https://github.com/bitprime/vn_translation_tools/blob/master/rewrite/
-Instructions parseBytecode(char* bytecode, unsigned int length, 
-	const StringList &strings, const StringList &strings2
-) {
-	
-	unsigned int curr = 0, arg, numArg;
-	unsigned char opcode;
-	Instructions instList;
-	unsigned int stackTop = 0;	// unsure if actual stack. to ask
-	
-	Logger::Log(Logger::DEBUG) << "Reading " << +length << " bytes.\n";
-	
-	while (curr < length) {
-		Instruction inst;
-		inst.address = curr;
-		opcode = bytecode[curr++];
-		inst.opcode = opcode;
-		switch (opcode) {
-			case 0x01:
-			case 0x03:
-			case 0x04:	// load value > ??
-			case 0x10:
-			case 0x11:
-			case 0x12:
-			case 0x31:
-				arg = readUInt32(bytecode + curr);
-				curr += 4;
-				inst.args.push_back(arg);
-			break;
-			case 0x05:
-			case 0x06:
-			case 0x09:
-			case 0x16:
-			case 0x32:
-			break;
-			case 0x07:
-				arg = readUInt32(bytecode + curr);	curr += 4;
-					inst.args.push_back(arg);
-				arg = readUInt32(bytecode + curr);	curr += 4;
-					inst.args.push_back(arg);
-					try {
-						inst.comment = strings2.at(arg);
-					} catch (std::out_of_range &e) {
-						Logger::Log(Logger::WARN) << "Missing string id " << arg << " at 0x" << std::hex << inst.address << std::dec << std::endl;
-					}
-			break;
-			case 0x13:
-			case 0x14:
-			case 0x20:
-				arg = readUInt32(bytecode + curr);	curr += 4;
-					inst.args.push_back(arg);
-				arg = readUInt32(bytecode + curr);	curr += 4;
-					inst.args.push_back(arg);
-				arg = readUInt32(bytecode + curr);	curr += 4;
-					inst.args.push_back(arg);
-			break;
-			case 0x21:
-				arg = readUInt32(bytecode + curr);	curr += 4;
-					inst.args.push_back(arg);
-				arg = bytecode[curr++];
-					inst.args.push_back(arg);
-			break;
-			case 0x22:	// calc. 0x10 is subtract?
-				arg = readUInt32(bytecode + curr);	curr += 4;
-					inst.args.push_back(arg);
-				arg = readUInt32(bytecode + curr);	curr += 4;
-					inst.args.push_back(arg);
-				arg = bytecode[curr++];
-					inst.args.push_back(arg);
-			break;
-			case 0x02:
-				arg = readUInt32(bytecode + curr);	curr += 4;
-					inst.args.push_back(arg);
-				if (arg == 0x0a) {
-					arg = readUInt32(bytecode + curr);	curr += 4;
-						inst.args.push_back(arg);
-					stackTop = arg;
-				} else if (arg == 0x14) {
-					arg = readUInt32(bytecode + curr);	curr += 4;
-						inst.args.push_back(arg);
-						inst.comment = strings.at(arg);	// Check in range?
-				}
-			break;
-			case 0x08:
-			break;
-			case 0x15:
-				numArg = arg = readUInt32(bytecode + curr);	curr += 4;
-					inst.args.push_back(arg);
-				for (unsigned int counter = 0; counter < numArg; counter++) {
-					arg = readUInt32(bytecode + curr);	curr += 4;
-					inst.args.push_back(arg);
-				}
-			break;
-			case 0x30:
-				arg = readUInt32(bytecode + curr);	curr += 4;
-					inst.args.push_back(arg);
-				numArg = arg = readUInt32(bytecode + curr);	curr += 4;
-					inst.args.push_back(arg);
-				
-				for (unsigned int counter = 0; counter < numArg; counter++) {
-					arg = readUInt32(bytecode + curr);	curr += 4;
-					inst.args.push_back(arg);
-				}
-				numArg = arg = readUInt32(bytecode + curr);	curr += 4;
-					inst.args.push_back(arg);
-				for (unsigned int counter = 0; counter < numArg; counter++) {
-					arg = readUInt32(bytecode + curr);	curr += 4;
-					inst.args.push_back(arg);
-				}
-								
-				arg = readUInt32(bytecode + curr);	curr += 4;
-					inst.args.push_back(arg);		// something about return type?
-				if (stackTop == 0x0c || stackTop == 0x4c || stackTop == 0x4d) {	// check if right.. somehow
-					arg = readUInt32(bytecode + curr);	curr += 4;
-					inst.args.push_back(arg);
-				}
-			break;
-			case 0x00:
-			default:
-				inst.nop = true;
-				Logger::Log(Logger::DEBUG) << "Address 0x" << std::hex << std::setw(4) << +inst.address;
-				Logger::Log(Logger::DEBUG) << ":  NOP encountered: 0x" << std::setw(2) << +opcode << std::dec << std::endl;
-		}
-		instList.push_back(inst);
-	}
-	return instList;
-}
+class BytecodeParser {
+	private:
+		unsigned char* bytecode = NULL;
+		unsigned int dataLength = 0;
+		unsigned int currAddress = 0;
+		// bastard rule of 3/5
+		BytecodeParser(const BytecodeParser& src);
+    BytecodeParser& operator=(const BytecodeParser& src);
+		
+		unsigned int readArg(Instruction &inst, unsigned int argSize);
+		void readArgs(Instruction &inst);
+	public:
+		BytecodeParser(std::ifstream &f, HeaderPair index);
+		//void readBytecode(std::ifstream &f, HeaderPair index);
+		Instructions parseBytecode(const StringList &strings, const StringList &strings2);
+		~BytecodeParser();
+};
+
 
 void populateMnemonics(StringList &mnemonics) {
 	std::stringstream hexStream;
@@ -369,6 +258,10 @@ int main(int argc, char* argv[]) {
 	
 	std::string filename(argv[optind]);
 	std::ifstream fileStream(filename, std::ifstream::in | std::ifstream::binary);
+	if (!fileStream.is_open()) {
+		Logger::Log(Logger::ERROR) << "Could not open file " << filename;
+		return 1;
+	}
 	
 	if (outFilename.empty())
 		outFilename = filename + std::string(".asm");
@@ -385,8 +278,9 @@ int main(int argc, char* argv[]) {
 	// Read labels, markers, functions, commands
 	LabelData controlInfo = readLabelData(fileStream, header, filename);
 	
-	char* bytecode = readBytecode(fileStream, header.bytecode);
-	Instructions instList = parseBytecode(bytecode, header.bytecode.count, mainStrings, varStrings);
+	
+	BytecodeParser parser(fileStream, header.bytecode);
+	Instructions instList = parser.parseBytecode(mainStrings, varStrings);
 	
 	// TODO: handle these
 	if (header.unknown6.count != 0) {
@@ -402,8 +296,157 @@ int main(int argc, char* argv[]) {
 	populateMnemonics(mnemonics);
 	
 	printInstructions(instList, mnemonics, outFilename, controlInfo);
-
-	delete[] bytecode;
 	
 	return 0;
+}
+
+
+// Parsing the bytecode
+
+
+BytecodeParser::BytecodeParser(std::ifstream &f, HeaderPair index) {
+	f.seekg(index.offset, std::ios_base::beg);
+	
+	dataLength = index.count;
+	bytecode = new unsigned char[dataLength];
+	
+	f.read((char*) bytecode, dataLength);
+	if (f.fail()) {
+		Logger::Log(Logger::ERROR) << "Tried to read " << dataLength << " bytes, got" << f.gcount() << std::endl;
+		throw std::exception();
+	}
+	Logger::Log(Logger::INFO) << "Read " << f.gcount() << " bytes of bytecode." << std::endl;
+}
+
+unsigned int BytecodeParser::readArg(Instruction &inst, unsigned int argSize = 4) {
+	unsigned int arg;
+	if (argSize == 4) {
+		arg = readUInt32(bytecode + currAddress);
+		currAddress += 4;
+	} else if (argSize == 1) {
+		arg = bytecode[currAddress++];
+	}
+	inst.args.push_back(arg);
+	return arg;
+}
+
+void BytecodeParser::readArgs(Instruction &inst) {
+	unsigned int numArg = readArg(inst);
+
+	if (numArg > 1) {
+		Logger::Log(Logger::DEBUG) << "Address 0x" << std::hex << std::setw(4) << +inst.address;
+		Logger::Log(Logger::DEBUG) << ":  Reading: " << std::dec << numArg << " arguments." << std::endl;
+		
+		if (dataLength - currAddress < 4 * numArg) {
+			Logger::Log(Logger::ERROR) << "Going to overflow." << std::endl;
+			throw std::exception();
+		}
+		
+	}
+
+	for (unsigned int counter = 0; counter < numArg; counter++) {
+		readArg(inst);
+	}
+}
+
+// Stolen from tanuki
+// https://github.com/bitprime/vn_translation_tools/blob/master/rewrite/
+Instructions BytecodeParser::parseBytecode(const StringList &strings, const StringList &strings2) {
+	unsigned int arg;
+	unsigned char opcode;
+	Instructions instList;
+	unsigned int stackTop = 0;	// 0xa stack
+	
+	Logger::Log(Logger::DEBUG) << "Parsing " << std::to_string(dataLength) << " bytes.\n";
+	
+	while (currAddress < dataLength) {
+		Instruction inst;
+		inst.address = currAddress;
+		opcode = bytecode[currAddress++];
+		inst.opcode = opcode;
+		switch (opcode) {
+			case 0x01:
+			case 0x03:
+			case 0x04:	// load value > ??
+			case 0x10:
+			case 0x11:
+			case 0x12:
+			case 0x31:
+				readArg(inst);
+			break;
+			case 0x05:
+			case 0x06:
+			case 0x09:
+			case 0x32:
+			break;
+			case 0x16:
+				Logger::Log(Logger::INFO) << "End of script reached at address 0x" << std::hex << inst.address << std::dec << std::endl;
+			break;
+			case 0x07:
+				readArg(inst);
+				arg = readArg(inst);
+				try {
+					inst.comment = strings2.at(arg);
+				} catch (std::out_of_range &e) {
+					Logger::Log(Logger::WARN) << "Missing string id " << arg << " at 0x" << std::hex << inst.address << std::dec << std::endl;
+				}
+			break;
+			case 0x13:
+			case 0x14:
+			case 0x20:
+				readArg(inst);
+				readArg(inst);
+				readArg(inst);
+			break;
+			case 0x21:
+				readArg(inst);
+				readArg(inst, 1);
+			break;
+			case 0x22:	// calc. 0x10 is subtract?
+				readArg(inst);
+				readArg(inst);
+				readArg(inst, 1);
+			break;
+			case 0x02:
+				arg = readArg(inst);
+				if (arg == 0x0a) {
+					arg = readArg(inst);
+					stackTop = arg;
+				} else if (arg == 0x14) {
+					arg = readArg(inst);
+					inst.comment = strings.at(arg);	// Check in range?
+				}
+			break;
+			case 0x08:
+			break;
+			case 0x15:
+				readArgs(inst);
+			break;
+			case 0x30:
+				readArg(inst);
+				readArgs(inst);
+				readArgs(inst);
+								
+				readArg(inst);		// something about return type?
+				if (stackTop == 0x02 || 
+						stackTop == 0x0a || stackTop == 0x0c || stackTop == 0x0d || 
+						stackTop == 0x4c || stackTop == 0x4d
+				) {	// check if right.. somehow
+					readArg(inst);
+				}
+			break;
+			case 0x00:
+			default:
+				inst.nop = true;
+				Logger::Log(Logger::DEBUG) << "Address 0x" << std::hex << std::setw(4) << +inst.address;
+				Logger::Log(Logger::DEBUG) << ":  NOP encountered: 0x" << std::setw(2) << +opcode << std::dec << std::endl;
+		}
+		instList.push_back(inst);
+	}
+	return instList;
+}
+
+BytecodeParser::~BytecodeParser() {
+	if (bytecode)	// don't need check
+		delete[] bytecode;
 }
