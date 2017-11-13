@@ -1,6 +1,12 @@
 // TODO: function backup? offset? table index thing
 // TODO: check the ranges are right
 
+// TODO (but in the future): recognize control structure: switch is
+// [05]
+// dup stack, push val
+// cmp stack, je
+// pop stack
+
 #define __USE_MINGW_ANSI_STDIO 0
 
 #include <iostream>
@@ -53,8 +59,8 @@ void readScriptHeader(std::ifstream &f, ScriptHeader &header) {
 	readHeaderPair(f, header.functionNameIndex);
 	readHeaderPair(f, header.functionName);
 	
-	readHeaderPair(f, header.stringsIndex2);
-	readHeaderPair(f, header.strings2);
+	readHeaderPair(f, header.varStringIndex);
+	readHeaderPair(f, header.varStringData);
 	
 	readHeaderPair(f, header.unknown6);
 	readHeaderPair(f, header.unknown7);
@@ -78,6 +84,8 @@ Instructions parseBytecode(char* bytecode, unsigned int length,
 	Instructions instList;
 	unsigned int stackTop = 0;	// unsure if actual stack. to ask
 	
+	Logger::Log(Logger::DEBUG) << "Reading " << +length << " bytes.\n";
+	
 	while (curr < length) {
 		Instruction inst;
 		inst.address = curr;
@@ -86,7 +94,7 @@ Instructions parseBytecode(char* bytecode, unsigned int length,
 		switch (opcode) {
 			case 0x01:
 			case 0x03:
-			case 0x04:
+			case 0x04:	// load value > ??
 			case 0x10:
 			case 0x11:
 			case 0x12:
@@ -128,7 +136,7 @@ Instructions parseBytecode(char* bytecode, unsigned int length,
 				arg = bytecode[curr++];
 					inst.args.push_back(arg);
 			break;
-			case 0x22:
+			case 0x22:	// calc. 0x10 is subtract?
 				arg = readUInt32(bytecode + curr);	curr += 4;
 					inst.args.push_back(arg);
 				arg = readUInt32(bytecode + curr);	curr += 4;
@@ -164,8 +172,6 @@ Instructions parseBytecode(char* bytecode, unsigned int length,
 					inst.args.push_back(arg);
 				numArg = arg = readUInt32(bytecode + curr);	curr += 4;
 					inst.args.push_back(arg);
-				Logger::Log(Logger::DEBUG) << "Address 0x" << std::hex << std::setw(4) << +inst.address << std::dec;
-				Logger::Log(Logger::DEBUG) << ":  arg count: " << numArg;
 				
 				for (unsigned int counter = 0; counter < numArg; counter++) {
 					arg = readUInt32(bytecode + curr);	curr += 4;
@@ -177,9 +183,7 @@ Instructions parseBytecode(char* bytecode, unsigned int length,
 					arg = readUInt32(bytecode + curr);	curr += 4;
 					inst.args.push_back(arg);
 				}
-				
-				Logger::Log(Logger::DEBUG) << " " << numArg << std::endl;
-				
+								
 				arg = readUInt32(bytecode + curr);	curr += 4;
 					inst.args.push_back(arg);		// something about return type?
 				if (stackTop == 0x0c || stackTop == 0x4c || stackTop == 0x4d) {	// check if right.. somehow
@@ -210,6 +214,10 @@ void populateMnemonics(StringList &mnemonics) {
 		mnemonics[i] = "[" + hexStream.str() + "]";
 		hexStream.str("");
 	}
+	mnemonics[0x02] = "push";		// value onto target stack
+	mnemonics[0x03] = "pop";		// and discard
+	//mnemonics[0x04] = "dup";
+	mnemonics[0x07] = "pop";		// value from target stack into target var
 	mnemonics[0x10] = "jmp";
 	mnemonics[0x11] = "je";
 	mnemonics[0x12] = "jne";
@@ -275,9 +283,15 @@ void printInstructions(Instructions instList, StringList mnemonics, std::string 
 		stream << "0x" << std::setw(4) << std::hex << instruction.address << ">\t";
 		stream << std::setw(2) << +instruction.opcode << "| ";	// +instruction promotes to printable number
 		stream << mnemonics[instruction.opcode] << "\t";
-		for (auto argIt = instruction.args.begin(); argIt != instruction.args.end(); argIt++) {
-			if (argIt != instruction.args.begin()) stream << ", ";
-			stream << "0x" << *argIt;
+		// String pointer stack
+		if ((instruction.opcode == 0x02 || instruction.opcode == 0x07) && (instruction.args[0] == 0x14)) {
+			stream << "0x" << instruction.args[0] << ", [";
+			stream << std::setw(4) << instruction.args[1] << "]";
+		} else {
+			for (auto argIt = instruction.args.begin(); argIt != instruction.args.end(); argIt++) {
+				if (argIt != instruction.args.begin()) stream << ", ";
+				stream << "0x" << *argIt;
+			}
 		}
 		if (!instruction.comment.empty())
 			stream << "\t; " << instruction.comment;
@@ -364,7 +378,7 @@ int main(int argc, char* argv[]) {
 	
 	StringList mainStrings = readStrings(fileStream, header.stringIndex, header.stringData, true);
 	StringList strings1 = readStrings(fileStream, header.stringsIndex1, header.strings1);
-	StringList strings2 = readStrings(fileStream, header.stringsIndex2, header.strings2);
+	StringList varStrings = readStrings(fileStream, header.varStringIndex, header.varStringData);
 	
 	Logger::Log(Logger::INFO) << strings1;
 	
@@ -372,7 +386,7 @@ int main(int argc, char* argv[]) {
 	LabelData controlInfo = readLabelData(fileStream, header, filename);
 	
 	char* bytecode = readBytecode(fileStream, header.bytecode);
-	Instructions instList = parseBytecode(bytecode, header.bytecode.count, mainStrings, strings2);
+	Instructions instList = parseBytecode(bytecode, header.bytecode.count, mainStrings, varStrings);
 	
 	// TODO: handle these
 	if (header.unknown6.count != 0) {

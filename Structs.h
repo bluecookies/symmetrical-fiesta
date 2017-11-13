@@ -44,8 +44,8 @@ struct ScriptHeader {
 	HeaderPair functions;
 	HeaderPair functionNameIndex;
 	HeaderPair functionName;
-	HeaderPair stringsIndex2;   // string index
-	HeaderPair strings2;   // string data
+	HeaderPair varStringIndex;
+	HeaderPair varStringData;
 	HeaderPair unknown6;   // 
 	HeaderPair unknown7;   // 
 };
