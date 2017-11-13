@@ -67,6 +67,8 @@ StringList readStrings(std::ifstream &f, HeaderPair index, HeaderPair data, bool
 	delete[] strBuf;
 	delete[] stringIndices;
 	
+	Logger::Log(Logger::INFO) << "Read " << index.count << " strings from 0x" << std::hex << data.offset << std::dec << std::endl;
+	
 	return strings;
 }
 

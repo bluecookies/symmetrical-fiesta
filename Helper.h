@@ -38,7 +38,7 @@
 
 
 typedef std::vector<std::string> StringList;
-
+ 
 unsigned int readUInt32(unsigned char* buf);
 unsigned int readUInt32(char* buf);
 void readHeaderPair(std::ifstream &stream, HeaderPair &pair);

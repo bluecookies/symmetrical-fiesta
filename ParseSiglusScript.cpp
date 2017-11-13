@@ -98,7 +98,11 @@ Instructions parseBytecode(char* bytecode, unsigned int length,
 					inst.args.push_back(arg);
 				arg = readUInt32(bytecode + curr);	curr += 4;
 					inst.args.push_back(arg);
-					inst.comment = strings2.at(arg);
+					try {
+						inst.comment = strings2.at(arg);
+					} catch (std::out_of_range &e) {
+						Logger::Log(Logger::WARN) << "Missing string id " << arg << " at 0x" << std::hex << inst.address << std::dec << std::endl;
+					}
 			break;
 			case 0x13:
 			case 0x14:
@@ -194,7 +198,7 @@ void populateMnemonics(StringList &mnemonics) {
 	// Temporary
 	mnemonics[0] = "nop";
 	for (unsigned char i = 1; i != 0; i++) {	//probs undefined behaviour, but temporary
-		hexStream << std::setw(2) << std::to_string(i);
+		hexStream << std::setw(2) << +i;
 		mnemonics[i] = "[" + hexStream.str() + "]";
 		hexStream.str("");
 	}
@@ -223,6 +227,7 @@ void printInstructions(Instructions instList, StringList mnemonics, std::string 
 	const std::vector<unsigned int> &labels,
 	const std::vector<unsigned int> &markers,
 	const std::vector<unsigned int> &functions,
+	const std::vector<HeaderPair> &functions2,
 	const std::vector<unsigned int> &commands,
 	StringList functionNames, StringList cmdNames
 ){
@@ -247,11 +252,16 @@ void printInstructions(Instructions instList, StringList mnemonics, std::string 
 			}
 		}
 		for (labelIt = functions.begin(); labelIt != functions.end(); labelIt++) {
-			if (*labelIt == instruction.address) {
+			if (*labelIt == instruction.address) {	// Misleading
 				stream << "\nSetFunction " << (labelIt - functions.begin()) << ":";
 				// Check if function names is empty (or at least exists the name)
 				stream << "\t; " << functionNames.at(labelIt - functions.begin());
 				stream << std::endl;
+			}
+		}
+		for (auto func2It = functions2.begin(); func2It != functions2.end(); func2It++) {
+			if ((*func2It).count == instruction.address) {	// Misleading
+				stream << "\nSetFunction " << ((*func2It).offset) << ":\n";
 			}
 		}
 		for (labelIt = commands.begin(); labelIt != commands.end(); labelIt++) {
@@ -321,7 +331,7 @@ int main(int argc, char* argv[]) {
 	StringList functionNames = readStrings(fileStream, header.functionNameIndex, header.functionName);
 	
 	Logger::Log(Logger::INFO) << strings1;
-	
+		
 	// Read labels - TODO: check out of range
 	unsigned int offset;
 	
@@ -349,6 +359,17 @@ int main(int argc, char* argv[]) {
 		functions.push_back(offset);
 	}
 	
+	std::vector<HeaderPair> functions2;
+	functions.reserve(header.functionIndex.count);
+	fileStream.seekg(header.functionIndex.offset, std::ios_base::beg);
+	HeaderPair pair;
+	for (unsigned int i = 0; i < header.functionIndex.count; i++) {
+		fileStream.read((char*) &pair.offset, 4);
+		fileStream.read((char*) &pair.count, 4);
+		functions2.push_back(pair);
+	}
+	
+	
 	char* bytecode = readBytecode(fileStream, header.bytecode);
 	Instructions instList = parseBytecode(bytecode, header.bytecode.count, mainStrings, strings2);
 	
@@ -370,7 +391,7 @@ int main(int argc, char* argv[]) {
 	StringList mnemonics(0x100);
 	populateMnemonics(mnemonics);
 	
-	printInstructions(instList, mnemonics, outFilename, labels, markers, functions, commands, functionNames, commandNames);
+	printInstructions(instList, mnemonics, outFilename, labels, markers, functions, functions2, commands, functionNames, commandNames);
 
 	delete[] bytecode;
 	
