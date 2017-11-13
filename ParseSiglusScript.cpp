@@ -24,6 +24,14 @@ struct Instruction {
 	bool nop = false;
 	std::string comment;
 };
+
+struct LabelData {
+	std::vector<unsigned int> labels, markers, functions, commands;
+	std::vector<HeaderPair> functionTable;
+	StringList functionNames, commandNames;
+};
+
+
 typedef std::vector<Instruction> Instructions;
 
 void readScriptHeader(std::ifstream &f, ScriptHeader &header) {
@@ -222,15 +230,8 @@ void readCommands(const std::string filename, std::vector<unsigned int> &offsets
 	stream.close();
 }
 
-// TODO: this is getting kind of unwieldy
-void printInstructions(Instructions instList, StringList mnemonics, std::string filename, 
-	const std::vector<unsigned int> &labels,
-	const std::vector<unsigned int> &markers,
-	const std::vector<unsigned int> &functions,
-	const std::vector<HeaderPair> &functions2,
-	const std::vector<unsigned int> &commands,
-	StringList functionNames, StringList cmdNames
-){
+// TODO: still ugly. clean up
+void printInstructions(Instructions instList, StringList mnemonics, std::string filename, LabelData info) {
 	std::ofstream stream(filename);
 	stream << std::setfill('0');
 	
@@ -240,33 +241,32 @@ void printInstructions(Instructions instList, StringList mnemonics, std::string 
 	for (it = instList.begin(); it != instList.end(); it++) {
 		instruction = *it;
 		// Check for labels, markers and functions
-		for (labelIt = labels.begin(); labelIt != labels.end(); labelIt++) {
+		for (labelIt = info.labels.begin(); labelIt != info.labels.end(); labelIt++) {
 			if (*labelIt == instruction.address) {
-				stream << "\nSetLabel " << (labelIt - labels.begin()) << ":" << std::endl;
+				stream << "\nSetLabel " << (labelIt - info.labels.begin()) << ":" << std::endl;
 			}
 		}
-		for (labelIt = markers.begin(); labelIt != markers.end(); labelIt++) {
+		for (labelIt = info.markers.begin(); labelIt != info.markers.end(); labelIt++) {
 			if (*labelIt == 0) continue;
 			if (*labelIt == instruction.address) {
-				stream << "\nSetMarker " << (labelIt - markers.begin()) << ":" << std::endl;
+				stream << "\nSetMarker " << (labelIt - info.markers.begin()) << ":" << std::endl;
 			}
 		}
-		for (labelIt = functions.begin(); labelIt != functions.end(); labelIt++) {
-			if (*labelIt == instruction.address) {	// Misleading
-				stream << "\nSetFunction " << (labelIt - functions.begin()) << ":";
-				// Check if function names is empty (or at least exists the name)
-				stream << "\t; " << functionNames.at(labelIt - functions.begin());
+		for (labelIt = info.functions.begin(); labelIt != info.functions.end(); labelIt++) {
+			if (*labelIt == instruction.address) {
+				stream << "\nSetFunction " << (labelIt - info.functions.begin()) << ":";
+				stream << "\t; " << info.functionNames.at(labelIt - info.functions.begin());
 				stream << std::endl;
 			}
 		}
-		for (auto func2It = functions2.begin(); func2It != functions2.end(); func2It++) {
+		for (auto func2It = info.functionTable.begin(); func2It != info.functionTable.end(); func2It++) {
 			if ((*func2It).count == instruction.address) {	// Misleading
-				stream << "\nSetFunction " << ((*func2It).offset) << ":\n";
+				stream << "SetFunction " << ((*func2It).offset) << ":\n";
 			}
 		}
-		for (labelIt = commands.begin(); labelIt != commands.end(); labelIt++) {
+		for (labelIt = info.commands.begin(); labelIt != info.commands.end(); labelIt++) {
 			if (*labelIt == instruction.address) {
-				stream << "\nSetCommand " << cmdNames.at(labelIt - commands.begin()) << std::endl;
+				stream << "\nSetCommand " << info.commandNames.at(labelIt - info.commands.begin()) << std::endl;
 			}
 		}
 		
@@ -286,6 +286,43 @@ void printInstructions(Instructions instList, StringList mnemonics, std::string 
 	}
 	
 	stream.close();
+}
+
+void readLabels(std::ifstream &stream, std::vector<unsigned int> &labels, HeaderPair index) {
+	labels.reserve(index.count);
+	stream.seekg(index.offset, std::ios_base::beg);
+	unsigned int offset;
+	for (unsigned int i = 0; i < index.count; i++) {
+		stream.read((char*) &offset, 4);
+		labels.push_back(offset);
+	}
+}
+
+LabelData readLabelData(std::ifstream &stream, ScriptHeader header, const std::string filename) {
+	LabelData info;
+	
+	// Read markers
+	readLabels(stream, info.labels, header.labels);
+	readLabels(stream, info.markers, header.markers);
+	readLabels(stream, info.functions, header.functions);
+	
+	// Read function names
+	info.functionNames = readStrings(stream, header.functionNameIndex, header.functionName);
+		
+	// Read function index
+	info.functionTable.reserve(header.functionIndex.count);
+	stream.seekg(header.functionIndex.offset, std::ios_base::beg);
+	HeaderPair pair;
+	for (unsigned int i = 0; i < header.functionIndex.count; i++) {
+		stream.read((char*) &pair.offset, 4);
+		stream.read((char*) &pair.count, 4);
+		info.functionTable.push_back(pair);
+	}
+	
+	// Read commands
+	readCommands(filename + ".commands", info.commands, info.commandNames);
+	
+	return info;
 }
 
 int main(int argc, char* argv[]) {
@@ -328,47 +365,11 @@ int main(int argc, char* argv[]) {
 	StringList mainStrings = readStrings(fileStream, header.stringIndex, header.stringData, true);
 	StringList strings1 = readStrings(fileStream, header.stringsIndex1, header.strings1);
 	StringList strings2 = readStrings(fileStream, header.stringsIndex2, header.strings2);
-	StringList functionNames = readStrings(fileStream, header.functionNameIndex, header.functionName);
 	
 	Logger::Log(Logger::INFO) << strings1;
-		
-	// Read labels - TODO: check out of range
-	unsigned int offset;
 	
-	std::vector<unsigned int> labels;
-	labels.reserve(header.labels.count);
-	fileStream.seekg(header.labels.offset, std::ios_base::beg);
-	for (unsigned int i = 0; i < header.labels.count; i++) {
-		fileStream.read((char*) &offset, 4);
-		labels.push_back(offset);
-	}
-	
-	std::vector<unsigned int> markers;
-	markers.reserve(header.markers.count);
-	fileStream.seekg(header.markers.offset, std::ios_base::beg);
-	for (unsigned int i = 0; i < header.markers.count; i++) {
-		fileStream.read((char*) &offset, 4);
-		markers.push_back(offset);
-	}
-	
-	std::vector<unsigned int> functions;
-	functions.reserve(header.functions.count);
-	fileStream.seekg(header.functions.offset, std::ios_base::beg);
-	for (unsigned int i = 0; i < header.functions.count; i++) {
-		fileStream.read((char*) &offset, 4);
-		functions.push_back(offset);
-	}
-	
-	std::vector<HeaderPair> functions2;
-	functions.reserve(header.functionIndex.count);
-	fileStream.seekg(header.functionIndex.offset, std::ios_base::beg);
-	HeaderPair pair;
-	for (unsigned int i = 0; i < header.functionIndex.count; i++) {
-		fileStream.read((char*) &pair.offset, 4);
-		fileStream.read((char*) &pair.count, 4);
-		functions2.push_back(pair);
-	}
-	
+	// Read labels, markers, functions, commands
+	LabelData controlInfo = readLabelData(fileStream, header, filename);
 	
 	char* bytecode = readBytecode(fileStream, header.bytecode);
 	Instructions instList = parseBytecode(bytecode, header.bytecode.count, mainStrings, strings2);
@@ -383,15 +384,10 @@ int main(int argc, char* argv[]) {
 	}
 	fileStream.close();
 	
-	// Read commands
-	std::vector<unsigned int> commands;
-	StringList commandNames;
-	readCommands(filename + ".commands", commands, commandNames);
-	
 	StringList mnemonics(0x100);
 	populateMnemonics(mnemonics);
 	
-	printInstructions(instList, mnemonics, outFilename, labels, markers, functions, functions2, commands, functionNames, commandNames);
+	printInstructions(instList, mnemonics, outFilename, controlInfo);
 
 	delete[] bytecode;
 	

@@ -11,6 +11,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <iomanip>
 #include <cstdint>
 
 #include <cassert>
@@ -159,6 +160,15 @@ int main(int argc, char* argv[]) {
 			std::cerr << "Error at pack " << +i << ": " << sceneNames.at(i) << std::endl;
 			std::cerr << "Expected " << std::hex << sceneDataInfo.at(i).count << " at address 0x";
 			std::cerr << offset << ", got " << compressedSize << ".\n";
+			if (header.extraKeyUse && !keyProvided) {
+				unsigned int possibleKey = (sceneDataInfo.at(i).count ^ compressedSize);
+				std::cout << "Possibly requiring key starting with " << std::hex << std::setfill('0');
+				for (unsigned int k = 0; k < 4; k++) {
+					std::cout << std::setw(2) << (possibleKey & 0xFF) << " ";
+					possibleKey >>= 8;
+				}
+				std::cout << std::endl;
+			}
 			exit(1);
 		}
 		unsigned char* decompressed = new unsigned char[decompressedSize];
