@@ -45,10 +45,13 @@ int main(int argc, char* argv[]) {
 	extern char *optarg;
 	extern int optind;
 	
-	static char usageString[] = "Usage: readscene [-d outdir] [-v] [Scene.pck]";
+	static char usageString[] = "Usage: readscene [-d outdir] [-v] [-k xorkey] [Scene.pck]";
+	
+	bool keyProvided = false;
+	unsigned char extraKey[16];
 	
 	int option = 0;
-	while ((option = getopt(argc, argv, "d:v")) != -1) {
+	while ((option = getopt(argc, argv, "d:vk:")) != -1) {
 		switch (option) {
 		case 'v':
 			Logger::increaseVerbosity();
@@ -57,6 +60,12 @@ int main(int argc, char* argv[]) {
 			std::cout << "Wait, don't actually use this yet: " << optarg << std::endl;
 			return 0;
 		break;
+		case 'k': {
+			keyProvided = true;
+			std::ifstream keyfile(optarg, std::ifstream::in | std::ifstream::binary);
+			keyfile.read((char*) extraKey, 16);
+			keyfile.close();
+		} break;
 		default:
 			std::cout << usageString << std::endl;
 			return 1;
@@ -67,6 +76,8 @@ int main(int argc, char* argv[]) {
 	if (optind < argc) {
 		filename = argv[optind];
 	}
+	
+	
 	std::ifstream fileStream(filename, std::ifstream::in | std::ifstream::binary);
 	
 	// TODO: Check Scene.pck.hash
@@ -132,7 +143,10 @@ int main(int argc, char* argv[]) {
 		fileStream.read((char*) buffer, sceneDataInfo.at(i).count);
 		
 		if (header.extraKeyUse) {
-			decodeExtra(buffer, sceneDataInfo.at(i).count);
+			if (keyProvided)
+				decodeExtra(buffer, sceneDataInfo.at(i).count, extraKey);
+			else
+				std::cout << "Warning: extra xor key required (probably)." << std::endl;
 		}
 		
 		decodeData(buffer, sceneDataInfo.at(i).count);
@@ -153,24 +167,24 @@ int main(int argc, char* argv[]) {
 		
 		// Dump decompressed
 		std::string outfile = outdir + "/" + sceneNames.at(i) + ".ss";
-		outStream.open(outfile, std::ofstream::out | std::ofstream::binary);
-		outStream.write((char*) decompressed, decompressedSize);
+		auto outFile = OPEN_OFSTREAM(outfile);
+		WRITE_FILE(outFile, decompressed, decompressedSize);
 		
 		std::string cmdName;
-		cmdFile.open(outfile + ".commands", std::ofstream::out | std::ofstream::binary);
+		auto cmdFile = OPEN_OFSTREAM(outfile + ".commands");
 		for (auto it = cmdInfo.begin(); it != cmdInfo.end(); it++) {
 			if ((*it).offset == i) {
-				cmdFile.write((char*) &(*it).count, 4);	// instruction address
+				WRITE_FILE(cmdFile, &(*it).count, 4);	// instruction address
 				cmdName = cmdNames.at(it - cmdInfo.begin());
-				cmdFile.write(cmdName.c_str(), cmdName.length());
-				cmdFile.put('\0');
+				WRITE_FILE(cmdFile, cmdName.c_str(), cmdName.length());
+				PUTC_FILE(cmdFile, '\0');
 			}
 		}
-		cmdFile.close();
+		CLOSE_OFSTREAM(cmdFile);
 		
 		delete[] buffer;
 		delete[] decompressed;
-		outStream.close();
+		CLOSE_OFSTREAM(outFile);
 	}
 	fileStream.close();
 

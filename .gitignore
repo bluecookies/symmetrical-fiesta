@@ -12,6 +12,8 @@
 *.asm
 *.commands
 
+*.key
+
 # go away
 .DS_Store
 

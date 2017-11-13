@@ -7,6 +7,36 @@
 
 #include "Structs.h"
 
+// not sure how this is meant to be done
+// hope i don't get bitten
+
+// mingw actually, i'm sure visual studio would be better
+#ifdef XXX_WIN32
+	#include <locale>
+	#include <codecvt>
+	#include <windows.h>
+	#ifdef ERROR
+		// I could change, but this is just annoying
+		#undef ERROR
+	#endif
+	static std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> g_UTF16Conv;
+	// typedef
+	// broken
+	#define OPEN_OFSTREAM(filename) _wfopen(g_UTF16Conv.from_bytes((filename)).data(), L"wb")
+	#define WRITE_FILE(handle, buf, length) WriteFile(handle, buf, length, NULL, NULL)
+	#define PUTC_FILE(handle, c) putc(c, handle)
+	// CloseHandle
+	#define CLOSE_OFSTREAM(handle) fclose(handle) 
+#else
+	#define OPEN_OFSTREAM(filename) std::ofstream(filename, std::ios::out | std::ios::binary)
+	#define WRITE_FILE(stream, buf, length) stream.write((char*) buf, length)
+	#define PUTC_FILE(stream, c) stream.put(c)
+	#define CLOSE_OFSTREAM(stream) stream.close()
+#endif
+// i'm getting bitten, help
+// this is not the way its mean't to be done
+
+
 typedef std::vector<std::string> StringList;
 
 unsigned int readUInt32(unsigned char* buf);
@@ -37,7 +67,7 @@ inline StringList operator + (std::vector<HeaderPair> pairs, StringList strings)
 
 StringList readFilenames(std::ifstream &f, unsigned int numFiles);
 
-void decodeExtra(unsigned char* debuf, unsigned int desize);
+void decodeExtra(unsigned char* debuf, unsigned int desize, unsigned char* key);
 void decodeData(unsigned char* debuf, unsigned int desize);
 void decompressData(unsigned char* compData, unsigned char* decompBegin, unsigned int decompSize);
 
