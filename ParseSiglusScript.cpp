@@ -128,6 +128,7 @@ void readCommands(const std::string filename, std::vector<unsigned int> &offsets
 }
 
 // TODO: still ugly. clean up
+// TODO: also, now its slow for some reason
 void printInstructions(Instructions instList, StringList mnemonics, std::string filename, LabelData info) {
 	std::ofstream stream(filename);
 	stream << std::setfill('0');
@@ -138,6 +139,7 @@ void printInstructions(Instructions instList, StringList mnemonics, std::string 
 	for (it = instList.begin(); it != instList.end(); it++) {
 		instruction = *it;
 		// Check for labels, markers and functions
+		// optimize this - its not premature anymore
 		for (labelIt = info.labels.begin(); labelIt != info.labels.end(); labelIt++) {
 			if (*labelIt == instruction.address) {
 				stream << "\nSetLabel " << (labelIt - info.labels.begin()) << ":" << std::endl;
@@ -428,7 +430,7 @@ Instructions BytecodeParser::parseBytecode(const StringList &strings, const Stri
 				readArgs(inst);
 								
 				readArg(inst);		// something about return type?
-				if (stackTop == 0x02 || 
+				if (stackTop == 0x02 || stackTop == 0x08 ||
 						stackTop == 0x0a || stackTop == 0x0c || stackTop == 0x0d || 
 						stackTop == 0x4c || stackTop == 0x4d
 				) {	// check if right.. somehow
