@@ -555,7 +555,14 @@ void BytecodeParser::parseBytecode(Instructions &instList, const StringList &str
 				}
 			break;
 			case 0x13:
+				readArg(inst);
+				readArg(inst);
+			break;
 			case 0x14:
+				readArg(inst);
+				readArg(inst);
+				readArg(inst);
+			break;
 			case 0x20:
 				readArg(inst);
 				readArg(inst);
