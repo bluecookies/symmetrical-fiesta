@@ -91,6 +91,7 @@ namespace Logger {
 		const int WARN = 2;
 		const int INFO = 3;
 		const int DEBUG = 4;
+		const int VERBOSE_DEBUG = 5;
 	//};
 	extern int LogLevel;
 	
