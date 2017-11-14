@@ -11,6 +11,7 @@
 
 #define __USE_MINGW_ANSI_STDIO 0
 
+#include <cstdio>
 #include <iostream>
 #include <iomanip>
 #include <fstream>
@@ -137,7 +138,7 @@ void readCommands(const std::string filename, std::vector<Label> &labels) {
 }
 
 // TODO: trying to hide ugliness (make it not ugly)
-void printLabels(std::ofstream &stream, const LabelData &info, unsigned int address) {
+void printLabels(FILE* f, const LabelData &info, unsigned int address) {
 	static std::vector<Label>::const_iterator 
 		labelIt = info.labels.begin(),
 		markerIt = info.markers.begin(),
@@ -149,50 +150,55 @@ void printLabels(std::ofstream &stream, const LabelData &info, unsigned int addr
 	
 	while (labelIt != info.labels.end()) {
 		label = *labelIt;
-		if (label.offset < address) {
+		if (label.offset <= address) {
 			labelIt++;
-		} else if (label.offset == address) {
-			stream << "\nSetLabel " << label.index << ":" << std::endl;
+		}
+		if (label.offset == address) {
+			fprintf(f, "\nSetLabel %x:\n", label.index);
 		} else {
 			break;
 		}
 	}
 	while (markerIt != info.markers.end()) {
 		label = *markerIt;
-		if (label.offset == 0 || label.offset < address) {
+		if (label.offset <= address) {
 			markerIt++;
-		} else if (label.offset == address) {
-			stream << "\nSetMarker " << label.index << ":" << std::endl;
+		} 
+		if (label.offset > 0 && label.offset == address) {
+			fprintf(f, "\nSetMarker %x:\n", label.index);
 		} else {
 			break;
 		}
 	}
 	while (functionIt != info.functions.end()) {
 		label = *functionIt;
-		if (label.offset < address) {
+		if (label.offset <= address) {
 			functionIt++;
-		} else if (label.offset == address) {
-			stream << "\nSetFunction " << label.index << ":\t; " << label.name << std::endl;
+		}
+		if (label.offset == address) {
+			fprintf(f, "\nSetFunction %x:\t; %s\n", label.index, label.name.c_str());
 		} else {
 			break;
 		}
 	}
 	while (commandIt != info.commands.end()) {
 		label = *commandIt;
-		if (label.offset < address) {
+		if (label.offset <= address) {
 			commandIt++;
-		} else if (label.offset == address) {
-			stream << "\nSetCommand " << label.index << ":\t; " << label.name << std::endl;
+		}
+		if (label.offset == address) {
+			fprintf(f, "\nSetCommand %x:\t; %s\n", label.index, label.name.c_str());
 		} else {
 			break;
 		}
 	}
 	while (functionTableIt != info.functionTable.end()) {
 		label = *functionTableIt;
-		if (label.offset < address) {
+		if (label.offset <= address) {
 			functionTableIt++;
-		} else if (label.offset == address) {
-			stream << "\nSetFunction " << label.index << ":" << std::endl;
+		} 
+		if (label.offset == address) {
+			fprintf(f, "\nSetFunction %x:\n", label.index);
 		} else {
 			break;
 		}
@@ -202,8 +208,8 @@ void printLabels(std::ofstream &stream, const LabelData &info, unsigned int addr
 
 
 void printInstructions(Instructions instList, StringList mnemonics, std::string filename, LabelData info) {
-	std::ofstream stream(filename);
-	stream << std::setfill('0');
+	// Drop some safety, not sure where the slowness is (should check)
+	FILE* f = fopen(filename.c_str(), "wb");
 	
 	// Sort label info
 	std::sort(info.labels.begin(), info.labels.end(), compOffset);
@@ -221,36 +227,34 @@ void printInstructions(Instructions instList, StringList mnemonics, std::string 
 	for (it = instList.begin(); it != instList.end(); it++) {
 		instruction = *it;
 		// Check for labels, markers and functions
-		printLabels(stream, info, instruction.address);
+		printLabels(f, info, instruction.address);
 		
 		// TODO: this would violate all bytes
 		if (instruction.nop) {
 			numNops++;
 			continue;
 		}
-		stream << "0x" << std::setw(4) << std::hex << instruction.address << ">\t";
-		stream << std::setw(2) << +instruction.opcode << "| ";	// +instruction promotes to printable number
-		stream << mnemonics[instruction.opcode] << "\t";
+		// TODO: print these to another file
+		
+		
+		fprintf(f, "%#06x>\t%02x| %s\t", instruction.address, instruction.opcode, mnemonics[instruction.opcode].c_str());
 		// String pointer stack
 		if ((instruction.opcode == 0x02 || instruction.opcode == 0x07) && (instruction.args[0] == 0x14)) {
-			stream << "0x" << instruction.args[0] << ", [";
-			stream << std::setw(4) << instruction.args[1] << "]";
+			fprintf(f, "%#x, [%#06x]", instruction.args[0], instruction.args[1]);
 		} else {
 			for (auto argIt = instruction.args.begin(); argIt != instruction.args.end(); argIt++) {
-				if (argIt != instruction.args.begin()) stream << ", ";
-				stream << "0x" << *argIt;
+				if (argIt != instruction.args.begin()) fprintf(f, ", ");
+				fprintf(f, "%#x", *argIt);
 			}
 		}
 		if (!instruction.comment.empty())
-			stream << "\t; " << instruction.comment;
+			fprintf(f, "\t; %s", instruction.comment.c_str());
 		
-		stream << std::endl;
+		fprintf(f, "\n");
 	}
 	
-	Logger::Log(Logger::INFO) << numNops << " NOP instructions skipped.\n";
-
-	
-	stream.close();
+	Logger::Log(Logger::INFO) << numNops << " NOP instructions skipped.\n";	
+	fclose(f);
 }
 
 void readLabels(std::ifstream &stream, std::vector<Label> &labels, HeaderPair index) {
