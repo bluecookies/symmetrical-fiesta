@@ -24,13 +24,15 @@ all: $(EXE)
 $(BINDIR)/readscene $(BINDIR)/readscene.exe: ReadScene.o
 $(BINDIR)/readgameexe $(BINDIR)/readgameexe.exe: ReadGameExe.o
 $(BINDIR)/extractpck $(BINDIR)/extractpck.exe: ExtractPack.o
-$(BINDIR)/parsess $(BINDIR)/parsess.exe: ParseSiglusScript.o
+$(BINDIR)/parsess $(BINDIR)/parsess.exe: ParseSiglusScript.o BytecodeParser.o
 
 $(EXE): Helper.o | $(BINDIR)
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 %.o: %.cpp $(HEADERS)
 	$(CXX) $(CXXFLAGS) -o $@ $<
+
+ParseSiglusScript.o BytecodeParser.o: BytecodeParser.h
 
 $(BINDIR):
 	$(MKDIR_P) $@
