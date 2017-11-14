@@ -10,7 +10,7 @@
 // pop stack
 
 #define __USE_MINGW_ANSI_STDIO 0
-#define _GLIBCXX_DEBUG
+//#define _GLIBCXX_DEBUG
 
 #include <cstdio>
 #include <iostream>
@@ -394,7 +394,6 @@ int main(int argc, char* argv[]) {
 	
 	BytecodeParser parser(fileStream, header.bytecode);
 	parser.parseBytecode(instList, mainStrings, varStrings);
-	printf("Size of instlist: %d %d\n", sizeof(instList), sizeof(Instruction)*instList.size());
 	
 	// TODO: handle these
 	if (header.unknown6.count != 0) {

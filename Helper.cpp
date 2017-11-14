@@ -49,7 +49,7 @@ StringList readStrings(std::ifstream &f, HeaderPair index, HeaderPair data, bool
 	}
 	
 	// Read data
-	/*char16_t* strBuf = new char16_t[512]; // I hope that's enough
+	char16_t* strBuf = new char16_t[512]; // I hope that's enough
 	for (unsigned int i = 0; i < index.count; i++) { 
 		f.seekg(data.offset + 2 * stringIndices[i].offset, std::ios_base::beg);
 		f.read((char*) strBuf, 2 * stringIndices[i].count);
@@ -63,24 +63,6 @@ StringList readStrings(std::ifstream &f, HeaderPair index, HeaderPair data, bool
 		std::u16string string16(strBuf, stringIndices[i].count);
 		try {
 			strings.push_back(g_UCS2Conv.to_bytes(string16));
-		} catch (std::exception &e) {
-			std::cout << "Exception: " << e.what() << std::endl;
-  	}
-	}*/
-		char* strBuf = new char[512]; // I hope that's enough
-	for (unsigned int i = 0; i < index.count; i++) { 
-		f.seekg(data.offset + 2 * stringIndices[i].offset, std::ios_base::beg);
-		f.read(strBuf, 2 * stringIndices[i].count);
-		
-		if (decode) {
-			for (unsigned int j = 0; j < stringIndices[i].count; j++) {
-				strBuf[j] ^= (i * 0x7087);
-			}
-		}
-		
-		std::string string8(strBuf, stringIndices[i].count*2);
-		try {
-			strings.push_back(string8);
 		} catch (std::exception &e) {
 			std::cout << "Exception: " << e.what() << std::endl;
   	}
