@@ -31,8 +31,16 @@ void readHeaderPair(unsigned char* buf, HeaderPair &pair) {
 StringList readStrings(std::ifstream &f, HeaderPair index, HeaderPair data, bool decode) {
 	assert(index.count == data.count);
 	
-	f.seekg(index.offset, std::ios_base::beg);
+	// Maybe read entire string block into buffer first
+	StringList strings;
 	
+	if (index.count == 0)
+		return strings;
+	
+	strings.reserve(index.count);
+	
+	f.seekg(index.offset, std::ios_base::beg);
+		
 	// Read offsets and lengths of strings
 	// offset and lengths are in wide chars (2 bytes)
 	HeaderPair* stringIndices = new HeaderPair[index.count];
@@ -40,13 +48,8 @@ StringList readStrings(std::ifstream &f, HeaderPair index, HeaderPair data, bool
 		readHeaderPair(f, stringIndices[i]);
 	}
 	
-	// Maybe read entire string block into buffer first
-	
-	StringList strings;
-	strings.reserve(index.count);
-	
 	// Read data
-	char16_t* strBuf = new char16_t[512]; // I hope that's enough
+	/*char16_t* strBuf = new char16_t[512]; // I hope that's enough
 	for (unsigned int i = 0; i < index.count; i++) { 
 		f.seekg(data.offset + 2 * stringIndices[i].offset, std::ios_base::beg);
 		f.read((char*) strBuf, 2 * stringIndices[i].count);
@@ -63,12 +66,30 @@ StringList readStrings(std::ifstream &f, HeaderPair index, HeaderPair data, bool
 		} catch (std::exception &e) {
 			std::cout << "Exception: " << e.what() << std::endl;
   	}
+	}*/
+		char* strBuf = new char[512]; // I hope that's enough
+	for (unsigned int i = 0; i < index.count; i++) { 
+		f.seekg(data.offset + 2 * stringIndices[i].offset, std::ios_base::beg);
+		f.read(strBuf, 2 * stringIndices[i].count);
+		
+		if (decode) {
+			for (unsigned int j = 0; j < stringIndices[i].count; j++) {
+				strBuf[j] ^= (i * 0x7087);
+			}
+		}
+		
+		std::string string8(strBuf, stringIndices[i].count*2);
+		try {
+			strings.push_back(string8);
+		} catch (std::exception &e) {
+			std::cout << "Exception: " << e.what() << std::endl;
+  	}
 	}
 	
 	delete[] strBuf;
 	delete[] stringIndices;
 	
-	Logger::Log(Logger::INFO) << "Read " << index.count << " strings from 0x" << std::hex << data.offset << std::dec << std::endl;
+	Logger::Log(Logger::INFO) << "Read " << strings.size() << " strings from 0x" << std::hex << data.offset << std::dec << std::endl;
 	
 	return strings;
 }
