@@ -123,6 +123,7 @@ void populateMnemonics(StringList &mnemonics) {
 	mnemonics[0x10] = "jmp";
 	mnemonics[0x11] = "je";
 	mnemonics[0x12] = "jne";
+	mnemonics[0x30] = "call";
 	
 }
 
@@ -491,11 +492,13 @@ void BytecodeParser::parseBytecode(Instructions &instList, const StringList &str
 	unsigned char opcode;
 	ProgStack numStack, strStack;
 	unsigned int stackTop;
+	bool commandStacking = false;
+	unsigned int commandStackSize = 0;
 	
 	unsigned int stackArr[] = {
-		0x02, 0x08,
+		0x02, //0x08,
 		0x0c, 
-		//0x0d is not: see seen01009 - 0x160b8
+		//0x0d
 		0x12, //0x1e,
 		0x4c, // making a selection (choice)?
 		0x4d 
@@ -520,6 +523,13 @@ void BytecodeParser::parseBytecode(Instructions &instList, const StringList &str
 				readArg(inst);
 			break;
 			case 0x05:
+				commandStacking = false;
+				while (commandStackSize --> 1) {
+					if (!numStack.empty())
+						numStack.pop_back();
+				}
+				commandStackSize = 0;
+			break;
 			case 0x06:
 			case 0x09:
 			case 0x32:
@@ -550,6 +560,7 @@ void BytecodeParser::parseBytecode(Instructions &instList, const StringList &str
 				readArg(inst);
 				readArg(inst);
 				readArg(inst);
+				commandStacking = false;
 			break;
 			case 0x21:
 				readArg(inst);
@@ -559,44 +570,51 @@ void BytecodeParser::parseBytecode(Instructions &instList, const StringList &str
 				arg1 = readArg(inst);
 				arg2 = readArg(inst);
 				readArg(inst, 1);
-				if (arg1 == 0xa)
+				if (arg1 == 0xa && arg2 == 0xa) {
 					if (!numStack.empty())
 						numStack.pop_back();
-				if (arg2 == 0xa)
-					if (!numStack.empty())
-						numStack.pop_back();
-				// not sure if should push back
-				// think so, after implementing 0x08 command  stack
+					//if (!numStack.empty())
+					//	numStack.pop_back();
+					// do the calc
+					// numStack.push_back(0);
+				}
 			break;
 			case 0x02:
 				arg1 = readArg(inst);
 				arg2 = readArg(inst);
 				if (arg1 == 0x0a) {
 					numStack.push_back(arg2);
+					if (commandStacking)
+						commandStackSize++;
 				} else if (arg1 == 0x14) {
 					inst.comment = strings.at(arg2);	// Check in range?
 					strStack.push_back(arg2);
 				}
 			break;
 			case 0x08:
+				commandStacking = true;
+				commandStackSize = 0;
 			break;
 			case 0x15:
 				readArgs(inst, numStack, strStack);
 			break;
 			case 0x30:
-				readArg(inst);
+				arg = readArg(inst);
 				readArgs(inst, numStack, strStack);
 				readArgs(inst, numStack, strStack, false);
 								
-				arg = readArg(inst);
+				readArg(inst);
 				// hacky
 				stackTop = numStack.back();
 				//if ((numStack.top() & 0x7e000000) == 0) {
-				if (std::find(std::begin(stackArr), std::end(stackArr), stackTop) != std::end(stackArr)){
-					readArg(inst);
+				if (arg == 0x01) {
+					if (std::find(std::begin(stackArr), std::end(stackArr), stackTop) != std::end(stackArr)){
+						readArg(inst);
+					}
 				}
 				//if (arg == 0x0a)
 					//numStack.push_back(0x02);
+				commandStacking = false;
 			break;
 			case 0x00:
 			default:
