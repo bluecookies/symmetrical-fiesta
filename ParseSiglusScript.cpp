@@ -16,6 +16,7 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <algorithm>
 
 #include <cassert>
 #include <unistd.h>
@@ -33,12 +34,19 @@ struct Instruction {
 	std::string comment;
 };
 
-struct LabelData {
-	std::vector<unsigned int> labels, markers, functions, commands;
-	std::vector<HeaderPair> functionTable;
-	StringList functionNames, commandNames;
+struct Label {
+	unsigned int offset;
+	unsigned int index;
+	std::string name;
 };
 
+struct LabelData {
+	std::vector<Label> labels, markers;
+	std::vector<Label> functions, commands;
+	std::vector<Label> functionTable;
+};
+
+inline bool compOffset(Label a, Label b) { return (a.offset < b.offset); }
 
 typedef std::vector<Instruction> Instructions;
 
@@ -113,64 +121,113 @@ void populateMnemonics(StringList &mnemonics) {
 	
 }
 
-void readCommands(const std::string filename, std::vector<unsigned int> &offsets, StringList &names) {
+void readCommands(const std::string filename, std::vector<Label> &labels) {
 	std::ifstream stream(filename, std::ifstream::in | std::ifstream::binary);	// this is much longer than "rb"
-	std::string cmdName;
-	unsigned int offset;
-	stream.read((char*) &offset, 4);
+	
+	Label label;
+	stream.read((char*) &label.offset, 4);
+	stream.read((char*) &label.index, 4);
 	while (!stream.eof()) {
-		offsets.push_back(offset);
-		std::getline(stream, cmdName, '\0');
-		names.push_back(cmdName);
-		stream.read((char*) &offset, 4);
+		std::getline(stream, label.name, '\0');
+		labels.push_back(label);
+		stream.read((char*) &label.offset, 4);
+		stream.read((char*) &label.index, 4);
 	}
 	stream.close();
 }
 
-// TODO: still ugly. clean up
-// TODO: also, now its slow for some reason
+// TODO: trying to hide ugliness (make it not ugly)
+void printLabels(std::ofstream &stream, const LabelData &info, unsigned int address) {
+	static std::vector<Label>::const_iterator 
+		labelIt = info.labels.begin(),
+		markerIt = info.markers.begin(),
+		functionIt = info.functions.begin(),
+		commandIt = info.commands.begin(),
+		functionTableIt = info.functionTable.begin();
+	
+	Label label;
+	
+	while (labelIt != info.labels.end()) {
+		label = *labelIt;
+		if (label.offset < address) {
+			labelIt++;
+		} else if (label.offset == address) {
+			stream << "\nSetLabel " << label.index << ":" << std::endl;
+		} else {
+			break;
+		}
+	}
+	while (markerIt != info.markers.end()) {
+		label = *markerIt;
+		if (label.offset == 0 || label.offset < address) {
+			markerIt++;
+		} else if (label.offset == address) {
+			stream << "\nSetMarker " << label.index << ":" << std::endl;
+		} else {
+			break;
+		}
+	}
+	while (functionIt != info.functions.end()) {
+		label = *functionIt;
+		if (label.offset < address) {
+			functionIt++;
+		} else if (label.offset == address) {
+			stream << "\nSetFunction " << label.index << ":\t; " << label.name << std::endl;
+		} else {
+			break;
+		}
+	}
+	while (commandIt != info.commands.end()) {
+		label = *commandIt;
+		if (label.offset < address) {
+			commandIt++;
+		} else if (label.offset == address) {
+			stream << "\nSetCommand " << label.index << ":\t; " << label.name << std::endl;
+		} else {
+			break;
+		}
+	}
+	while (functionTableIt != info.functionTable.end()) {
+		label = *functionTableIt;
+		if (label.offset < address) {
+			functionTableIt++;
+		} else if (label.offset == address) {
+			stream << "\nSetFunction " << label.index << ":" << std::endl;
+		} else {
+			break;
+		}
+	}
+
+}
+
+
 void printInstructions(Instructions instList, StringList mnemonics, std::string filename, LabelData info) {
 	std::ofstream stream(filename);
 	stream << std::setfill('0');
 	
+	// Sort label info
+	std::sort(info.labels.begin(), info.labels.end(), compOffset);
+	std::sort(info.markers.begin(), info.markers.end(), compOffset);
+	std::sort(info.functions.begin(), info.functions.end(), compOffset);
+	std::sort(info.commands.begin(), info.commands.end(), compOffset);
+	std::sort(info.functionTable.begin(), info.functionTable.end(), compOffset);
+	
 	Instructions::iterator it;
-	std::vector<unsigned int>::const_iterator labelIt;
+	
+	Logger::Log(Logger::INFO) << "Printing " << instList.size() << " instructions.\n";
+	
 	Instruction instruction;
+	unsigned int numNops = 0;
 	for (it = instList.begin(); it != instList.end(); it++) {
 		instruction = *it;
 		// Check for labels, markers and functions
-		// optimize this - its not premature anymore
-		for (labelIt = info.labels.begin(); labelIt != info.labels.end(); labelIt++) {
-			if (*labelIt == instruction.address) {
-				stream << "\nSetLabel " << (labelIt - info.labels.begin()) << ":" << std::endl;
-			}
-		}
-		for (labelIt = info.markers.begin(); labelIt != info.markers.end(); labelIt++) {
-			if (*labelIt == 0) continue;
-			if (*labelIt == instruction.address) {
-				stream << "\nSetMarker " << (labelIt - info.markers.begin()) << ":" << std::endl;
-			}
-		}
-		for (labelIt = info.functions.begin(); labelIt != info.functions.end(); labelIt++) {
-			if (*labelIt == instruction.address) {
-				stream << "\nSetFunction " << (labelIt - info.functions.begin()) << ":";
-				stream << "\t; " << info.functionNames.at(labelIt - info.functions.begin());
-				stream << std::endl;
-			}
-		}
-		for (auto func2It = info.functionTable.begin(); func2It != info.functionTable.end(); func2It++) {
-			if ((*func2It).count == instruction.address) {	// Misleading
-				stream << "SetFunction " << ((*func2It).offset) << ":\n";
-			}
-		}
-		for (labelIt = info.commands.begin(); labelIt != info.commands.end(); labelIt++) {
-			if (*labelIt == instruction.address) {
-				stream << "\nSetCommand " << info.commandNames.at(labelIt - info.commands.begin()) << std::endl;
-			}
-		}
+		printLabels(stream, info, instruction.address);
 		
-		if (instruction.nop)
+		// TODO: this would violate all bytes
+		if (instruction.nop) {
+			numNops++;
 			continue;
+		}
 		stream << "0x" << std::setw(4) << std::hex << instruction.address << ">\t";
 		stream << std::setw(2) << +instruction.opcode << "| ";	// +instruction promotes to printable number
 		stream << mnemonics[instruction.opcode] << "\t";
@@ -190,16 +247,21 @@ void printInstructions(Instructions instList, StringList mnemonics, std::string 
 		stream << std::endl;
 	}
 	
+	Logger::Log(Logger::INFO) << numNops << " NOP instructions skipped.\n";
+
+	
 	stream.close();
 }
 
-void readLabels(std::ifstream &stream, std::vector<unsigned int> &labels, HeaderPair index) {
+void readLabels(std::ifstream &stream, std::vector<Label> &labels, HeaderPair index) {
+	Label label;
+	
 	labels.reserve(index.count);
 	stream.seekg(index.offset, std::ios_base::beg);
-	unsigned int offset;
 	for (unsigned int i = 0; i < index.count; i++) {
-		stream.read((char*) &offset, 4);
-		labels.push_back(offset);
+		label.index = i;
+		stream.read((char*) &label.offset, 4);
+		labels.push_back(label);
 	}
 }
 
@@ -212,20 +274,26 @@ LabelData readLabelData(std::ifstream &stream, ScriptHeader header, const std::s
 	readLabels(stream, info.functions, header.functions);
 	
 	// Read function names
-	info.functionNames = readStrings(stream, header.functionNameIndex, header.functionName);
-		
+	StringList functionNames = readStrings(stream, header.functionNameIndex, header.functionName);
+	
+	// TODO: I could do these when reading the header
+	assert(header.functionNameIndex.count == header.functions.count);		// get rid of the asserts too
+	for (auto it = info.functions.begin(); it != info.functions.end(); it++) {
+		(*it).name = functionNames.at(it - info.functions.begin());	// string manipulation scares me
+	}
+	
 	// Read function index
 	info.functionTable.reserve(header.functionIndex.count);
 	stream.seekg(header.functionIndex.offset, std::ios_base::beg);
-	HeaderPair pair;
+	Label label;
 	for (unsigned int i = 0; i < header.functionIndex.count; i++) {
-		stream.read((char*) &pair.offset, 4);
-		stream.read((char*) &pair.count, 4);
-		info.functionTable.push_back(pair);
+		stream.read((char*) &label.index, 4);
+		stream.read((char*) &label.offset, 4);
+		info.functionTable.push_back(label);
 	}
 	
 	// Read commands
-	readCommands(filename + ".commands", info.commands, info.commandNames);
+	readCommands(filename + ".commands", info.commands);
 	
 	return info;
 }
@@ -304,8 +372,6 @@ int main(int argc, char* argv[]) {
 
 
 // Parsing the bytecode
-
-
 BytecodeParser::BytecodeParser(std::ifstream &f, HeaderPair index) {
 	f.seekg(index.offset, std::ios_base::beg);
 	

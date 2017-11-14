@@ -7,6 +7,9 @@
 // TODO: input file, output dir
 // TODO: var info and cmd info
 
+// TODO: auto key if same name
+// or read key from keys.dat if recognize initial trying
+
 #define __USE_MINGW_ANSI_STDIO 0
 
 #include <iostream>
@@ -183,12 +186,17 @@ int main(int argc, char* argv[]) {
 		auto outFile = OPEN_OFSTREAM(outfile);
 		WRITE_FILE(outFile, decompressed, decompressedSize);
 		
+		
+		// cmd info table
+		// {uint32_t fileIndex, uint32_t cmdStringIndex}
 		std::string cmdName;
 		auto cmdFile = OPEN_OFSTREAM(outfile + ".commands");
 		for (auto it = cmdInfo.begin(); it != cmdInfo.end(); it++) {
 			if ((*it).offset == i) {
+				unsigned int idx = it - cmdInfo.begin();
 				WRITE_FILE(cmdFile, &(*it).count, 4);	// instruction address
-				cmdName = cmdNames.at(it - cmdInfo.begin());
+				WRITE_FILE(cmdFile, &idx, 4);	// cmd index
+				cmdName = cmdNames.at(idx);
 				WRITE_FILE(cmdFile, cmdName.c_str(), cmdName.length());
 				PUTC_FILE(cmdFile, '\0');
 			}
