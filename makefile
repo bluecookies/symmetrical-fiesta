@@ -1,8 +1,7 @@
 CXX=g++
 # only need gnu extensions for _wfopen on windows (mingw)
-CXXFLAGS=-std=gnu++11 -c -Wall -Wextra -pedantic -g
-#LDFLAGS= -g
-LDFLAGS=
+CXXFLAGS=-g -std=gnu++11 -c -Wall -Wextra -pedantic
+LDFLAGS=-g
 TARGETS=readscene readgameexe parsess extractpck
 HEADERS=Structs.h Helper.h
 
@@ -41,4 +40,4 @@ os:
 
 clean:
 	-$(RM) *.o
-	-$(RM) $(BINDIR)/*
+	-$(RM) $(BINDIR)

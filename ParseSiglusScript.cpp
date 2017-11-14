@@ -467,9 +467,11 @@ unsigned int BytecodeParser::readArgs(Instruction &inst, ProgStack &numStack, Pr
 		arg = readArg(inst);
 		if (pop) {
 			if (arg == 0x0a) {
-				numStack.pop_back();
+				if (!numStack.empty())
+					numStack.pop_back();
 			} else if (arg == 0x14) {
-				strStack.pop_back();
+				if (!strStack.empty())
+					strStack.pop_back();
 			} else if (arg == 0x051e) {
 			} else if (arg == 0x0514) {
 			} else {
@@ -529,12 +531,14 @@ void BytecodeParser::parseBytecode(Instructions &instList, const StringList &str
 				readArg(inst);
 				arg = readArg(inst);
 				if (arg == 0x0a) {
-					numStack.pop_back();
+					if (!numStack.empty())
+						numStack.pop_back();
 					Logger::Log(Logger::WARN) << "Not sure if this should happen." << std::endl;
 				} else if (arg == 0x14) {
 					try {
 						inst.comment = strings2.at(arg);
-						strStack.pop_back();
+						if (!strStack.empty())
+							strStack.pop_back();
 					} catch (std::out_of_range &e) {
 						Logger::Log(Logger::WARN) << "Missing string id " << arg << " at 0x" << std::hex << inst.address << std::dec << std::endl;
 					}
@@ -556,10 +560,13 @@ void BytecodeParser::parseBytecode(Instructions &instList, const StringList &str
 				arg2 = readArg(inst);
 				readArg(inst, 1);
 				if (arg1 == 0xa)
-					numStack.pop_back();
+					if (!numStack.empty())
+						numStack.pop_back();
 				if (arg2 == 0xa)
-					numStack.pop_back();
+					if (!numStack.empty())
+						numStack.pop_back();
 				// not sure if should push back
+				// think so, after implementing 0x08 command  stack
 			break;
 			case 0x02:
 				arg1 = readArg(inst);
