@@ -1,3 +1,5 @@
-# siglus extract and parse
+# siglus parse
 
-just to transfer between computers
+~~just to transfer between computers~~
+
+parser now correctly? parses bytecode
