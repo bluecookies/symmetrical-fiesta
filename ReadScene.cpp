@@ -128,16 +128,42 @@ int main(int argc, char* argv[]) {
 	StringList cmdNames = readStrings(fileStream, header.cmdNameIndex, header.cmdName, false);
 	StringList sceneNames = readStrings(fileStream, header.sceneNameIndex, header.sceneName);
 	
-	std::ofstream outStream;
-	// Print strings
-	outStream.open(outdir + "/VarNames.txt");
-		outStream << varInfo + varNames;
-	outStream.close();
-	outStream.open(outdir + "/CmdNames.txt");
-		Logger::Log(Logger::DEBUG, outStream) << cmdNames;	// TODO: pretty up the notation a bit
-	outStream.close();
-	outStream.open(outdir + "/SceneNames.txt");
-		Logger::Log(Logger::DEBUG, outStream) << sceneNames;
+	// Write the global info
+	std::string name;
+	unsigned int count;
+	std::ofstream outStream("SceneInfo.dat", std::ios::out | std::ios::binary);
+		// scene names
+		count = sceneNames.size();
+		outStream.write((char*) &count, 4);
+		for (auto it = sceneNames.begin(); it != sceneNames.end(); it++) {
+			name = *it;
+			outStream.write(name.c_str(), name.length());
+			outStream.put('\0');
+		}
+		
+		// var info table
+		// {uint32_t unknown, uint32_t unknown}
+		count = varInfo.size();
+		outStream.write((char*) &count, 4);
+		for (auto it = varInfo.begin(); it != varInfo.end(); it++) {
+			outStream.write((char*) &(it->count), 4);
+			outStream.write((char*) &(it->offset), 4);
+			name = varNames.at(it - varInfo.begin());
+			outStream.write(name.c_str(), name.length());
+			outStream.put('\0');
+		}
+		
+		// cmd info table
+		// {uint32_t fileIndex, uint32_t cmdStringIndex}
+		count = cmdInfo.size();
+		outStream.write((char*) &count, 4);
+		for (auto it = cmdInfo.begin(); it != cmdInfo.end(); it++) {
+			outStream.write((char*) &(it->count), 4);		// instruction address
+			outStream.write((char*) &(it->offset), 4);	// file it is in
+			name = cmdNames.at(it - cmdInfo.begin());
+			outStream.write(name.c_str(), name.length());
+			outStream.put('\0');
+		}
 	outStream.close();
 	
 	// Dump scene scripts
@@ -185,23 +211,6 @@ int main(int argc, char* argv[]) {
 		std::string outfile = outdir + "/" + sceneNames.at(i) + ".ss";
 		auto outFile = OPEN_OFSTREAM(outfile);
 		WRITE_FILE(outFile, decompressed, decompressedSize);
-		
-		
-		// cmd info table
-		// {uint32_t fileIndex, uint32_t cmdStringIndex}
-		std::string cmdName;
-		auto cmdFile = OPEN_OFSTREAM(outfile + ".commands");
-		for (auto it = cmdInfo.begin(); it != cmdInfo.end(); it++) {
-			if ((*it).offset == i) {
-				unsigned int idx = it - cmdInfo.begin();
-				WRITE_FILE(cmdFile, &(*it).count, 4);	// instruction address
-				WRITE_FILE(cmdFile, &idx, 4);	// cmd index
-				cmdName = cmdNames.at(idx);
-				WRITE_FILE(cmdFile, cmdName.c_str(), cmdName.length());
-				PUTC_FILE(cmdFile, '\0');
-			}
-		}
-		CLOSE_OFSTREAM(cmdFile);
 		
 		delete[] buffer;
 		delete[] decompressed;
