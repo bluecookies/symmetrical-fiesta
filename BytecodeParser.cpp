@@ -219,11 +219,12 @@ void BytecodeParser::parseBytecode(Instructions &instList, const StringList &str
 					numStack.push_back(arg2);
 					commandStacks.back()++;
 					if (arg2 >> 24 == 0x7e) {
-						command = sceneInfo.commands.at(arg2 & 0x00ffffff);
 						try {
+							command = sceneInfo.commands.at(arg2 & 0x00ffffff);
 							inst.comment = command.name + " (" + sceneInfo.sceneNames.at(command.file) + ")";
 						} catch (std::exception &e) {
-							std::cerr << "Error trying to access file whoops i think i saw the error never mind.";
+							Logger::Log(Logger::ERROR) << "Error: Address 0x" << std::hex << inst.address;
+							Logger::Log(Logger::ERROR) << " trying to access "<< arg2 << std::endl;
 						}
 					}
 				} else if (arg1 == 0x14) {
