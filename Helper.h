@@ -95,9 +95,12 @@ namespace Logger {
 	//};
 	extern int LogLevel;
 	
-	inline std::ostream& Log(int level, std::ostream& stream = std::cout) {
+	inline std::ostream& Log(int level, unsigned int address = 0, std::ostream& stream = std::cout) {
 		if (level <= LogLevel) {
-			return stream;
+			if (address > 0)
+				return stream << "Error: Address 0x" << std::hex << address;
+			else
+				return stream;
 		} else {
 			return nout;
 		}

@@ -103,7 +103,7 @@ void printLabels(FILE* f, const LabelData &info, const std::vector<ScriptCommand
 			functionTableIt++;
 		} 
 		if (label.offset == address) {
-			fprintf(f, "\nSetFunction %x:\n", label.index);
+			fprintf(f, "\nSetCommand (short) %x:\n", label.index);
 		} else {
 			break;
 		}
@@ -179,7 +179,11 @@ unsigned int BytecodeParser::readArgs(Instruction &inst, ProgStack &numStack, Pr
 
 // Stolen from tanuki
 // https://github.com/bitprime/vn_translation_tools/blob/master/rewrite/
-void BytecodeParser::parseBytecode(Instructions &instList, const StringList &strings, const StringList &strings2, const SceneInfo &sceneInfo) {
+void BytecodeParser::parseBytecode(
+	Instructions &instList, 
+	const StringList &strings, const StringList &strings2, 
+	const SceneInfo &sceneInfo, const std::vector<ScriptCommand> &localCommands
+) {
 	unsigned int arg, arg1, arg2;
 	unsigned char opcode;
 	ProgStack numStack, strStack;
@@ -219,16 +223,34 @@ void BytecodeParser::parseBytecode(Instructions &instList, const StringList &str
 					numStack.push_back(arg2);
 					commandStacks.back()++;
 					if (arg2 >> 24 == 0x7e) {
-						try {
-							command = sceneInfo.commands.at(arg2 & 0x00ffffff);
-							inst.comment = command.name + " (" + sceneInfo.sceneNames.at(command.file) + ")";
-						} catch (std::exception &e) {
-							Logger::Log(Logger::ERROR) << "Error: Address 0x" << std::hex << inst.address;
-							Logger::Log(Logger::ERROR) << " trying to access "<< arg2 << std::endl;
+						unsigned int commandIndex = arg2 & 0x00ffffff;
+						if (commandIndex < sceneInfo.commands.size()) {
+							command = sceneInfo.commands.at(commandIndex);
+							// TODO: check when loading that sceneNames is big enough
+							try {
+								inst.comment = command.name + " (" + sceneInfo.sceneNames.at(command.file) + ")";
+							} catch(std::exception &e) {
+								Logger::Log(Logger::ERROR, inst.address) << ", scene index " << std::dec << command.file << " out of bounds\n";
+							}
+						} else {
+							std::vector<ScriptCommand>::const_iterator found = std::find_if(
+								localCommands.begin(), localCommands.end(), 
+								[commandIndex](ScriptCommand command){
+									return (command.index == commandIndex);
+								});
+							if (found != localCommands.end()) {
+								inst.comment = found->name;
+							} else {
+								Logger::Log(Logger::WARN, inst.address) << " trying to access command index "<< arg2 << std::endl;
+							}
 						}
 					}
 				} else if (arg1 == 0x14) {
-					inst.comment = strings.at(arg2);	// Check in range?
+					if (arg2 <= strings.size()) {
+						inst.comment = strings.at(arg2);
+					} else {
+						Logger::Log(Logger::WARN, inst.address) << " trying to access string index "<< arg2 << std::endl;
+					}
 					strStack.push_back(arg2);
 				}
 			break;
@@ -349,14 +371,10 @@ void BytecodeParser::parseBytecode(Instructions &instList, const StringList &str
 }
 
 // TODO: flag to print raw
+
+// TODO: restructure so that the parsed one reads, and then just prints what is known
 void BytecodeParser::printInstructions(Instructions &instList, std::string filename, LabelData &info, const SceneInfo &sceneInfo) {
 	FILE* f = fopen(filename.c_str(), "wb");
-	
-	// Sort label info
-	std::sort(info.labels.begin(), info.labels.end(), compOffset);
-	std::sort(info.markers.begin(), info.markers.end(), compOffset);
-	std::sort(info.functions.begin(), info.functions.end(), compOffset);
-	std::sort(info.functionTable.begin(), info.functionTable.end(), compOffset);
 	
 	std::vector<ScriptCommand> commands;
 	std::copy_if(

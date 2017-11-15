@@ -52,7 +52,7 @@ void readScriptHeader(std::ifstream &f, ScriptHeader &header) {
 	readHeaderPair(f, header.strings1);
 	
 	readHeaderPair(f, header.functions);
-	readHeaderPair(f, header.functionNameIndex);
+	readHeaderPair(f, header.functionNameIndex);		// TODO: local command index
 	readHeaderPair(f, header.functionName);
 	
 	readHeaderPair(f, header.varStringIndex);
@@ -150,10 +150,7 @@ int main(int argc, char* argv[]) {
 	StringList varStrings = readStrings(fileStream, header.varStringIndex, header.varStringData);
 	
 	Logger::Log(Logger::INFO) << strings1;
-	
-	// Read labels, markers, functions, commands
-	LabelData controlInfo = readLabelData(fileStream, header);
-		
+			
 	SceneInfo sceneInfo;
 	// Read scene names, commands and variables
 	// TODO: make safe
@@ -196,10 +193,37 @@ int main(int argc, char* argv[]) {
 	}
 	globalInfoFile.close();
 	
+		// Read labels, markers, functions, commands
+	LabelData controlInfo = readLabelData(fileStream, header);
+	
+	// Sort label info
+	std::sort(controlInfo.labels.begin(),        controlInfo.labels.end(), compOffset);
+	std::sort(controlInfo.markers.begin(),       controlInfo.markers.end(), compOffset);
+	std::sort(controlInfo.functions.begin(),     controlInfo.functions.end(), compOffset);
+	std::sort(controlInfo.functionTable.begin(), controlInfo.functionTable.end(), compOffset);	//TODO : local commands
+
+	// go through functions and see what matches local commands
+	std::vector<ScriptCommand> localCommands;
+	ScriptCommand command;
+	auto localComIt = controlInfo.functionTable.begin();
+	for (auto funcIt = controlInfo.functions.begin(); funcIt != controlInfo.functions.end(); funcIt++) {
+		while (localComIt != controlInfo.functionTable.end() && funcIt->offset > localComIt->offset) {
+			localComIt++;
+		}
+		if (funcIt->offset == localComIt->offset) {
+			command.offset = funcIt->offset;
+			command.file = sceneInfo.thisFile;
+			command.index = localComIt->index;
+			command.name = funcIt->name;
+			localCommands.push_back(command);
+		}
+	}
+	
 	Instructions instList;
 	
 	BytecodeParser parser(fileStream, header.bytecode);
-	parser.parseBytecode(instList, mainStrings, varStrings, sceneInfo);
+	// TODO: look into merging command table and handling that at a different place
+	parser.parseBytecode(instList, mainStrings, varStrings, sceneInfo, localCommands);
 	
 	// TODO: handle these
 	if (header.unknown6.count != 0) {

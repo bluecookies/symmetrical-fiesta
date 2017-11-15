@@ -66,7 +66,7 @@ class BytecodeParser {
 	public:
 		BytecodeParser(std::ifstream &f, HeaderPair index);
 		//void readBytecode(std::ifstream &f, HeaderPair index);
-		void parseBytecode(Instructions &instList, const StringList &strings, const StringList &strings2, const SceneInfo &sceneInfo);
+		void parseBytecode(Instructions &instList, const StringList &strings, const StringList &strings2, const SceneInfo &sceneInfo, const std::vector<ScriptCommand> &localCommands);
 		void printInstructions(Instructions &instList, std::string filename, LabelData &info, const SceneInfo &sceneInfo);
 		~BytecodeParser();
 };
