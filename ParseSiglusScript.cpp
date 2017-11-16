@@ -119,6 +119,7 @@ SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string 
 			std::getline(globalInfoFile, command.name, '\0');
 			info.commands[i] = command;
 		}
+		Logger::Log(Logger::INFO) << std::to_string(count) << " global commands read\n";
 		
 	}
 	globalInfoFile.close();
@@ -138,18 +139,20 @@ SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string 
 	auto predAtOffset = [command](Label function) {
 		return (function.offset == command.offset);
 	};
+	stream.seekg(header.localCommandIndex.offset, std::ios::beg);
 	for (unsigned int i = 0; i < header.localCommandIndex.count; i++) {
 		stream.read((char*) &command.index, 4);
 		stream.read((char*) &command.offset, 4);
+		command.name.clear();
 		command.file = info.thisFile;
 		auto funcIt = std::find_if(info.functions.begin(), info.functions.end(), predAtOffset);
-		if (funcIt != info.functions.end()) {
-			command.name = funcIt->name;
-		} else {
-			Logger::Log(Logger::WARN) << "Warning: Local command " << std::hex << command.index;
-			Logger::Log(Logger::WARN) << " at offset 0x" << command.offset << " not found.\n";
-		}
 		if (command.index < info.commands.size() && command.index >= info.numGlobalCommands) {
+			if (funcIt != info.functions.end()) {
+				command.name = funcIt->name;
+			} else {
+				Logger::Log(Logger::WARN) << "Warning: Local command name " << std::hex << command.index;
+				Logger::Log(Logger::WARN) << " at offset 0x" << command.offset << " not found.\n";
+			}
 			info.commands[command.index] = command;
 		} else {
 			Logger::Log(Logger::ERROR) << "Error: Local command " << std::hex << command.index;
