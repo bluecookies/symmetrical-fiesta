@@ -148,7 +148,7 @@ int main(int argc, char* argv[]) {
 	StringList mainStrings = readStrings(fileStream, header.stringIndex, header.stringData, true);
 	StringList strings1 = readStrings(fileStream, header.stringsIndex1, header.strings1);
 	StringList varStrings = readStrings(fileStream, header.varStringIndex, header.varStringData);
-	
+
 	Logger::Log(Logger::INFO) << strings1;
 			
 	SceneInfo sceneInfo;

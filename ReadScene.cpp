@@ -128,6 +128,13 @@ int main(int argc, char* argv[]) {
 	StringList cmdNames = readStrings(fileStream, header.cmdNameIndex, header.cmdName, false);
 	StringList sceneNames = readStrings(fileStream, header.sceneNameIndex, header.sceneName);
 	
+		
+	std::ofstream varStrings("Scene/Vars.txt");
+	varStrings << std::dec << varInfo + varNames << std::endl;
+	varStrings << sceneNames;
+	varStrings.close();
+	
+	
 	// Write the global info
 	std::string name;
 	unsigned int count;
