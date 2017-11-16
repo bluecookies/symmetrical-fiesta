@@ -45,79 +45,24 @@ static StringList s_mnemonics = populateMnemonics();
 
 typedef std::vector<unsigned int> ProgStack;
 
-
-// TODO: trying to hide ugliness (make it not ugly)
-// TODO: rewrite this whole file
-// TODO: not just file, the whole thing should be refactored actually
-/*void printLabels(FILE* f, const LabelData &info, const std::vector<ScriptCommand> commands, unsigned int address) {
-	static std::vector<Label>::const_iterator 
-		labelIt = info.labels.begin(),
-		markerIt = info.markers.begin(),
-		functionIt = info.functions.begin(),
-		functionTableIt = info.functionTable.begin();
-	
-	static std::vector<ScriptCommand>::const_iterator commandIt = commands.begin();
-	
+void printLabels(FILE* f, std::vector<Label>::iterator &pLabel, std::vector<Label>::iterator end, unsigned int address, const char* type) {
 	Label label;
-	ScriptCommand command;
-	
-	while (labelIt != info.labels.end()) {
-		label = *labelIt;
+	while (pLabel != end) {
+		label = *pLabel;
 		if (label.offset <= address) {
-			labelIt++;
+			pLabel++;
 		}
-		if (label.offset == address) {
-			fprintf(f, "\nSetLabel %x:\n", label.index);
-		} else {
-			break;
-		}
-	}
-	while (markerIt != info.markers.end()) {
-		label = *markerIt;
-		if (label.offset <= address) {
-			markerIt++;
-		} 
 		if (label.offset > 0 && label.offset == address) {
-			fprintf(f, "\nSetMarker %x:\n", label.index);
+			fprintf(f, "\nSet%s %x:\t; %s\n", type, label.index, label.name.c_str());
 		} else {
+			//if (verbose) {
+			//	Logger::Log(Logger::DEBUG) << type << " " << labe.offset << " > " << std::hex << address << ", index ";
+			//	Logger::Log(Logger::DEBUG) << label.index << ": " << label.name.c_str() << std::endl;
+			//}
 			break;
 		}
 	}
-	while (functionIt != info.functions.end()) {
-		label = *functionIt;
-		if (label.offset <= address) {
-			functionIt++;
-		}
-		if (label.offset == address) {
-			fprintf(f, "\nSetFunction %x:\t; %s\n", label.index, label.name.c_str());
-		} else {
-			break;
-		}
-	}
-	while (commandIt != commands.end()) {
-		command = *commandIt;
-		if (command.offset <= address) {
-			commandIt++;
-		}
-		if (command.offset == address) {
-			fprintf(f, "\nSetCommand %x:\t; %s\n", command.index, command.name.c_str());
-		} else {
-			break;
-		}
-	}
-	while (functionTableIt != info.functionTable.end()) {
-		label = *functionTableIt;
-		if (label.offset <= address) {
-			functionTableIt++;
-		} 
-		if (label.offset == address) {
-			fprintf(f, "\nSetCommand (short) %x:\n", label.index);
-		} else {
-			break;
-		}
-	}
-
-}*/
+}
 
 unsigned int readArgs(BytecodeBuffer &buf, std::vector<unsigned int> &argList, ProgStack &numStack, ProgStack &strStack, bool pop = true) {
 	unsigned int numArg = buf.getInt();
@@ -141,6 +86,7 @@ unsigned int readArgs(BytecodeBuffer &buf, std::vector<unsigned int> &argList, P
 			} else if (arg == 0x051e) {
 			} else if (arg == 0x0514) {
 			} else {
+				// actually wrong address, but figure it out
 				Logger::Log(Logger::WARN, buf.getAddress()) << " trying to pop stack " << arg << std::endl;
 			}
 		}
@@ -159,6 +105,7 @@ void parseBytecode(BytecodeBuffer &buf,
 	unsigned int arg, arg1, arg2;
 	unsigned int numInsts = 0, numNops = 0;
 	unsigned char opcode;
+	unsigned int instAddress;
 	ProgStack numStack, strStack;
 	unsigned int stackTop;
 	std::vector<unsigned int> commandStacks;
@@ -176,25 +123,40 @@ void parseBytecode(BytecodeBuffer &buf,
 		0x4d 
 	};
 	
-	std::vector<ScriptCommand> localCommands;
+	std::vector<Label> localCommands;
 	auto predCommandFile = [sceneInfo](ScriptCommand c) {
 		return c.file == sceneInfo.thisFile;
 	};
 	std::copy_if(sceneInfo.commands.begin(), sceneInfo.commands.end(), 
-		std::back_inserter(sceneInfo.commands), predCommandFile);
+		std::back_inserter(localCommands), predCommandFile);
 	
+	std::sort(sceneInfo.labels.begin(),		sceneInfo.labels.end());
+	std::sort(sceneInfo.markers.begin(),	sceneInfo.markers.end());
+	std::sort(sceneInfo.functions.begin(),sceneInfo.functions.end());
+	std::sort(localCommands.begin(),	localCommands.end());
 	
+	// TODO: pretty up, everything
+	auto labelIt = sceneInfo.labels.begin(),
+		markerIt = sceneInfo.markers.begin(),
+		functionIt = sceneInfo.functions.begin(),
+		commandIt = localCommands.begin();
+
 	ScriptCommand command;
 	Logger::Log(Logger::INFO) << "Parsing " << std::to_string(buf.size()) << " bytes.\n";
 	
 	while (!buf.done()) {
+		// Get address before incrementing
+		instAddress = buf.getAddress();
 		opcode = buf.getChar();
 		numInsts++;
 		
 		// Print labels and commands
+		printLabels(f, labelIt, sceneInfo.labels.end(), instAddress, "Label");
+		printLabels(f, markerIt, sceneInfo.markers.end(), instAddress, "Marker");
+		printLabels(f, functionIt, sceneInfo.functions.end(), instAddress, "Function");
+		printLabels(f, commandIt, localCommands.end(), instAddress, "Command");
 		
-		
-		fprintf(f, "%#06x>\t%02x| %s\t", buf.getAddress(), opcode, s_mnemonics[opcode].c_str());
+		fprintf(f, "%#06x>\t%02x| %s\t", instAddress, opcode, s_mnemonics[opcode].c_str());
 		
 		switch (opcode) {
 			case 0x01:
@@ -218,12 +180,12 @@ void parseBytecode(BytecodeBuffer &buf,
 								try {
 									comment += " (" + sceneInfo.sceneNames.at(command.file) + ")";
 								} catch(std::exception &e) {
-									Logger::Log(Logger::ERROR, buf.getAddress()) << ", scene index " << std::dec << command.file << " out of bounds\n";
+									Logger::Log(Logger::ERROR, instAddress) << ", scene index " << std::dec << command.file << " out of bounds\n";
 								}
 							} else {
 							}
 						} else {
-								Logger::Log(Logger::WARN, buf.getAddress()) << " trying to access command index " << arg2 << std::endl;
+								Logger::Log(Logger::WARN, instAddress) << " trying to access command index " << arg2 << std::endl;
 						}
 					}
 				} else if (arg1 == 0x14) {
@@ -231,7 +193,7 @@ void parseBytecode(BytecodeBuffer &buf,
 					if (arg2 <= strings.size()) {
 						comment = strings.at(arg2);
 					} else {
-						Logger::Log(Logger::WARN, buf.getAddress()) << " trying to access string index "<< arg2 << std::endl;
+						Logger::Log(Logger::WARN, instAddress) << " trying to access string index " << arg2 << std::endl;
 					}
 					strStack.push_back(arg2);
 				}
@@ -257,7 +219,7 @@ void parseBytecode(BytecodeBuffer &buf,
 			case 0x32:
 			break;
 			case 0x16:
-				Logger::Log(Logger::INFO, buf.getAddress()) << "End of script reached.\n";
+				Logger::Log(Logger::INFO, instAddress) << "End of script reached.\n";
 			break;
 			case 0x07:
 				buf.getInt();
@@ -266,14 +228,14 @@ void parseBytecode(BytecodeBuffer &buf,
 				if (arg == 0x0a) {
 					if (!numStack.empty())
 						numStack.pop_back();
-					Logger::Log(Logger::DEBUG, buf.getAddress()) << "Popping 0xa\n";
+					Logger::Log(Logger::DEBUG, instAddress) << "Popping 0xa\n";
 				} else if (arg == 0x14) {
 					try {
 						comment = strings2.at(arg);
 						if (!strStack.empty())
 							strStack.pop_back();
 					} catch (std::out_of_range &e) {
-						Logger::Log(Logger::WARN) << "Missing string id " << arg << " at 0x" << std::hex << buf.getAddress() << std::dec << std::endl;
+						Logger::Log(Logger::WARN) << "Missing string id " << arg << " at 0x" << std::hex << instAddress << std::dec << std::endl;
 					}
 				}
 			break;
@@ -337,7 +299,7 @@ void parseBytecode(BytecodeBuffer &buf,
 					if (std::find(std::begin(stackArr), std::end(stackArr), stackTop) != std::end(stackArr)){
 						fprintf(f, "), %#x", buf.getInt());
 					} else {
-						Logger::Log(Logger::DEBUG, buf.getAddress()) << " stacktop is " << stackTop << std::endl;
+						Logger::Log(Logger::DEBUG, instAddress) << " stacktop is " << stackTop << std::endl;
 						Logger::Log(Logger::DEBUG) << "Command stack layers: " << commandStacks.size() << std::endl;
 					}
 				}
@@ -349,7 +311,7 @@ void parseBytecode(BytecodeBuffer &buf,
 			case 0x00:
 			default:
 				numNops++;
-				Logger::Log(Logger::INFO) << "Address 0x" << std::hex << std::setw(4) << buf.getAddress();
+				Logger::Log(Logger::INFO) << "Address 0x" << std::hex << std::setw(4) << instAddress;
 				Logger::Log(Logger::INFO) << ":  NOP encountered: 0x" << std::setw(2) << opcode << std::dec << std::endl;
 		}
 		

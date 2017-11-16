@@ -4,14 +4,6 @@
 #include <iostream>
 #include "Helper.h"
 
-
-struct Label {
-	unsigned int offset;
-	unsigned int index;
-	std::string name;
-};
-
-
 struct ScriptCommand {
 	// Offset of instruction in script
 	unsigned int offset;
@@ -21,6 +13,34 @@ struct ScriptCommand {
 	unsigned int index;
 	// Command name
 	std::string name;
+};
+
+struct Label {
+	unsigned int offset;
+	unsigned int index;
+	std::string name;
+	
+	Label& operator=(const ScriptCommand &in) {
+		offset = in.offset;
+		index = in.index;
+		name = in.name;
+		
+		return *this;
+	}
+	
+	bool operator<(const Label& b) const {
+		return offset < b.offset;
+	}
+	
+	Label() {
+		offset = 0;
+		index = 0;
+	}
+	Label(const ScriptCommand &in) {
+		offset = in.offset;
+		index = in.index;
+		name = in.name;
+	}
 };
 
 struct SceneInfo {

@@ -117,7 +117,7 @@ SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string 
 			globalInfoFile.read((char*) &command.file, 4);
 			command.index = i;
 			std::getline(globalInfoFile, command.name, '\0');
-			info.commands.push_back(command);
+			info.commands[i] = command;
 		}
 		
 	}
@@ -149,7 +149,7 @@ SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string 
 			Logger::Log(Logger::WARN) << "Warning: Local command " << std::hex << command.index;
 			Logger::Log(Logger::WARN) << " at offset 0x" << command.offset << " not found.\n";
 		}
-		if (command.index < info.commands.size()) {
+		if (command.index < info.commands.size() && command.index >= info.numGlobalCommands) {
 			info.commands[command.index] = command;
 		} else {
 			Logger::Log(Logger::ERROR) << "Error: Local command " << std::hex << command.index;
