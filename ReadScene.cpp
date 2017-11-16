@@ -128,17 +128,14 @@ int main(int argc, char* argv[]) {
 	StringList cmdNames = readStrings(fileStream, header.cmdNameIndex, header.cmdName, false);
 	StringList sceneNames = readStrings(fileStream, header.sceneNameIndex, header.sceneName);
 	
-		
-	std::ofstream varStrings("Scene/Vars.txt");
-	varStrings << std::dec << varInfo + varNames << std::endl;
-	varStrings << sceneNames;
-	varStrings.close();
-	
+	std::ofstream outStream("SceneNames.txt");
+	outStream << sceneNames << std::endl << varNames << std::endl << cmdNames;
+	outStream.close();
 	
 	// Write the global info
 	std::string name;
 	unsigned int count;
-	std::ofstream outStream("SceneInfo.dat", std::ios::out | std::ios::binary);
+	outStream.open("SceneInfo.dat", std::ios::out | std::ios::binary);
 		// scene names
 		count = sceneNames.size();
 		outStream.write((char*) &count, 4);
