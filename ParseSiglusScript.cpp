@@ -136,17 +136,17 @@ SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string 
 	}
 	
 	// Read local commands
-	auto predAtOffset = [command](Label function) {
-		return (function.offset == command.offset);
-	};
 	stream.seekg(header.localCommandIndex.offset, std::ios::beg);
 	for (unsigned int i = 0; i < header.localCommandIndex.count; i++) {
 		stream.read((char*) &command.index, 4);
 		stream.read((char*) &command.offset, 4);
 		command.name.clear();
 		command.file = info.thisFile;
-		auto funcIt = std::find_if(info.functions.begin(), info.functions.end(), predAtOffset);
 		if (command.index < info.commands.size() && command.index >= info.numGlobalCommands) {
+			auto predAtOffset = [command](Label function) {
+				return (function.offset == command.offset);
+			};
+			auto funcIt = std::find_if(info.functions.begin(), info.functions.end(), predAtOffset);
 			if (funcIt != info.functions.end()) {
 				command.name = funcIt->name;
 			} else {
