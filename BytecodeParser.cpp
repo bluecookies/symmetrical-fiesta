@@ -305,6 +305,7 @@ void parseBytecode(BytecodeBuffer &buf,
 				}
 				//if (arg == 0x0a)
 					//numStack.push_back(0x02);
+					//presureneeded
 				if (commandStacks.size() > 1)
 					commandStacks.pop_back();
 			break;

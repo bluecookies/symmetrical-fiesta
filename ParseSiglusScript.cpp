@@ -75,7 +75,7 @@ void readLabels(std::ifstream &stream, std::vector<Label> &labels, HeaderPair in
 	}
 }
 
-SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string filename) {
+SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string filename, int fileIndex) {
 	SceneInfo info;
 	
 	// Read scene pack globals
@@ -91,13 +91,15 @@ SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string 
 		unsigned int count, temp;
 		
 		// Scene names
+		info.thisFile = fileIndex;
 		globalInfoFile.read((char*) &count, 4);		// unsafe
 		for (unsigned int i = 0; i < count; i++) {
 			std::getline(globalInfoFile, name, '\0');
 			info.sceneNames.push_back(name);
-			// weird - should override
-			if (filename.compare(name) >= 0)
-				info.thisFile = i;
+			if (fileIndex < 0)
+				// figure out ad hoc way, proper
+				if (filename.compare(name) >= 0)
+					info.thisFile = i;
 		}
 		
 		// Vars
@@ -142,18 +144,24 @@ SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string 
 		stream.read((char*) &command.offset, 4);
 		command.name.clear();
 		command.file = info.thisFile;
-		if (command.index < info.commands.size() && command.index >= info.numGlobalCommands) {
-			auto predAtOffset = [command](Label function) {
-				return (function.offset == command.offset);
-			};
-			auto funcIt = std::find_if(info.functions.begin(), info.functions.end(), predAtOffset);
-			if (funcIt != info.functions.end()) {
-				command.name = funcIt->name;
+		if (command.index < info.commands.size()) {
+			// Local command
+			if (command.index >= info.numGlobalCommands) {
+				auto predAtOffset = [command](Label function) {
+					return (function.offset == command.offset);
+				};
+				auto funcIt = std::find_if(info.functions.begin(), info.functions.end(), predAtOffset);
+				if (funcIt != info.functions.end()) {
+					command.name = funcIt->name;
+				} else {
+					Logger::Log(Logger::WARN) << "Warning: Local command name " << std::hex << command.index;
+					Logger::Log(Logger::WARN) << " at offset 0x" << command.offset << " not found.\n";
+				}
+				info.commands[command.index] = command;
+			// Global command defined in this file
 			} else {
-				Logger::Log(Logger::WARN) << "Warning: Local command name " << std::hex << command.index;
-				Logger::Log(Logger::WARN) << " at offset 0x" << command.offset << " not found.\n";
+				
 			}
-			info.commands[command.index] = command;
 		} else {
 			Logger::Log(Logger::ERROR) << "Error: Local command " << std::hex << command.index;
 			Logger::Log(Logger::ERROR) << " at offset 0x" << command.offset << " has too high index.\n";
@@ -168,17 +176,21 @@ int main(int argc, char* argv[]) {
 	extern int optind;
 	
 	std::string outFilename;
-	static char usageString[] = "Usage: parsess [-o outfile] [-v] <input.ss>";
+	static char usageString[] = "Usage: parsess [-o outfile] [-v] [-i file index] <input.ss>";
 	
+	int fileIndex = -1;
 	// Handle options
 	int option = 0;
-	while ((option = getopt(argc, argv, "o:v")) != -1) {
+	while ((option = getopt(argc, argv, "o:vi:")) != -1) {
 		switch (option) {
 		case 'v':
 			Logger::increaseVerbosity();
 			break;
 		case 'o':
 			outFilename = std::string(optarg);
+		break;
+		case 'i':
+			fileIndex = std::stoi(optarg);
 		break;
 		default:
 			std::cout << usageString << std::endl;
@@ -213,7 +225,7 @@ int main(int argc, char* argv[]) {
 			
 	// Read labels, markers, functions, commands
 	// and global scene pack stuff
-	SceneInfo sceneInfo = readSceneInfo(fileStream, header, filename);
+	SceneInfo sceneInfo = readSceneInfo(fileStream, header, filename, fileIndex);
 	
 	BytecodeBuffer bytecode(fileStream, header.bytecode);
 	fileStream.close();
