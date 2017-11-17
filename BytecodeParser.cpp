@@ -98,7 +98,7 @@ unsigned int readArgs(BytecodeBuffer &buf, std::vector<unsigned int> &argList, P
 // TODO: flag to print raw (might be long)
 void parseBytecode(BytecodeBuffer &buf, 
 	std::string filename, SceneInfo sceneInfo,
-	const StringList &strings, const StringList &strings2
+	const StringList &strings, const StringList &varStrings
 ) {
 	FILE* f = fopen(filename.c_str(), "wb");
 	
@@ -226,21 +226,21 @@ void parseBytecode(BytecodeBuffer &buf,
 				Logger::Log(Logger::INFO, instAddress) << "End of script reached.\n";
 			break;
 			case 0x07:
-				buf.getInt();
+				arg1 = buf.getInt();
 				arg = buf.getInt();
-				fprintf(f, "%#x", arg);
-				if (arg == 0x0a) {
+				fprintf(f, "%#x, %#x", arg1, arg);
+				if (arg1 == 0x0a) {
 					if (!numStack.empty())
 						numStack.pop_back();
-					Logger::Log(Logger::DEBUG, instAddress) << "Popping 0xa\n";
-				} else if (arg == 0x14) {
-					try {
-						comment = strings2.at(arg);
-						if (!strStack.empty())
+					//Logger::Log(Logger::DEBUG, instAddress) << "Popping 0xa\n";
+				} else if (arg1 == 0x14) {
+					if (!strStack.empty())
 							strStack.pop_back();
-					} catch (std::out_of_range &e) {
-						Logger::Log(Logger::WARN) << "Missing string id " << arg << " at 0x" << std::hex << instAddress << std::dec << std::endl;
-					}
+				}
+				try {
+					comment = varStrings.at(arg);	
+				} catch (std::out_of_range &e) {
+					Logger::Log(Logger::WARN) << "Missing string id " << arg << " at 0x" << std::hex << instAddress << std::dec << std::endl;
 				}
 			break;
 			case 0x13:

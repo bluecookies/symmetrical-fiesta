@@ -76,6 +76,6 @@ class BytecodeBuffer {
 // TODO: strings go into scene info too
 // why are they outside
 void parseBytecode(BytecodeBuffer &buf, std::string filename, SceneInfo sceneInfo,
-	const StringList &strings, const StringList &strings2);
+	const StringList &strings, const StringList &varStrings);
 
 #endif
