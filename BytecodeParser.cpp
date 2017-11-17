@@ -298,6 +298,9 @@ void parseBytecode(BytecodeBuffer &buf,
 				fprintf(f, "), %#x", buf.getInt());
 
 				stackTop = numStack.back();
+				// wary about determining function call address
+				// maybe later
+				fprintf(f, " [%#x] ", stackTop);
 				//if ((numStack.top() & 0x7e000000) == 0) {
 				if (arg1 == 0x01) {
 					if (std::find(std::begin(stackArr), std::end(stackArr), stackTop) != std::end(stackArr)){
