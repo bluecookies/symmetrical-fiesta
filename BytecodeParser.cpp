@@ -175,14 +175,18 @@ void parseBytecode(BytecodeBuffer &buf,
 						if (commandIndex < sceneInfo.commands.size()) {
 							command = sceneInfo.commands.at(commandIndex);
 							comment = command.name;
+							std::stringstream stream;
+							stream << std::hex << command.offset;
 							// TODO: check when loading that sceneNames is big enough
 							if (commandIndex < sceneInfo.numGlobalCommands) {
 								try {
-									comment += " (" + sceneInfo.sceneNames.at(command.file) + ")";
+									comment += " (0x" + stream.str() + " in " + sceneInfo.sceneNames.at(command.file) + ")";
 								} catch(std::exception &e) {
 									Logger::Log(Logger::ERROR, instAddress) << ", scene index " << std::dec << command.file << " out of bounds\n";
 								}
 							} else {
+								// this is a local command
+								comment += " (0x" + stream.str() + " in " + sceneInfo.sceneNames.at(command.file) + ")";
 							}
 						} else {
 								Logger::Log(Logger::WARN, instAddress) << " trying to access command index " << arg2 << std::endl;
