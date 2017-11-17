@@ -87,7 +87,7 @@ unsigned int readArgs(BytecodeBuffer &buf, std::vector<unsigned int> &argList, P
 			} else if (arg == 0x0514) {
 			} else {
 				// actually wrong address, but figure it out
-				Logger::Log(Logger::WARN, buf.getAddress()) << " trying to pop stack " << arg << std::endl;
+				Logger::Log(Logger::DEBUG, buf.getAddress()) << " trying to pop stack " << arg << std::endl;
 			}
 		}
 	}
@@ -218,7 +218,7 @@ void parseBytecode(BytecodeBuffer &buf,
 					if (!numStack.empty())
 						numStack.pop_back();
 				}
-				if (!commandStacks.empty()) {
+				if (commandStacks.size() > 1) {
 					commandStacks.pop_back();
 					commandStacks.back()++;	// collapse into lower frame
 				} else {
@@ -266,7 +266,7 @@ void parseBytecode(BytecodeBuffer &buf,
 			break;
 			case 0x20:
 				fprintf(f, "%#x, %#x, %#x", buf.getInt(), buf.getInt(), buf.getInt());
-				if (!commandStacks.empty()) {	
+				if (commandStacks.size() > 1) {	
 					commandStacks.pop_back();	// not sure if should close all
 				}
 			break;
@@ -375,7 +375,7 @@ void parseBytecode(BytecodeBuffer &buf,
 				//if (arg == 0x0a)
 					//numStack.push_back(something);
 					//^prettysureneeded?
-				if (!commandStacks.empty()) {
+				if (commandStacks.size() > 1) {
 					commandStacks.pop_back();
 				}
 			} break;

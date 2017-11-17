@@ -12,6 +12,7 @@
 *.asm
 *.commands
 
+*.txt
 *.key
 
 # go away

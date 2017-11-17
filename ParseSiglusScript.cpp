@@ -248,11 +248,11 @@ int main(int argc, char* argv[]) {
 	
 	// TODO: handle these
 	if (header.unknown6.count != 0) {
-		Logger::Log(Logger::WARN) << "Unknown6 is not empty.\n";
-	} else if (header.unknown7.count != 0) {
-		Logger::Log(Logger::WARN) << "Unknown7 is not empty.\n";
-	} else if (header.unknown6.offset != header.unknown7.offset) {
-		Logger::Log(Logger::WARN) << "Check this file out, something's weird\n";
+		Logger::Log(Logger::WARN) << "Unknown6 has " << header.unknown6.count << " elements.\n";
+		
+	}
+	if (header.unknown7.count != 0) {
+		Logger::Log(Logger::WARN) << "Unknown7 has " << header.unknown7.count << " elements.\n";
 	}
 			
 	return 0;
