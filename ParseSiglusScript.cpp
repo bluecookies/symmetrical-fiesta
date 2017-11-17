@@ -92,14 +92,20 @@ SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string 
 		
 		// Scene names
 		info.thisFile = fileIndex;
+		std::string basename = filename.substr(filename.find_last_of("/\\") + 1);
+		basename = basename.substr(0, basename.find_last_of('.'));
+		
+		
 		globalInfoFile.read((char*) &count, 4);		// unsafe
 		for (unsigned int i = 0; i < count; i++) {
 			std::getline(globalInfoFile, name, '\0');
 			info.sceneNames.push_back(name);
-			if (fileIndex < 0)
-				// figure out ad hoc way, proper
-				if (filename.compare(name) >= 0)
-					info.thisFile = i;
+			if (fileIndex < 0) {
+				if (basename.compare(name) == 0) {
+					fileIndex = info.thisFile = i;
+					Logger::Log(Logger::INFO) << "Determined file index: " << fileIndex << std::endl;
+				}
+			}
 		}
 		
 		// Vars
