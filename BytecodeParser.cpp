@@ -1,7 +1,13 @@
+// Parse the bytecode
+// A lot of this is stolen from tanuki
+// https://github.com/bitprime/vn_translation_tools/blob/master/rewrite/
+// also Inori
+
 #include <cstdio>
 #include <iostream>
 #include <iomanip>
 #include <sstream>
+#include <exception>
 
 #include "Helper.h"
 #include "Structs.h"
@@ -35,129 +41,41 @@ StringList populateMnemonics() {
 	return mnemonics;
 }
 
-StringList BytecodeParser::mnemonics = populateMnemonics();
+static StringList s_mnemonics = populateMnemonics();
 
+typedef std::vector<unsigned int> ProgStack;
 
-// TODO: trying to hide ugliness (make it not ugly)
-// TODO: rewrite this whole file
-// TODO: not just file, the whole thing should be refactored actually
-void printLabels(FILE* f, const LabelData &info, const std::vector<ScriptCommand> commands, unsigned int address) {
-	static std::vector<Label>::const_iterator 
-		labelIt = info.labels.begin(),
-		markerIt = info.markers.begin(),
-		functionIt = info.functions.begin(),
-		functionTableIt = info.functionTable.begin();
-	
-	static std::vector<ScriptCommand>::const_iterator commandIt = commands.begin();
-	
+void printLabels(FILE* f, std::vector<Label>::iterator &pLabel, std::vector<Label>::iterator end, unsigned int address, const char* type) {
 	Label label;
-	ScriptCommand command;
-	
-	while (labelIt != info.labels.end()) {
-		label = *labelIt;
+	while (pLabel != end) {
+		label = *pLabel;
 		if (label.offset <= address) {
-			labelIt++;
+			pLabel++;
 		}
-		if (label.offset == address) {
-			fprintf(f, "\nSetLabel %x:\n", label.index);
-		} else {
-			break;
-		}
-	}
-	while (markerIt != info.markers.end()) {
-		label = *markerIt;
-		if (label.offset <= address) {
-			markerIt++;
-		} 
 		if (label.offset > 0 && label.offset == address) {
-			fprintf(f, "\nSetMarker %x:\n", label.index);
+			fprintf(f, "\nSet%s %x:\t; %s\n", type, label.index, label.name.c_str());
 		} else {
+			//if (verbose) {
+			//	Logger::Log(Logger::DEBUG) << type << " " << labe.offset << " > " << std::hex << address << ", index ";
+			//	Logger::Log(Logger::DEBUG) << label.index << ": " << label.name.c_str() << std::endl;
+			//}
 			break;
 		}
 	}
-	while (functionIt != info.functions.end()) {
-		label = *functionIt;
-		if (label.offset <= address) {
-			functionIt++;
-		}
-		if (label.offset == address) {
-			fprintf(f, "\nSetFunction %x:\t; %s\n", label.index, label.name.c_str());
-		} else {
-			break;
-		}
-	}
-	while (commandIt != commands.end()) {
-		command = *commandIt;
-		if (command.offset <= address) {
-			commandIt++;
-		}
-		if (command.offset == address) {
-			fprintf(f, "\nSetCommand %x:\t; %s\n", command.index, command.name.c_str());
-		} else {
-			break;
-		}
-	}
-	while (functionTableIt != info.functionTable.end()) {
-		label = *functionTableIt;
-		if (label.offset <= address) {
-			functionTableIt++;
-		} 
-		if (label.offset == address) {
-			fprintf(f, "\nSetFunction %x:\n", label.index);
-		} else {
-			break;
-		}
-	}
-
 }
 
-
-// Parsing the bytecode
-BytecodeParser::BytecodeParser(std::ifstream &f, HeaderPair index) {
-	f.seekg(index.offset, std::ios_base::beg);
-	
-	dataLength = index.count;
-	bytecode = new unsigned char[dataLength + 16];
-	
-	f.read((char*) bytecode, dataLength);
-	if (f.fail()) {
-		Logger::Log(Logger::ERROR) << "Tried to read " << dataLength << " bytes, got" << f.gcount() << std::endl;
-		throw std::exception();
-	}
-	Logger::Log(Logger::DEBUG) << "Read " << f.gcount() << " bytes of bytecode." << std::endl;
-}
-
-unsigned int BytecodeParser::readArg(Instruction &inst, unsigned int argSize = 4) {
+unsigned int readArgs(BytecodeBuffer &buf, std::vector<unsigned int> &argList, ProgStack &numStack, ProgStack &strStack, bool pop = true) {
+	unsigned int numArg = buf.getInt();
 	unsigned int arg = 0;
-	if (argSize == 4) {
-		arg = readUInt32(bytecode + currAddress);
-		currAddress += 4;
-	} else if (argSize == 1) {
-		arg = bytecode[currAddress++];
-	}
-	inst.args.push_back(arg);
-	return arg;
-}
 
-// WARNING: pop_back is no throw
-unsigned int BytecodeParser::readArgs(Instruction &inst, ProgStack &numStack, ProgStack &strStack, bool pop) {
-	unsigned int numArg = readArg(inst), arg = 0;
-
-	unsigned int opcode = inst.opcode;
-	
-	if (numArg > 2) {
-		Logger::Log(Logger::VERBOSE_DEBUG) << "Address 0x" << std::hex << std::setw(4) << +inst.address;
-		Logger::Log(Logger::VERBOSE_DEBUG) << ":  Reading: " << std::dec << numArg << " arguments." << std::endl;
-		
-		if (dataLength - currAddress < 4 * numArg) {
-			Logger::Log(Logger::ERROR) << "Going to overflow." << std::endl;
-			throw std::exception();
-		}
-		
-	}
+	/*if (dataLength - currAddress < 4 * numArg) {
+		Logger::Log(Logger::ERROR) << "Going to overflow." << std::endl;
+		throw std::exception();
+	}*/
 
 	for (unsigned int counter = 0; counter < numArg; counter++) {
-		arg = readArg(inst);
+		arg = buf.getInt();
+		argList.push_back(arg);
 		if (pop) {
 			if (arg == 0x0a) {
 				if (!numStack.empty())
@@ -168,8 +86,8 @@ unsigned int BytecodeParser::readArgs(Instruction &inst, ProgStack &numStack, Pr
 			} else if (arg == 0x051e) {
 			} else if (arg == 0x0514) {
 			} else {
-				Logger::Log(Logger::WARN) << "Instruction " << opcode << " at address 0x" << std::hex << inst.address;
-				Logger::Log(Logger::WARN) << " trying to pop stack " << arg << std::endl;
+				// actually wrong address, but figure it out
+				Logger::Log(Logger::WARN, buf.getAddress()) << " trying to pop stack " << arg << std::endl;
 			}
 		}
 	}
@@ -177,58 +95,110 @@ unsigned int BytecodeParser::readArgs(Instruction &inst, ProgStack &numStack, Pr
 	return numArg;
 }
 
-// Stolen from tanuki
-// https://github.com/bitprime/vn_translation_tools/blob/master/rewrite/
-void BytecodeParser::parseBytecode(Instructions &instList, const StringList &strings, const StringList &strings2, const SceneInfo &sceneInfo) {
+// TODO: flag to print raw (might be long)
+void parseBytecode(BytecodeBuffer &buf, 
+	std::string filename, SceneInfo sceneInfo,
+	const StringList &strings, const StringList &strings2
+) {
+	FILE* f = fopen(filename.c_str(), "wb");
+	
 	unsigned int arg, arg1, arg2;
+	unsigned int numInsts = 0, numNops = 0;
 	unsigned char opcode;
+	unsigned int instAddress;
 	ProgStack numStack, strStack;
 	unsigned int stackTop;
 	std::vector<unsigned int> commandStacks;
 	commandStacks.push_back(0);
 	
+	std::string comment;
+	
+	std::vector<unsigned int> args;
+	
 	unsigned int stackArr[] = {
 		0x02, //0x08,
-		0x0c, 
-		//0x0d
+		0x0c, //0x0d
 		0x12, //0x1e,
 		0x4c, // making a selection (choice)?
 		0x4d 
 	};
 	
+	std::vector<Label> localCommands;
+	auto predCommandFile = [sceneInfo](ScriptCommand c) {
+		return c.file == sceneInfo.thisFile;
+	};
+	std::copy_if(sceneInfo.commands.begin(), sceneInfo.commands.end(), 
+		std::back_inserter(localCommands), predCommandFile);
+	
+	std::sort(sceneInfo.labels.begin(),		sceneInfo.labels.end());
+	std::sort(sceneInfo.markers.begin(),	sceneInfo.markers.end());
+	std::sort(sceneInfo.functions.begin(),sceneInfo.functions.end());
+	std::sort(localCommands.begin(),	localCommands.end());
+	
+	// TODO: pretty up, everything
+	auto labelIt = sceneInfo.labels.begin(),
+		markerIt = sceneInfo.markers.begin(),
+		functionIt = sceneInfo.functions.begin(),
+		commandIt = localCommands.begin();
+
 	ScriptCommand command;
+	Logger::Log(Logger::INFO) << "Parsing " << std::to_string(buf.size()) << " bytes.\n";
 	
-//commandNames.at(arg2 & 0xffffff) + 
-
-	Logger::Log(Logger::INFO) << "Parsing " << std::to_string(dataLength) << " bytes.\n";
-	
-	while (currAddress < dataLength) {
-		Instruction inst;
-		inst.address = currAddress;
-		opcode = bytecode[currAddress++];
-		inst.opcode = opcode;
-
+	while (!buf.done()) {
+		// Get address before incrementing
+		instAddress = buf.getAddress();
+		opcode = buf.getChar();
+		numInsts++;
+		
+		// Print labels and commands
+		printLabels(f, labelIt, sceneInfo.labels.end(), instAddress, "Label");
+		printLabels(f, markerIt, sceneInfo.markers.end(), instAddress, "Marker");
+		printLabels(f, functionIt, sceneInfo.functions.end(), instAddress, "Function");
+		printLabels(f, commandIt, localCommands.end(), instAddress, "Command");
+		
+		fprintf(f, "%#06x>\t%02x| %s\t", instAddress, opcode, s_mnemonics[opcode].c_str());
+		
 		switch (opcode) {
 			case 0x01:
-				readArg(inst);
+				fprintf(f, "%#x", buf.getInt());
 			break;
 			case 0x02:
-				arg1 = readArg(inst);
-				arg2 = readArg(inst);
+				arg1 = buf.getInt();
+				fprintf(f, "%#x, ", arg1);
+				arg2 = buf.getInt();
 				if (arg1 == 0x0a) {
 					numStack.push_back(arg2);
+					fprintf(f, "%#x", arg2);
 					commandStacks.back()++;
 					if (arg2 >> 24 == 0x7e) {
-						try {
-							command = sceneInfo.commands.at(arg2 & 0x00ffffff);
-							inst.comment = command.name + " (" + sceneInfo.sceneNames.at(command.file) + ")";
-						} catch (std::exception &e) {
-							Logger::Log(Logger::ERROR) << "Error: Address 0x" << std::hex << inst.address;
-							Logger::Log(Logger::ERROR) << " trying to access "<< arg2 << std::endl;
+						unsigned int commandIndex = arg2 & 0x00ffffff;
+						if (commandIndex < sceneInfo.commands.size()) {
+							command = sceneInfo.commands.at(commandIndex);
+							comment = command.name;
+							std::stringstream stream;
+							stream << std::hex << command.offset;
+							// TODO: check when loading that sceneNames is big enough
+							if (commandIndex < sceneInfo.numGlobalCommands) {
+								try {
+									comment += " (0x" + stream.str() + " in " + sceneInfo.sceneNames.at(command.file) + ")";
+								} catch(std::exception &e) {
+									Logger::Log(Logger::ERROR, instAddress) << ", scene index " << std::dec << command.file << " out of bounds\n";
+								}
+							} else {
+								// this is a local command
+								comment += " (0x" + stream.str() + " in " + sceneInfo.sceneNames.at(command.file) + ")";
+							}
+						} else {
+								Logger::Log(Logger::WARN, instAddress) << " trying to access command index " << arg2 << std::endl;
 						}
 					}
 				} else if (arg1 == 0x14) {
-					inst.comment = strings.at(arg2);	// Check in range?
+					fprintf(f, "[%#x]", arg2);
+					if (arg2 <= strings.size()) {
+						comment = strings.at(arg2);
+					} else {
+						Logger::Log(Logger::WARN, instAddress) << " trying to access string index " << arg2 << std::endl;
+					}
 					strStack.push_back(arg2);
 				}
 			break;
@@ -238,7 +208,7 @@ void BytecodeParser::parseBytecode(Instructions &instList, const StringList &str
 			case 0x11:
 			case 0x12:
 			case 0x31:
-				readArg(inst);
+				fprintf(f, "%#x", buf.getInt());
 			break;
 			case 0x05:
 				while (commandStacks.back() --> 1) {
@@ -253,50 +223,45 @@ void BytecodeParser::parseBytecode(Instructions &instList, const StringList &str
 			case 0x32:
 			break;
 			case 0x16:
-				Logger::Log(Logger::INFO) << "End of script reached at address 0x" << std::hex << inst.address << std::dec << std::endl;
+				Logger::Log(Logger::INFO, instAddress) << "End of script reached.\n";
 			break;
 			case 0x07:
-				readArg(inst);
-				arg = readArg(inst);
+				buf.getInt();
+				arg = buf.getInt();
+				fprintf(f, "%#x", arg);
 				if (arg == 0x0a) {
 					if (!numStack.empty())
 						numStack.pop_back();
-					Logger::Log(Logger::WARN) << "Not sure if this should happen." << std::endl;
+					Logger::Log(Logger::DEBUG, instAddress) << "Popping 0xa\n";
 				} else if (arg == 0x14) {
 					try {
-						inst.comment = strings2.at(arg);
+						comment = strings2.at(arg);
 						if (!strStack.empty())
 							strStack.pop_back();
 					} catch (std::out_of_range &e) {
-						Logger::Log(Logger::WARN) << "Missing string id " << arg << " at 0x" << std::hex << inst.address << std::dec << std::endl;
+						Logger::Log(Logger::WARN) << "Missing string id " << arg << " at 0x" << std::hex << instAddress << std::dec << std::endl;
 					}
 				}
 			break;
 			case 0x13:
-				readArg(inst);
-				readArg(inst);
+				fprintf(f, "%#x, %#x", buf.getInt(), buf.getInt());
 			break;
 			case 0x14:
-				readArg(inst);
-				readArg(inst);
-				readArg(inst);
+				fprintf(f, "%#x, %#x, %#x", buf.getInt(), buf.getInt(), buf.getInt());
 			break;
 			case 0x20:
-				readArg(inst);
-				readArg(inst);
-				readArg(inst);
+				fprintf(f, "%#x, %#x, %#x", buf.getInt(), buf.getInt(), buf.getInt());
 				if (commandStacks.size() > 1) {	
 					commandStacks.pop_back();	// not sure if should close all
 				}
 			break;
 			case 0x21:
-				readArg(inst);
-				readArg(inst, 1);
+				fprintf(f, "%#x, %d", buf.getInt(), buf.getChar());
 			break;
 			case 0x22:	// calc. 0x10 is subtract?
-				arg1 = readArg(inst);
-				arg2 = readArg(inst);
-				readArg(inst, 1);
+				arg1 = buf.getInt();
+				arg2 = buf.getInt();
+				fprintf(f, "%#x, %#x, %d", arg1, arg2, buf.getChar());
 				if (arg1 == 0xa && arg2 == 0xa) {
 					if (!numStack.empty())
 						numStack.pop_back();
@@ -310,131 +275,114 @@ void BytecodeParser::parseBytecode(Instructions &instList, const StringList &str
 				commandStacks.push_back(0);
 			break;
 			case 0x15:
-				readArgs(inst, numStack, strStack);
+				arg = readArgs(buf, args, numStack, strStack);
+				for (unsigned int i = 0; i < arg; i++) {
+					fprintf(f, "%#x,", args.back());
+					args.pop_back();
+				}
 			break;
 			case 0x30:
-				arg = readArg(inst);
-				readArgs(inst, numStack, strStack);
-				readArgs(inst, numStack, strStack, false);
-								
-				readArg(inst);
+				arg1 = buf.getInt();
+				fprintf(f, "%#x, (", arg1);
+				arg = readArgs(buf, args, numStack, strStack);
+				for (unsigned int i = 0; i < arg; i++) {
+					fprintf(f, "%#x,", args.back());
+					args.pop_back();
+				}
+				fprintf(f, "), (");
+				arg = readArgs(buf, args, numStack, strStack, false);
+				for (unsigned int i = 0; i < arg; i++) {
+					fprintf(f, "%#x,", args.back());
+					args.pop_back();
+				}
+				fprintf(f, "), %#x", buf.getInt());
 
 				stackTop = numStack.back();
 				//if ((numStack.top() & 0x7e000000) == 0) {
-				if (arg == 0x01) {
+				if (arg1 == 0x01) {
 					if (std::find(std::begin(stackArr), std::end(stackArr), stackTop) != std::end(stackArr)){
-						readArg(inst);
+						fprintf(f, "), %#x", buf.getInt());
 					} else {
-						Logger::Log(Logger::DEBUG) << "Address 0x" << std::hex << std::setw(4) << +inst.address;
-						Logger::Log(Logger::DEBUG) << ", stacktop is " << stackTop << std::endl;
-					
+						Logger::Log(Logger::DEBUG, instAddress) << " stacktop is " << stackTop << std::endl;
 						Logger::Log(Logger::DEBUG) << "Command stack layers: " << commandStacks.size() << std::endl;
 					}
 				}
 				//if (arg == 0x0a)
 					//numStack.push_back(0x02);
+					//presureneeded
 				if (commandStacks.size() > 1)
 					commandStacks.pop_back();
 			break;
 			case 0x00:
 			default:
-				inst.nop = true;
-				Logger::Log(Logger::INFO) << "Address 0x" << std::hex << std::setw(4) << +inst.address;
-				Logger::Log(Logger::INFO) << ":  NOP encountered: 0x" << std::setw(2) << +opcode << std::dec << std::endl;
+				numNops++;
+				Logger::Log(Logger::INFO) << "Address 0x" << std::hex << std::setw(4) << instAddress;
+				Logger::Log(Logger::INFO) << ":  NOP encountered: 0x" << std::setw(2) << opcode << std::dec << std::endl;
 		}
-		instList.push_back(inst);
-	}
-	
-	Logger::Log(Logger::INFO) << "Read " << instList.size() << " instructions.\n";
-}
-
-// TODO: flag to print raw
-void BytecodeParser::printInstructions(Instructions &instList, std::string filename, LabelData &info, const SceneInfo &sceneInfo) {
-	FILE* f = fopen(filename.c_str(), "wb");
-	
-	// Sort label info
-	std::sort(info.labels.begin(), info.labels.end(), compOffset);
-	std::sort(info.markers.begin(), info.markers.end(), compOffset);
-	std::sort(info.functions.begin(), info.functions.end(), compOffset);
-	std::sort(info.functionTable.begin(), info.functionTable.end(), compOffset);
-	
-	std::vector<ScriptCommand> commands;
-	std::copy_if(
-		sceneInfo.commands.begin(), sceneInfo.commands.end(), 
-		std::back_inserter(commands), 
-		[sceneInfo](ScriptCommand c){
-			return c.file == sceneInfo.thisFile;
-		});
-	std::sort(commands.begin(), commands.end(), compOffsetArgh);
-	
-	Instructions::iterator it;
-	
-	Logger::Log(Logger::DEBUG) << "Printing " << instList.size() << " instructions.\n";
-	
-	Instruction instruction;
-	unsigned int numNops = 0;
-	for (it = instList.begin(); it != instList.end(); it++) {
-		instruction = *it;
-		// Check for labels, markers and functions
-		printLabels(f, info, commands, instruction.address);
 		
-		if (instruction.nop) {
-			numNops++;
-		}		
-		
-		fprintf(f, "%#06x>\t%02x| %s\t", instruction.address, instruction.opcode, mnemonics[instruction.opcode].c_str());
-		
-		// Don't know if I should be going through again, after already parsing once
-		// maybe second parse should actually do something useful
-		unsigned int counter = 0;
-		switch (instruction.opcode) {
-			case 0x02:
-			case 0x07:
-				if (instruction.args.at(0) == 0x14) {
-					fprintf(f, "0x14, [%#06x]", instruction.args.at(1));
-				} else {
-					fprintf(f, "%#x, %#x", instruction.args.at(0), instruction.args.at(1));
-				}
-			break;
-			case 0x30: {	// figure out a nicer way of printing arg lists
-				auto argIt = instruction.args.begin();
-				fprintf(f, "%#x, (", *argIt); 
-				counter = *(++argIt);
-				for (unsigned int i = 0; i < counter; i++) {
-					fprintf(f, "%#x,", *(++argIt));
-				}
-				fprintf(f, ") (");
-				counter = *(++argIt);
-				for (unsigned int i = 0; i < counter; i++) {
-					fprintf(f, "%#x,", *(++argIt));
-				}
-				fprintf(f, ") %#x", *(++argIt));
-				if (++argIt != instruction.args.end()) {
-					fprintf(f, ", %#x", *argIt);	// shouldn't be any more
-				}
-			} break;
-			default:
-				for (auto argIt = instruction.args.begin(); argIt != instruction.args.end(); argIt++) {
-					if (argIt != instruction.args.begin()) fprintf(f, ", ");
-					fprintf(f, "%#x", *argIt);
-				}
+		if (!comment.empty()) {
+			fprintf(f, "\t; %s", comment.c_str());
+			comment.clear();
 		}
-
-		
-	
-		if (!instruction.comment.empty())
-			fprintf(f, "\t; %s", instruction.comment.c_str());
 		
 		fprintf(f, "\n");
 	}
 	
+	Logger::Log(Logger::INFO) << "Parsed " << numInsts << " instructions.\n";
 	if (numNops > 0) {
-		Logger::Log(Logger::WARN) << numNops << " NOP instructions skipped.\n";
+		Logger::Log(Logger::WARN) << "Warning: " << numNops << " NOP instructions skipped.\n";
 	}
+
 	fclose(f);
 }
 
-BytecodeParser::~BytecodeParser() {
-	if (bytecode)	// don't need check
-		delete[] bytecode;
+// Handle the reading and ownership of the bytecode buffer
+BytecodeBuffer::BytecodeBuffer(std::ifstream &f, HeaderPair index) {
+	f.seekg(index.offset, std::ios_base::beg);
+	
+	dataLength = index.count;
+	bytecode = new unsigned char[dataLength];
+	
+	f.read((char*) bytecode, dataLength);
+	if (f.fail()) {
+		Logger::Log(Logger::ERROR) << "Tried to read " << dataLength << " bytes, got" << f.gcount() << std::endl;
+		throw std::exception();
+	}
+	Logger::Log(Logger::DEBUG) << "Read " << f.gcount() << " bytes of bytecode." << std::endl;
+}
+
+BytecodeBuffer::~BytecodeBuffer() {
+	delete[] bytecode;
+}
+
+unsigned int BytecodeBuffer::size() {
+	return dataLength;
+}
+// buffer shouldn't be handling address?
+unsigned int BytecodeBuffer::getInt() {
+	unsigned int value = 0;
+	if (currAddress + 4 <= dataLength) {
+		value = readUInt32(bytecode + currAddress);
+		currAddress += 4;
+	} else {
+		throw std::out_of_range("Buffer out of data");
+	}
+	return value;
+}
+unsigned char BytecodeBuffer::getChar() {
+	unsigned char value = 0;
+	if (currAddress < dataLength) {
+		value = bytecode[currAddress++];
+	} else {
+		throw std::out_of_range("Buffer out of data");
+	}
+	return value;
+}
+
+unsigned int BytecodeBuffer::getAddress() {
+	return currAddress;
+}
+
+bool BytecodeBuffer::done() {
+	return (currAddress >= dataLength);
 }
