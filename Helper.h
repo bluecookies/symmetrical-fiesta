@@ -58,7 +58,7 @@ inline std::string operator + (HeaderPair pair, const std::string &string) {
 
 inline StringList operator + (std::vector<HeaderPair> pairs, const StringList &strings) {
 	StringList result; result.reserve(strings.size());
-	int numPairs = pairs.size();
+	unsigned int numPairs = pairs.size();
 	for (StringList::const_iterator it = strings.begin(); it != strings.end(); it++) {
 		result.push_back(pairs.at((it - strings.begin()) % numPairs) + *it);
 	}

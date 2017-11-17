@@ -48,8 +48,8 @@ void readScriptHeader(std::ifstream &f, ScriptHeader &header) {
 	
 	readHeaderPair(f, header.localCommandIndex);    
 	readHeaderPair(f, header.unknown1);
-	readHeaderPair(f, header.stringsIndex1);    
-	readHeaderPair(f, header.strings1);
+	readHeaderPair(f, header.localVarIndex);    
+	readHeaderPair(f, header.localVars);
 	
 	readHeaderPair(f, header.functions);
 	readHeaderPair(f, header.functionNameIndex);
@@ -110,11 +110,16 @@ SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string 
 		
 		// Vars
 		globalInfoFile.read((char*) &count, 4);
+		info.numGlobalVars = count;
+		info.varNames.reserve(count + header.localVarIndex.count);
 		for (unsigned int i = 0; i < count; i++) {
 			globalInfoFile.read((char*) &temp, 4);
 			globalInfoFile.read((char*) &temp, 4);
 			std::getline(globalInfoFile, name, '\0');
+			
+			info.varNames.push_back(name);
 		}
+
 		
 		// Commands
 		globalInfoFile.read((char*) &count, 4);
@@ -136,6 +141,8 @@ SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string 
 	readLabels(stream, info.labels, header.labels);
 	readLabels(stream, info.markers, header.markers);
 	readLabels(stream, info.functions, header.functions);
+	Logger::Log(Logger::INFO) << "Read " << header.functions.count << " functions.\n";
+
 	
 	// Read function names
 	StringList functionNames = readStrings(stream, header.functionNameIndex, header.functionName);
@@ -143,6 +150,10 @@ SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string 
 		it->name = functionNames.at(it - info.functions.begin());
 	}
 	
+	// Read local vars
+	StringList localVars = readStrings(stream, header.localVarIndex, header.localVars);
+	info.varNames.insert(info.varNames.end(), localVars.begin(), localVars.end());
+		
 	// Read local commands
 	stream.seekg(header.localCommandIndex.offset, std::ios::beg);
 	for (unsigned int i = 0; i < header.localCommandIndex.count; i++) {
@@ -224,11 +235,8 @@ int main(int argc, char* argv[]) {
 	readScriptHeader(fileStream, header);
 	
 	StringList mainStrings = readStrings(fileStream, header.stringIndex, header.stringData, true);
-	StringList strings1 = readStrings(fileStream, header.stringsIndex1, header.strings1);
 	StringList varStrings = readStrings(fileStream, header.varStringIndex, header.varStringData);
-	
-	Logger::Log(Logger::INFO) << strings1;
-			
+				
 	// Read labels, markers, functions, commands
 	// and global scene pack stuff
 	SceneInfo sceneInfo = readSceneInfo(fileStream, header, filename, fileIndex);
@@ -246,6 +254,6 @@ int main(int argc, char* argv[]) {
 	} else if (header.unknown6.offset != header.unknown7.offset) {
 		Logger::Log(Logger::WARN) << "Check this file out, something's weird\n";
 	}
-		
+			
 	return 0;
 }

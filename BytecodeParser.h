@@ -6,18 +6,18 @@
 
 struct ScriptCommand {
 	// Offset of instruction in script
-	unsigned int offset;
+	unsigned int offset = 0;
 	// Index of the file it appears in
-	unsigned int file;
+	unsigned int file = 0;
 	// Index of command - might not need
-	unsigned int index;
+	unsigned int index = 0;
 	// Command name
 	std::string name;
 };
 
 struct Label {
-	unsigned int offset;
-	unsigned int index;
+	unsigned int offset = 0;
+	unsigned int index = 0;
 	std::string name;
 	
 	Label& operator=(const ScriptCommand &in) {
@@ -44,11 +44,12 @@ struct Label {
 };
 
 struct SceneInfo {
-	StringList sceneNames;
+	StringList sceneNames, varNames;
 	// TODO: if no global info available, infer from local
 	// TODO: handle things when no global available
 	std::vector<ScriptCommand> commands;	// global + local
 	unsigned int numGlobalCommands = 0;
+	unsigned int numGlobalVars = 0;
 	unsigned int thisFile = 0xFFFFFFFF;
 	
 	std::vector<Label> labels, markers, functions;

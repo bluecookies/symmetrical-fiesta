@@ -19,8 +19,8 @@ unsigned int readUInt32(char* buf) {
 */
 
 void readHeaderPair(std::ifstream &stream, HeaderPair &pair) {
-	stream.read((char*) &pair.offset, sizeof(uint32_t));
-	stream.read((char*) &pair.count, sizeof(uint32_t));
+	stream.read(reinterpret_cast<char*>(&pair.offset), sizeof(uint32_t));
+	stream.read(reinterpret_cast<char*>(&pair.count), sizeof(uint32_t));
 }
 
 void readHeaderPair(unsigned char* buf, HeaderPair &pair) {
@@ -52,7 +52,7 @@ StringList readStrings(std::ifstream &f, HeaderPair index, HeaderPair data, bool
 	char16_t* strBuf = new char16_t[512]; // I hope that's enough
 	for (unsigned int i = 0; i < index.count; i++) { 
 		f.seekg(data.offset + 2 * stringIndices[i].offset, std::ios_base::beg);
-		f.read((char*) strBuf, 2 * stringIndices[i].count);
+		f.read(reinterpret_cast<char*>(strBuf), 2 * stringIndices[i].count);
 		
 		if (decode) {
 			for (unsigned int j = 0; j < stringIndices[i].count; j++) {
@@ -79,14 +79,14 @@ StringList readStrings(std::ifstream &f, HeaderPair index, HeaderPair data, bool
 // Requires stream pointer to be at beginning of table
 StringList readFilenames(std::ifstream &f, unsigned int numFiles) {
 	uint32_t *filenameLengths = new uint32_t[numFiles];
-	f.read((char*) filenameLengths, numFiles * 4);
+	f.read(reinterpret_cast<char*>(filenameLengths), numFiles * 4);
 	
 	StringList filenames;
 	filenames.reserve(numFiles);
 	
 	char16_t* strBuf = new char16_t[512];
 	for (unsigned int i = 0; i < numFiles; i++) {
-		f.read((char*) strBuf, filenameLengths[i]);
+		f.read(reinterpret_cast<char*>(strBuf), filenameLengths[i]);
 
 		std::u16string string16(strBuf, filenameLengths[i] >> 1);
 		try {
@@ -147,7 +147,7 @@ void decompressData(unsigned char* compData, unsigned char* decompBegin, unsigne
 	unsigned char* decompEnd = decompBegin + decompSize;
 	unsigned int EAX;
 	while (true) {
-		unsigned char marker = (unsigned char) *from;
+		unsigned char marker = *from;
 		from++;
 		for (int i = 0; i < 8; i++) {	// Iterate over marker's bits
 				if (to == decompEnd)

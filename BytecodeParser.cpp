@@ -96,6 +96,10 @@ unsigned int readArgs(BytecodeBuffer &buf, std::vector<unsigned int> &argList, P
 }
 
 // TODO: flag to print raw (might be long)
+
+// TODO: there's a bug here, but it's very random
+// appears once every few times
+// find it and squash it
 void parseBytecode(BytecodeBuffer &buf, 
 	std::string filename, SceneInfo sceneInfo,
 	const StringList &strings, const StringList &strings2
@@ -114,14 +118,6 @@ void parseBytecode(BytecodeBuffer &buf,
 	std::string comment;
 	
 	std::vector<unsigned int> args;
-	
-	unsigned int stackArr[] = {
-		0x02, //0x08,
-		0x0c, //0x0d
-		0x12, //0x1e,
-		0x4c, // making a selection (choice)?
-		0x4d 
-	};
 	
 	std::vector<Label> localCommands;
 	auto predCommandFile = [sceneInfo](ScriptCommand c) {
@@ -156,7 +152,7 @@ void parseBytecode(BytecodeBuffer &buf,
 		printLabels(f, functionIt, sceneInfo.functions.end(), instAddress, "Function");
 		printLabels(f, commandIt, localCommands.end(), instAddress, "Command");
 		
-		fprintf(f, "%#06x>\t%02x| %s\t", instAddress, opcode, s_mnemonics[opcode].c_str());
+		fprintf(f, "%#06x>\t%02x| %s ", instAddress, opcode, s_mnemonics[opcode].c_str());
 		
 		switch (opcode) {
 			case 0x01:
@@ -191,6 +187,13 @@ void parseBytecode(BytecodeBuffer &buf,
 						} else {
 								Logger::Log(Logger::WARN, instAddress) << " trying to access command index " << arg2 << std::endl;
 						}
+					} else if (arg2 >> 24 == 0x7f) {
+						unsigned int varIndex = arg2 & 0x00ffffff;
+						if (varIndex < sceneInfo.varNames.size()) {
+							comment = sceneInfo.varNames.at(varIndex);
+						} else {
+								Logger::Log(Logger::WARN, instAddress) << " trying to access var index " << arg2 << std::endl;
+						}
 					}
 				} else if (arg1 == 0x14) {
 					fprintf(f, "[%#x]", arg2);
@@ -215,8 +218,13 @@ void parseBytecode(BytecodeBuffer &buf,
 					if (!numStack.empty())
 						numStack.pop_back();
 				}
-				commandStacks.pop_back();
-				commandStacks.back()++;	// collapse into lower frame
+				if (!commandStacks.empty()) {
+					commandStacks.pop_back();
+					commandStacks.back()++;	// collapse into lower frame
+				} else {
+					Logger::Log(Logger::ERROR, instAddress) << " Tried to pop base frame.\n";
+					//throw std::exception();
+				}
 			break;
 			case 0x06:
 			case 0x09:
@@ -244,14 +252,21 @@ void parseBytecode(BytecodeBuffer &buf,
 				}
 			break;
 			case 0x13:
-				fprintf(f, "%#x, %#x", buf.getInt(), buf.getInt());
+				fprintf(f, "%#x ", buf.getInt());
+				arg = readArgs(buf, args, numStack, strStack);
+				fprintf(f, "(");
+				for (unsigned int i = 0; i < arg; i++) {
+					fprintf(f, "%#x,", args.back());
+					args.pop_back();
+				}
+				fprintf(f, ")");
 			break;
 			case 0x14:
 				fprintf(f, "%#x, %#x, %#x", buf.getInt(), buf.getInt(), buf.getInt());
 			break;
 			case 0x20:
 				fprintf(f, "%#x, %#x, %#x", buf.getInt(), buf.getInt(), buf.getInt());
-				if (commandStacks.size() > 1) {	
+				if (!commandStacks.empty()) {	
 					commandStacks.pop_back();	// not sure if should close all
 				}
 			break;
@@ -276,16 +291,18 @@ void parseBytecode(BytecodeBuffer &buf,
 			break;
 			case 0x15:
 				arg = readArgs(buf, args, numStack, strStack);
+				fprintf(f, "(");
 				for (unsigned int i = 0; i < arg; i++) {
 					fprintf(f, "%#x,", args.back());
 					args.pop_back();
 				}
+				fprintf(f, ")");
 			break;
-			case 0x30:
+			case 0x30: {
 				arg1 = buf.getInt();
 				fprintf(f, "%#x, (", arg1);
-				arg = readArgs(buf, args, numStack, strStack);
-				for (unsigned int i = 0; i < arg; i++) {
+				unsigned int count = readArgs(buf, args, numStack, strStack);
+				for (unsigned int i = 0; i < count; i++) {
 					fprintf(f, "%#x,", args.back());
 					args.pop_back();
 				}
@@ -295,32 +312,78 @@ void parseBytecode(BytecodeBuffer &buf,
 					fprintf(f, "%#x,", args.back());
 					args.pop_back();
 				}
-				fprintf(f, "), %#x", buf.getInt());
+				arg2 = buf.getInt();
+				fprintf(f, "), %#x", arg2);
 
 				stackTop = numStack.back();
 				// wary about determining function call address
 				// maybe later
 				fprintf(f, " [%#x] ", stackTop);
-				//if ((numStack.top() & 0x7e000000) == 0) {
-				if (arg1 == 0x01) {
-					if (std::find(std::begin(stackArr), std::end(stackArr), stackTop) != std::end(stackArr)){
-						fprintf(f, "), %#x", buf.getInt());
-					} else {
-						Logger::Log(Logger::DEBUG, instAddress) << " stacktop is " << stackTop << std::endl;
-						Logger::Log(Logger::DEBUG) << "Command stack layers: " << commandStacks.size() << std::endl;
-					}
+				
+				switch (stackTop) {
+					// TODO: "understand" what these mean
+					case 0x0c:
+					//Yes- 0, (a), (), 0
+					//No - 0, ( ), (), a
+					//No - 1, (a), (), 0
+					//No - 0, ( ), (), 0
+						if (arg1 == 0 && arg2 == 0x00 && count == 1) {	// or at least not 0xa
+							fprintf(f, ", %#x", buf.getInt());
+						}
+					break;
+					case 0x12:
+						if (arg2 == 0x00) {	// or at least not 0xa
+							fprintf(f, ", %#x", buf.getInt());
+						}
+					break;
+					case 0x4c:
+						//No - 0, (a       ), (), a
+						//Yes- 1, (a,14,14,), (), a
+						if (arg1 == 0x01)
+							fprintf(f, ", %#x", buf.getInt());
+					break;
+					case 0x4d:
+						//No - 0, (a), (), a
+						if (arg2 == 0)
+							fprintf(f, ", %#x", buf.getInt());
+					break;
+					case 0x5a:
+						//Yes- 0, (a), (), 0
+						//No - 0, ( ), (), 0
+						if (count > 0)
+							fprintf(f, ", %#x", buf.getInt());
+					break;
+					case 0x5b:
+						//Yes-1, (a,a), (), a
+						//Yes-0, (a  ), (), a
+						//No -0, (   ), (), a 
+						if (count > 0)
+							fprintf(f, ", %#x", buf.getInt());
+					break;
+					case 0xffffffff:	// i dunno about this
+						//Yes- 0, (0xa,), (), 0
+						//No - 0, (0xa,0xa,0xa,0xa,), (), 0 
+						//No - 0, (0xa,0xa,), (), 0
+						if (count == 1)	
+							fprintf(f, ", %#x", buf.getInt());
+					break;
+					case 0:	//Blaah
+						if (count > 3 && arg2 == 0x0a)
+							fprintf(f, ", %#x", buf.getInt());
+					break;
 				}
 				//if (arg == 0x0a)
-					//numStack.push_back(0x02);
-					//presureneeded
-				if (commandStacks.size() > 1)
+					//numStack.push_back(something);
+					//^prettysureneeded?
+				if (!commandStacks.empty()) {
 					commandStacks.pop_back();
-			break;
+				}
+			} break;
 			case 0x00:
 			default:
 				numNops++;
 				Logger::Log(Logger::INFO) << "Address 0x" << std::hex << std::setw(4) << instAddress;
-				Logger::Log(Logger::INFO) << ":  NOP encountered: 0x" << std::setw(2) << opcode << std::dec << std::endl;
+				Logger::Log(Logger::INFO) << ":  NOP encountered: 0x" << std::setw(2) << +opcode << std::dec << std::endl;
 		}
 		
 		if (!comment.empty()) {

@@ -66,756 +66,756 @@ _sys_menu_sys00
 _sys_menu_tt00
 _sys_menu_wipe
 
-$testtest1
-$testtest2
-$testtest3
-$testtest4
-$testtest5
-$ef_combo
-$ef_life
-$bg_name
-$bg_blur
-$bg_blur_prev
-$bg_wipe
-$bg_exist_decide
-$bg_base
-$bg_face
-$bg_posx_prev
-$bg_posx_next
-$bg_posy_prev
-$bg_posy_next
-$bg_tr_prev
-$bg_tr_next
-$bg_patno_prev
-$bg_patno_next
-$bg_scale_x_prev
-$bg_scale_x_next
-$bg_scale_y_prev
-$bg_scale_y_next
-$bg_rotate_z_prev
-$bg_rotate_z_next
-$bg_rotate_loop
-$bg_center_rep_x_prev
-$bg_center_rep_x_next
-$bg_center_rep_y_prev
-$bg_center_rep_y_next
-$bg_action_num
-$bg_action_time
-$bg_action_time_delay
-$bg_action_end_time
-$bg_action_speed_mod
-$bg_disp_cnt
-$bg_wipe_set
-$bg_set_ready
-$wipe_wait
-$sys_wipe
-$bg_time_set
-$bg_type
-$bs01
-$bs02
-$bs03
-$bs04
-$bs05
-$bs06
-$bs07
-$bs08
-$bs09
-$bs10
-$bs11
-$bs12
-$bs13
-$bs14
-$bs15
-$bs16
-$bs17
-$bs18
-$bs19
-$bs20
-$bs21
-$bs22
-$bs23
-$bs24
-$bs25
-$bs26
-$bs27
-$bs28
-$bs29
-$bs30
-$bs01_deflayer
-$bs02_deflayer
-$bs03_deflayer
-$bs04_deflayer
-$bs05_deflayer
-$bs06_deflayer
-$bs07_deflayer
-$bs08_deflayer
-$bs09_deflayer
-$bs10_deflayer
-$bs11_deflayer
-$bs12_deflayer
-$bs13_deflayer
-$bs14_deflayer
-$bs15_deflayer
-$bs16_deflayer
-$bs17_deflayer
-$bs18_deflayer
-$bs19_deflayer
-$bs20_deflayer
-$bs21_deflayer
-$bs22_deflayer
-$bs23_deflayer
-$bs24_deflayer
-$bs25_deflayer
-$bs26_deflayer
-$bs27_deflayer
-$bs28_deflayer
-$bs29_deflayer
-$bs30_deflayer
-$chara_posx
-$chara_posx_next
-$chara_posx_prev
-$chara_posy
-$chara_posy_next
-$chara_posy_prev
-$chara_posz
-$chara_posz_next
-$chara_posz_prev
-$chara_tr
-$chara_tr_next
-$chara_tr_prev
-$chara_layer
-$chara_layer_next
-$chara_layer_prev
-$chara_center_rep_x
-$chara_center_rep_x_next
-$chara_center_rep_x_prev
-$chara_center_rep_y
-$chara_center_rep_y_next
-$chara_center_rep_y_prev
-$chara_rotate_z
-$chara_rotate_z_next
-$chara_rotate_z_prev
-$chara_scale_x
-$chara_scale_x_next
-$chara_scale_x_prev
-$chara_scale_y
-$chara_scale_y_next
-$chara_scale_y_prev
-$chara_emo01
-$chara_emo01_next
-$chara_emo01_prev
-$chara_emo01_posx
-$chara_emo01_posy
-$chara_emo01_posx_prev
-$chara_emo01_posy_prev
-$chara_emo01_posx_next
-$chara_emo01_posy_next
-$chara_emo01_layer
-$chara_emo01_layer_prev
-$chara_emo01_layer_next
-$chara_emo01_center_rep_x
-$chara_emo01_center_rep_x_next
-$chara_emo01_center_rep_x_prev
-$chara_emo01_center_rep_y
-$chara_emo01_center_rep_y_next
-$chara_emo01_center_rep_y_prev
-$chara_emo02
-$chara_emo02_next
-$chara_emo02_prev
-$chara_emo02_posx
-$chara_emo02_posy
-$chara_emo02_posx_prev
-$chara_emo02_posy_prev
-$chara_emo02_posx_next
-$chara_emo02_posy_next
-$chara_emo02_layer
-$chara_emo02_layer_prev
-$chara_emo02_layer_next
-$chara_emo02_center_rep_x
-$chara_emo02_center_rep_x_next
-$chara_emo02_center_rep_x_prev
-$chara_emo02_center_rep_y
-$chara_emo02_center_rep_y_next
-$chara_emo02_center_rep_y_prev
-$chara_emo03
-$chara_emo03_next
-$chara_emo03_prev
-$chara_emo03_posx
-$chara_emo03_posy
-$chara_emo03_posx_prev
-$chara_emo03_posy_prev
-$chara_emo03_posx_next
-$chara_emo03_posy_next
-$chara_emo03_layer
-$chara_emo03_layer_prev
-$chara_emo03_layer_next
-$chara_emo03_center_rep_x
-$chara_emo03_center_rep_x_next
-$chara_emo03_center_rep_x_prev
-$chara_emo03_center_rep_y
-$chara_emo03_center_rep_y_next
-$chara_emo03_center_rep_y_prev
-$chara_action
-$chara_action_posx
-$chara_action_posy
-$chara_action_posx_next
-$chara_action_posy_next
-$chara_action_posx_prev
-$chara_action_posy_prev
-$chara_action_cdnter_x
-$chara_action_cdnter_y
-$chara_action_scale_x
-$chara_action_scale_y
-$chara_action_scale_z
-$chara_action_time
-$bs_size_info
-$bs_name_info
-$bs_dress_info
-$bs_pose_info
-$bs_face_info
-$bs_mouth_info
-$bs_name_info_prev
-$bs_dress_disp_num
-$bs_pose_disp_num
-$bs_face_disp_num
-$bs_mouth_disp_num
-$bs_name
-$bs_name_prev
-$bs_exist_decide
-$bs_del_decide
-$bs_cha
-$bs_cha_num
-$bs_cha_prev
-$bs_cha_num_prev
-$bs_cha_num_dummy
-$obj_chara
-$obj_chara_prev
-$bs_posx
-$bs_posx_next
-$bs_posx_prev
-$bs_posy
-$bs_posy_next
-$bs_posy_prev
-$bs_posz
-$bs_posz_next
-$bs_posz_prev
-$bs_tr
-$bs_tr_next
-$bs_tr_prev
-$bs_layer
-$bs_layer_next
-$bs_layer_prev
-$bs_center_rep_x
-$bs_center_rep_x_next
-$bs_center_rep_x_prev
-$bs_center_rep_y
-$bs_center_rep_y_next
-$bs_center_rep_y_prev
-$bs_rotate_z
-$bs_rotate_z_next
-$bs_rotate_z_prev
-$bs_emo01
-$bs_emo01_num
-$bs_emo01_next
-$bs_emo01_prev
-$bs_emo01_posx
-$bs_emo01_posy
-$bs_emo01_posx_next
-$bs_emo01_posy_next
-$bs_emo01_posx_prev
-$bs_emo01_posy_prev
-$bs_emo01_layer_prev
-$bs_emo01_layer_next
-$bs_emo01_exist
-$bs_emo01_loop
-$bs_emo01_center_rep_x
-$bs_emo01_center_rep_x_next
-$bs_emo01_center_rep_x_prev
-$bs_emo01_center_rep_y
-$bs_emo01_center_rep_y_next
-$bs_emo01_center_rep_y_prev
-$bs_emo02
-$bs_emo02_num
-$bs_emo02_next
-$bs_emo02_prev
-$bs_emo02_posx
-$bs_emo02_posy
-$bs_emo02_posx_next
-$bs_emo02_posy_next
-$bs_emo02_posx_prev
-$bs_emo02_layer_prev
-$bs_emo02_layer_next
-$bs_emo02_exist
-$bs_emo02_loop
-$bs_emo02_center_rep_x
-$bs_emo02_center_rep_x_next
-$bs_emo02_center_rep_x_prev
-$bs_emo02_center_rep_y
-$bs_emo02_center_rep_y_next
-$bs_emo02_center_rep_y_prev
-$bs_emo03
-$bs_emo03_num
-$bs_emo03_next
-$bs_emo03_prev
-$bs_emo03_posx
-$bs_emo03_posy
-$bs_emo03_posx_next
-$bs_emo03_posy_next
-$bs_emo03_posx_prev
-$bs_emo03_layer_prev
-$bs_emo03_layer_next
-$bs_emo03_exist
-$bs_emo03_loop
-$bs_emo03_center_rep_x
-$bs_emo03_center_rep_x_next
-$bs_emo03_center_rep_x_prev
-$bs_emo03_center_rep_y
-$bs_emo03_center_rep_y_next
-$bs_emo03_center_rep_y_prev
-$bs_emo_loop
-$bs_wipe
-$bs_wipe_set
-$bs_action
-$bs_action01
-$bs_action02
-$bs_action03
-$bs_action_posx
-$bs_action_posy
-$bs_action_posx_next
-$bs_action_posy_next
-$bs_action_posx_prev
-$bs_action_posy_prev
-$bs_action_tr
-$bs_action_tr_next
-$bs_action_tr_prev
-$bs_action_scale_x
-$bs_action_scale_y
-$bs_action_scale_x_next
-$bs_action_scale_y_next
-$bs_action_scale_x_prev
-$bs_action_scale_y_prev
-$bs_action_rotate_z
-$bs_action_rotate_z_next
-$bs_action_rotate_z_prev
-$bs_action_center_rep_x
-$bs_action_center_rep_y
-$bs_action_time
-$bs_action_time01
-$bs_action_time02
-$bs_action_time03
-$bs_action_scale_time01
-$bs_action_scale_time02
-$bs_action_scale_time03
-$bs_action_rotate_time01
-$bs_action_rotate_time02
-$bs_action_rotate_time03
-$bs_action_end_time
-$bs_action_end_time01
-$bs_action_end_time02
-$bs_action_end_time03
-$bs_action_end_scale_time01
-$bs_action_end_scale_time02
-$bs_action_end_scale_time03
-$bs_action_end_rotate_time01
-$bs_action_end_rotate_time02
-$bs_action_end_rotate_time03
-$bs_action_mod
-$bs_distance
-$cha_id
-$pos_ol
-$pos_fl2
-$pos_fl
-$pos_l
-$pos_hl2
-$pos_hl
-$pos_nl
-$pos_c
-$pos_nr
-$pos_hr
-$pos_hr2
-$pos_r
-$pos_fr
-$pos_fr2
-$pos_or
-$pos_ot
-$pos_ft2
-$pos_ft
-$pos_t
-$pos_ht2
-$pos_ht
-$pos_nt
-$pos_m
-$pos_nu
-$pos_hu
-$pos_hu2
-$pos_u
-$pos_fu
-$pos_fu2
-$pos_ou
-$pos_z
-$pos_z1
-$pos_z2
-$pos_z3
-$pos_z4
-$pos_z5
-$pos_z6
-$pos_speed
-$posx_speed
-$posy_speed
-$posx_speed_delay
-$posy_speed_delay
-$posx_speed_mod
-$posy_speed_mod
-$bs_type
-$disp
-$bs_clear_all
-$bs_disp_cnt
-$bs_action_set
-$bs_action_time_set
-$bs_action_sc_time_set
-$bs_action_ro_time_set
-$bs_action_rotate_set
-$bs_action_scale_set
-$bs_action_scale_x_set
-$bs_action_scale_y_set
-$bs_action_tr_set
-$bs_action_tr_time_set
-$bs_wipe_decide
-$bs_defwipe
-$bs_defwipe_all
-$bs_face_num
-$bs_mouth_num
-$bs_name_decide
-$cha_name_prev
-$tone_admin
-$cha_dress
-$sc_layer_num
-$sc_tr_num
-$cha_face
-$face_no
-$fade_wipe_set
-$fade_sel
-$fade_clolr
-$fade_wmnd
-$fade_dup
-$map_day
-$map_day_disp
-$map_time_disp
-$map_selbtn_type
-$map_selbtnbg_type
-$map_selbtn
-$map_spot
-$map_selbtn_x
-$map_selbtn_y
-$map_selbtn_rep_y
-$map_ep_disp
-$map_day1_disp
-$map_day2_disp
-$sys_smlc
-$sys_smmlc
-$sys_forlc
-$sys_addlc
-$sys_cntlc
-$sys_forlc0
-$sys_forlc1
-$sys_forlc2
-$sys_forlc3
-$sys_forlc4
-$sys_forlc5
-$sys_forlc6
-$sys_forlc7
-$sys_forlc8
-$sys_forlc9
-$sys_forlc10
-$sys_forlc11
-$sys_forlc12
-$sys_forlc13
-$sys_forlc14
-$sys_forlc15
-$sys_forlc16
-$sys_forlc17
-$sys_forlc18
-$sys_forlc19
-$sys_smlc0
-$sys_smlc1
-$sys_smlc2
-$sys_smlc3
-$sys_smlc4
-$sys_smlc5
-$sys_smlc6
-$sys_smlc7
-$sys_smlc8
-$sys_smlc9
-$sys_smlc10
-$sys_smlc11
-$sys_smlc12
-$sys_smlc13
-$sys_smlc14
-$sys_smlc15
-$sys_smlc16
-$sys_smlc17
-$sys_smlc18
-$sys_smlc19
-$sys_mode
-$sys_mode_prev
-0
-1
-2
-3
-4
-$sys_mode_return
-$sys_conf
-$break_switch
-$_l
-$_k
-$first_gameset
-$days_create
-$ml
-$mr
-$mx_prev
-$my_prev
-$mschk
-$mschk_prev
-$ms_state
-$ms_state_conf
-$ms_state_prev
-$ms_state_conf_prev
-$msbtn_state
-$msbtn_result
-$mswhl_state
-$obj_btn_state
-$btn_state_switch
-$flick_state
-$flick_mov_x
-$flick_mov_y
-$flick_add_x
-$flick_add_y
-$flick_decide
-$tm_state
-$tcchkstate01
-$tcchkstate02
-$tcchkstate03
-$tcspdstate
-$tcchkdefstate01
-$tcchkdefstate02
-$tcchkdefstate03
-$tcspddefstate
-$tcspddata
-$tcspd_clr_setpos
-$tcspd_set
-$s_ctl_bar_tc
-$s_ctl_bar_pos_tc
-$get_cg_flag
-$set_cg_max
-$get_cg_max
-$set_cg_flag
-$extra_mode
-$gallery_page
-$gallery_page_prev
-$charater_page
-$charater_page_prev
-$charater_disp
-$charater_disp_prev
-$bgm_play_no
-$bgm_play_no_prev
-$bgm_list_disp
-$extra_help_dsip
-$gallery_th_no
-$th_list_disp
-$thcg_posx
-$thcg_posy
-$th_no_now
-$cg_disp_no
-$cg_scroll
-$cm_menu_clear
-$bg_list
-$bs_list
-$bs_list_prev
-$cha_pat_list
-$cha_pat_list_prev
-$dress_pat_list
-$dress_pat_list_prev
-$dress_pat_data
-$dress_pat_data_prev
-$face_pat_list
-$face_pat_list_prev
-$face_pat_data
-$face_pat_data_prev
-$dis_pat_list
-$dis_pat_list_prev
-$bs_list_disp
-$ch_list_disp
-$sk_list_disp
-$mo_list_disp
-$kh_list_disp
-$ak_list_disp
-$tm_list_disp
-$hr_list_disp
-$ms_list_disp
-$cp_list_disp
-$sg_list_disp
-$at_list_disp
-$ed_chihiro02_skip
-$omv_play
-$movie_fade_in
-$sys_koe_check
-$brand_call
-$get_mwnd_no
-$waku_num
-$auto_save_control
-$selnumbarflag
-$selflag
-$selcolor
-$save_point_state
-$obj_rect_x01
-$obj_rect_y01
-$obj_rect_x02
-$obj_rect_y02
-$objcd_rect_x01
-$objcd_rect_y01
-$objcd_rect_x02
-$objcd_rect_y02
-$obj_rect_pixel
-$bgm_name_no
-$bgm_name_no_prev
-$$bgm_snddelay_status
-$$pcmch_snddelay_status
-$sys_cfpage_change
-$amcheckstate
-$ttimestate
-$stimestate
-$checkdefstate
-$ttimedefstate
-$stimedefstate
-$sys_cf_page
-$sys_cf_page_last
-$sys_cf_page_prev
-$ww_size_state
-$ww_size_state_prev
-$bg_fade_state
-$bs_fade_state
-$ev_fade_state
-$me_fade_state
-$em_disp_state
-$msg_skip_state
-$all_chk_state
-$all_vol_state
-$bgm_chk_state
-$bgm_vol_state
-$voice_chk_state
-$voice_tchk_state
-$voice_vol_state
-$bfade_chk01_state
-$bfade_vol_state
-$se_chk_state
-$se_vol_state
-$sys_chk_state
-$sys_vol_state
-$mov_chk_state
-$mov_vol_state
-$cv_state
-$cv_vol_state
-$ms_chk_state
-$mss_state
-$wb_state01
-$wb_state02
-$wb_state03
-$wb_state04
-$wb_chkstate
-$es_state
-$sys_cfpage_cspd
-$cd_state_ready
-$sys_cf_help_disp
-$s_ctl_bar_pos
-$s_ctl_bar
-$s_ctl_lbtn_active
-$s_ctl_rbtn_active
-$s_ctl_bar_stpos
-$s_ctl_bar_edpos
-$s_ctl_bar_active
-$s_ctl_bar_ctlpos
-$s_ctl_bar_ctlactive
-$s_ctl_bar_objstate
-$s_ctl_bar_ctlstate
-$s_ctl_bar_lbtnstate
-$s_ctl_bar_rbtnstate
-$s_ctl_bar_barstate
-$s_ctl_bar_ctlpos_prev
-$s_ctl_bar_set
-$msp_set
-$msp_set_prev
-$wb_r_set
-$wb_g_set
-$wb_b_set
-$wb_tr_set
-$msp_ctl_bar_set
-$s_ctl_bar_set_prev
-$msp_ctl_bar_set_prev
-$msp_touch_state01
-$msp_touch_state02
-$msp_touch_state03
-$ms_pose_test_state
-$ms_pose_delay_state
-$s_ctr_bar_pos_defult
-$ttime_set
-$stime_set
-$wtime_set
-$use_font
-$sys_slpage
-$sys_slpage_prev
-$sys_slpage_new
-$sys_slflag
-$sys_sldate00
-$sysslpage_tab
-$sysslpage_tab_prev
-$sys_slpage_state
-$sys_slpage_exist
-$sys_sldata_exist
-$sys_sldata
-$sys_slsdata
-$sys_slname_bg
-$sys_slname_btn
-$sys_sldata_lock
-$sldatastate
-$datastatecnt
-$statedata01
-$statedata02
-$sys_slpage_cng
-$sys_slpage_cspd
-$sys_sldata_disp
-$sys_sllock_state
-$sys_sldisp_pat
-$sys_slhelp_disp
-$sys_slpage_change
-$sys_sldate_chk
-$sys_sldate_year
-$sys_sldate_month
-$sys_sldate_day
-$sys_sldate_week
-$sys_sldate_hour
-$sys_sldate_minute
-$sys_sldate_second
-$sys_sldate_millisecond
-$sys_sldate_stitle
-$sys_slstitle
-$sys_slstitlea
-$sys_rtimedate
-$sys_rtimedatea
-$sys_slcomdata
-$sys_slcomdatas
-$sys_slgametextdata
-$sm_cd_state_ready
-$skipstate
-$askipstate
-$autostate
-$windowstate
-$selstate
-$savestate
-$loadstate
-$skip_start_ready
-$auto_start_ready
-$help_disp_state
-$help_disp_state_prev
+10, 0	$testtest1
+10, 0	$testtest2
+20, 0	$testtest3
+11, 10	$testtest4
+21, 10	$testtest5
+10, 0	$ef_combo
+11, 2	$ef_life
+21, 9	$bg_name
+11, 9	$bg_blur
+11, 9	$bg_blur_prev
+11, 9	$bg_wipe
+11, 9	$bg_exist_decide
+11, 9	$bg_base
+11, 9	$bg_face
+11, 9	$bg_posx_prev
+11, 9	$bg_posx_next
+11, 9	$bg_posy_prev
+11, 9	$bg_posy_next
+11, 9	$bg_tr_prev
+11, 9	$bg_tr_next
+11, 9	$bg_patno_prev
+11, 9	$bg_patno_next
+11, 9	$bg_scale_x_prev
+11, 9	$bg_scale_x_next
+11, 9	$bg_scale_y_prev
+11, 9	$bg_scale_y_next
+11, 9	$bg_rotate_z_prev
+11, 9	$bg_rotate_z_next
+11, 9	$bg_rotate_loop
+11, 9	$bg_center_rep_x_prev
+11, 9	$bg_center_rep_x_next
+11, 9	$bg_center_rep_y_prev
+11, 9	$bg_center_rep_y_next
+11, 9	$bg_action_num
+11, 9	$bg_action_time
+11, 9	$bg_action_time_delay
+11, 9	$bg_action_end_time
+11, 9	$bg_action_speed_mod
+10, 0	$bg_disp_cnt
+10, 0	$bg_wipe_set
+10, 0	$bg_set_ready
+10, 0	$wipe_wait
+10, 0	$sys_wipe
+10, 0	$bg_time_set
+10, 0	$bg_type
+10, 0	$bs01
+10, 0	$bs02
+10, 0	$bs03
+10, 0	$bs04
+10, 0	$bs05
+10, 0	$bs06
+10, 0	$bs07
+10, 0	$bs08
+10, 0	$bs09
+10, 0	$bs10
+10, 0	$bs11
+10, 0	$bs12
+10, 0	$bs13
+10, 0	$bs14
+10, 0	$bs15
+10, 0	$bs16
+10, 0	$bs17
+10, 0	$bs18
+10, 0	$bs19
+10, 0	$bs20
+10, 0	$bs21
+10, 0	$bs22
+10, 0	$bs23
+10, 0	$bs24
+10, 0	$bs25
+10, 0	$bs26
+10, 0	$bs27
+10, 0	$bs28
+10, 0	$bs29
+10, 0	$bs30
+10, 0	$bs01_deflayer
+10, 0	$bs02_deflayer
+10, 0	$bs03_deflayer
+10, 0	$bs04_deflayer
+10, 0	$bs05_deflayer
+10, 0	$bs06_deflayer
+10, 0	$bs07_deflayer
+10, 0	$bs08_deflayer
+10, 0	$bs09_deflayer
+10, 0	$bs10_deflayer
+10, 0	$bs11_deflayer
+10, 0	$bs12_deflayer
+10, 0	$bs13_deflayer
+10, 0	$bs14_deflayer
+10, 0	$bs15_deflayer
+10, 0	$bs16_deflayer
+10, 0	$bs17_deflayer
+10, 0	$bs18_deflayer
+10, 0	$bs19_deflayer
+10, 0	$bs20_deflayer
+10, 0	$bs21_deflayer
+10, 0	$bs22_deflayer
+10, 0	$bs23_deflayer
+10, 0	$bs24_deflayer
+10, 0	$bs25_deflayer
+10, 0	$bs26_deflayer
+10, 0	$bs27_deflayer
+10, 0	$bs28_deflayer
+10, 0	$bs29_deflayer
+10, 0	$bs30_deflayer
+11, 40	$chara_posx
+11, 40	$chara_posx_next
+11, 40	$chara_posx_prev
+11, 40	$chara_posy
+11, 40	$chara_posy_next
+11, 40	$chara_posy_prev
+11, 40	$chara_posz
+11, 40	$chara_posz_next
+11, 40	$chara_posz_prev
+11, 40	$chara_tr
+11, 40	$chara_tr_next
+11, 40	$chara_tr_prev
+11, 40	$chara_layer
+11, 40	$chara_layer_next
+11, 40	$chara_layer_prev
+11, 40	$chara_center_rep_x
+11, 40	$chara_center_rep_x_next
+11, 40	$chara_center_rep_x_prev
+11, 40	$chara_center_rep_y
+11, 40	$chara_center_rep_y_next
+11, 40	$chara_center_rep_y_prev
+11, 40	$chara_rotate_z
+11, 40	$chara_rotate_z_next
+11, 40	$chara_rotate_z_prev
+11, 40	$chara_scale_x
+11, 40	$chara_scale_x_next
+11, 40	$chara_scale_x_prev
+11, 40	$chara_scale_y
+11, 40	$chara_scale_y_next
+11, 40	$chara_scale_y_prev
+11, 40	$chara_emo01
+11, 40	$chara_emo01_next
+11, 40	$chara_emo01_prev
+11, 40	$chara_emo01_posx
+11, 40	$chara_emo01_posy
+11, 40	$chara_emo01_posx_prev
+11, 40	$chara_emo01_posy_prev
+11, 40	$chara_emo01_posx_next
+11, 40	$chara_emo01_posy_next
+11, 40	$chara_emo01_layer
+11, 40	$chara_emo01_layer_prev
+11, 40	$chara_emo01_layer_next
+11, 40	$chara_emo01_center_rep_x
+11, 40	$chara_emo01_center_rep_x_next
+11, 40	$chara_emo01_center_rep_x_prev
+11, 40	$chara_emo01_center_rep_y
+11, 40	$chara_emo01_center_rep_y_next
+11, 40	$chara_emo01_center_rep_y_prev
+11, 40	$chara_emo02
+11, 40	$chara_emo02_next
+11, 40	$chara_emo02_prev
+11, 40	$chara_emo02_posx
+11, 40	$chara_emo02_posy
+11, 40	$chara_emo02_posx_prev
+11, 40	$chara_emo02_posy_prev
+11, 40	$chara_emo02_posx_next
+11, 40	$chara_emo02_posy_next
+11, 40	$chara_emo02_layer
+11, 40	$chara_emo02_layer_prev
+11, 40	$chara_emo02_layer_next
+11, 40	$chara_emo02_center_rep_x
+11, 40	$chara_emo02_center_rep_x_next
+11, 40	$chara_emo02_center_rep_x_prev
+11, 40	$chara_emo02_center_rep_y
+11, 40	$chara_emo02_center_rep_y_next
+11, 40	$chara_emo02_center_rep_y_prev
+11, 40	$chara_emo03
+11, 40	$chara_emo03_next
+11, 40	$chara_emo03_prev
+11, 40	$chara_emo03_posx
+11, 40	$chara_emo03_posy
+11, 40	$chara_emo03_posx_prev
+11, 40	$chara_emo03_posy_prev
+11, 40	$chara_emo03_posx_next
+11, 40	$chara_emo03_posy_next
+11, 40	$chara_emo03_layer
+11, 40	$chara_emo03_layer_prev
+11, 40	$chara_emo03_layer_next
+11, 40	$chara_emo03_center_rep_x
+11, 40	$chara_emo03_center_rep_x_next
+11, 40	$chara_emo03_center_rep_x_prev
+11, 40	$chara_emo03_center_rep_y
+11, 40	$chara_emo03_center_rep_y_next
+11, 40	$chara_emo03_center_rep_y_prev
+11, 40	$chara_action
+11, 40	$chara_action_posx
+11, 40	$chara_action_posy
+11, 40	$chara_action_posx_next
+11, 40	$chara_action_posy_next
+11, 40	$chara_action_posx_prev
+11, 40	$chara_action_posy_prev
+11, 40	$chara_action_cdnter_x
+11, 40	$chara_action_cdnter_y
+11, 40	$chara_action_scale_x
+11, 40	$chara_action_scale_y
+11, 40	$chara_action_scale_z
+11, 40	$chara_action_time
+21, 6	$bs_size_info
+21, 6	$bs_name_info
+21, 6	$bs_dress_info
+21, 6	$bs_pose_info
+21, 6	$bs_face_info
+21, 6	$bs_mouth_info
+21, 6	$bs_name_info_prev
+21, 6	$bs_dress_disp_num
+21, 6	$bs_pose_disp_num
+21, 6	$bs_face_disp_num
+21, 6	$bs_mouth_disp_num
+21, 6	$bs_name
+21, 6	$bs_name_prev
+11, 6	$bs_exist_decide
+11, 6	$bs_del_decide
+21, 6	$bs_cha
+11, 6	$bs_cha_num
+21, 6	$bs_cha_prev
+11, 6	$bs_cha_num_prev
+11, 32	$bs_cha_num_dummy
+11, 6	$obj_chara
+11, 6	$obj_chara_prev
+11, 6	$bs_posx
+11, 6	$bs_posx_next
+11, 6	$bs_posx_prev
+11, 6	$bs_posy
+11, 6	$bs_posy_next
+11, 6	$bs_posy_prev
+11, 6	$bs_posz
+11, 6	$bs_posz_next
+11, 6	$bs_posz_prev
+11, 6	$bs_tr
+11, 6	$bs_tr_next
+11, 6	$bs_tr_prev
+11, 6	$bs_layer
+11, 6	$bs_layer_next
+11, 6	$bs_layer_prev
+11, 6	$bs_center_rep_x
+11, 6	$bs_center_rep_x_next
+11, 6	$bs_center_rep_x_prev
+11, 6	$bs_center_rep_y
+11, 6	$bs_center_rep_y_next
+11, 6	$bs_center_rep_y_prev
+11, 6	$bs_rotate_z
+11, 6	$bs_rotate_z_next
+11, 6	$bs_rotate_z_prev
+21, 6	$bs_emo01
+11, 6	$bs_emo01_num
+11, 6	$bs_emo01_next
+11, 6	$bs_emo01_prev
+11, 6	$bs_emo01_posx
+11, 6	$bs_emo01_posy
+11, 6	$bs_emo01_posx_next
+11, 6	$bs_emo01_posy_next
+11, 6	$bs_emo01_posx_prev
+11, 6	$bs_emo01_posy_prev
+11, 6	$bs_emo01_layer_prev
+11, 6	$bs_emo01_layer_next
+11, 6	$bs_emo01_exist
+11, 6	$bs_emo01_loop
+11, 40	$bs_emo01_center_rep_x
+11, 40	$bs_emo01_center_rep_x_next
+11, 40	$bs_emo01_center_rep_x_prev
+11, 40	$bs_emo01_center_rep_y
+11, 40	$bs_emo01_center_rep_y_next
+11, 40	$bs_emo01_center_rep_y_prev
+21, 6	$bs_emo02
+11, 6	$bs_emo02_num
+11, 6	$bs_emo02_next
+11, 6	$bs_emo02_prev
+11, 6	$bs_emo02_posx
+11, 6	$bs_emo02_posy
+11, 6	$bs_emo02_posx_next
+11, 6	$bs_emo02_posy_next
+11, 6	$bs_emo02_posx_prev
+11, 6	$bs_emo02_layer_prev
+11, 6	$bs_emo02_layer_next
+11, 6	$bs_emo02_exist
+11, 6	$bs_emo02_loop
+11, 40	$bs_emo02_center_rep_x
+11, 40	$bs_emo02_center_rep_x_next
+11, 40	$bs_emo02_center_rep_x_prev
+11, 40	$bs_emo02_center_rep_y
+11, 40	$bs_emo02_center_rep_y_next
+11, 40	$bs_emo02_center_rep_y_prev
+21, 6	$bs_emo03
+11, 6	$bs_emo03_num
+11, 6	$bs_emo03_next
+11, 6	$bs_emo03_prev
+11, 6	$bs_emo03_posx
+11, 6	$bs_emo03_posy
+11, 6	$bs_emo03_posx_next
+11, 6	$bs_emo03_posy_next
+11, 6	$bs_emo03_posx_prev
+11, 6	$bs_emo03_layer_prev
+11, 6	$bs_emo03_layer_next
+11, 6	$bs_emo03_exist
+11, 6	$bs_emo03_loop
+11, 40	$bs_emo03_center_rep_x
+11, 40	$bs_emo03_center_rep_x_next
+11, 40	$bs_emo03_center_rep_x_prev
+11, 40	$bs_emo03_center_rep_y
+11, 40	$bs_emo03_center_rep_y_next
+11, 40	$bs_emo03_center_rep_y_prev
+10, 0	$bs_emo_loop
+11, 6	$bs_wipe
+10, 0	$bs_wipe_set
+21, 6	$bs_action
+21, 6	$bs_action01
+21, 6	$bs_action02
+21, 6	$bs_action03
+11, 6	$bs_action_posx
+11, 6	$bs_action_posy
+11, 6	$bs_action_posx_next
+11, 6	$bs_action_posy_next
+11, 6	$bs_action_posx_prev
+11, 6	$bs_action_posy_prev
+11, 6	$bs_action_tr
+11, 6	$bs_action_tr_next
+11, 6	$bs_action_tr_prev
+11, 6	$bs_action_scale_x
+11, 6	$bs_action_scale_y
+11, 6	$bs_action_scale_x_next
+11, 6	$bs_action_scale_y_next
+11, 6	$bs_action_scale_x_prev
+11, 6	$bs_action_scale_y_prev
+11, 6	$bs_action_rotate_z
+11, 6	$bs_action_rotate_z_next
+11, 6	$bs_action_rotate_z_prev
+11, 6	$bs_action_center_rep_x
+11, 6	$bs_action_center_rep_y
+11, 6	$bs_action_time
+11, 6	$bs_action_time01
+11, 6	$bs_action_time02
+11, 6	$bs_action_time03
+11, 6	$bs_action_scale_time01
+11, 6	$bs_action_scale_time02
+11, 6	$bs_action_scale_time03
+11, 6	$bs_action_rotate_time01
+11, 6	$bs_action_rotate_time02
+11, 6	$bs_action_rotate_time03
+11, 6	$bs_action_end_time
+11, 6	$bs_action_end_time01
+11, 6	$bs_action_end_time02
+11, 6	$bs_action_end_time03
+11, 6	$bs_action_end_scale_time01
+11, 6	$bs_action_end_scale_time02
+11, 6	$bs_action_end_scale_time03
+11, 6	$bs_action_end_rotate_time01
+11, 6	$bs_action_end_rotate_time02
+11, 6	$bs_action_end_rotate_time03
+11, 6	$bs_action_mod
+11, 6	$bs_distance
+21, 30	$cha_id
+10, 0	$pos_ol
+10, 0	$pos_fl2
+10, 0	$pos_fl
+10, 0	$pos_l
+10, 0	$pos_hl2
+10, 0	$pos_hl
+10, 0	$pos_nl
+10, 0	$pos_c
+10, 0	$pos_nr
+10, 0	$pos_hr
+10, 0	$pos_hr2
+10, 0	$pos_r
+10, 0	$pos_fr
+10, 0	$pos_fr2
+10, 0	$pos_or
+10, 0	$pos_ot
+10, 0	$pos_ft2
+10, 0	$pos_ft
+10, 0	$pos_t
+10, 0	$pos_ht2
+10, 0	$pos_ht
+10, 0	$pos_nt
+10, 0	$pos_m
+10, 0	$pos_nu
+10, 0	$pos_hu
+10, 0	$pos_hu2
+10, 0	$pos_u
+10, 0	$pos_fu
+10, 0	$pos_fu2
+10, 0	$pos_ou
+10, 0	$pos_z
+10, 0	$pos_z1
+10, 0	$pos_z2
+10, 0	$pos_z3
+10, 0	$pos_z4
+10, 0	$pos_z5
+10, 0	$pos_z6
+11, 6	$pos_speed
+11, 6	$posx_speed
+11, 6	$posy_speed
+11, 6	$posx_speed_delay
+11, 6	$posy_speed_delay
+11, 6	$posx_speed_mod
+11, 6	$posy_speed_mod
+10, 0	$bs_type
+10, 0	$disp
+10, 0	$bs_clear_all
+10, 0	$bs_disp_cnt
+11, 6	$bs_action_set
+11, 6	$bs_action_time_set
+11, 6	$bs_action_sc_time_set
+11, 6	$bs_action_ro_time_set
+11, 6	$bs_action_rotate_set
+11, 6	$bs_action_scale_set
+11, 6	$bs_action_scale_x_set
+11, 6	$bs_action_scale_y_set
+11, 6	$bs_action_tr_set
+11, 6	$bs_action_tr_time_set
+10, 0	$bs_wipe_decide
+10, 0	$bs_defwipe
+10, 0	$bs_defwipe_all
+10, 0	$bs_face_num
+10, 0	$bs_mouth_num
+11, 6	$bs_name_decide
+21, 6	$cha_name_prev
+10, 0	$tone_admin
+11, 50	$cha_dress
+10, 0	$sc_layer_num
+10, 0	$sc_tr_num
+10, 0	$cha_face
+10, 0	$face_no
+10, 0	$fade_wipe_set
+10, 0	$fade_sel
+20, 0	$fade_clolr
+10, 0	$fade_wmnd
+10, 0	$fade_dup
+10, 0	$map_day
+10, 0	$map_day_disp
+10, 0	$map_time_disp
+21, 15	$map_selbtn_type
+21, 15	$map_selbtnbg_type
+11, 15	$map_selbtn
+11, 15	$map_spot
+11, 15	$map_selbtn_x
+11, 15	$map_selbtn_y
+11, 15	$map_selbtn_rep_y
+10, 0	$map_ep_disp
+10, 0	$map_day1_disp
+10, 0	$map_day2_disp
+11, 20	$sys_smlc
+11, 20	$sys_smmlc
+11, 20	$sys_forlc
+11, 20	$sys_addlc
+11, 20	$sys_cntlc
+10, 0	$sys_forlc0
+10, 0	$sys_forlc1
+10, 0	$sys_forlc2
+10, 0	$sys_forlc3
+10, 0	$sys_forlc4
+10, 0	$sys_forlc5
+10, 0	$sys_forlc6
+10, 0	$sys_forlc7
+10, 0	$sys_forlc8
+10, 0	$sys_forlc9
+10, 0	$sys_forlc10
+10, 0	$sys_forlc11
+10, 0	$sys_forlc12
+10, 0	$sys_forlc13
+10, 0	$sys_forlc14
+10, 0	$sys_forlc15
+10, 0	$sys_forlc16
+10, 0	$sys_forlc17
+10, 0	$sys_forlc18
+10, 0	$sys_forlc19
+10, 0	$sys_smlc0
+10, 0	$sys_smlc1
+10, 0	$sys_smlc2
+10, 0	$sys_smlc3
+10, 0	$sys_smlc4
+10, 0	$sys_smlc5
+10, 0	$sys_smlc6
+10, 0	$sys_smlc7
+10, 0	$sys_smlc8
+10, 0	$sys_smlc9
+10, 0	$sys_smlc10
+10, 0	$sys_smlc11
+10, 0	$sys_smlc12
+10, 0	$sys_smlc13
+10, 0	$sys_smlc14
+10, 0	$sys_smlc15
+10, 0	$sys_smlc16
+10, 0	$sys_smlc17
+10, 0	$sys_smlc18
+10, 0	$sys_smlc19
+10, 0	$sys_mode
+10, 0	$sys_mode_prev
+10, 0	0
+10, 0	1
+10, 0	2
+10, 0	3
+10, 0	4
+10, 0	$sys_mode_return
+10, 0	$sys_conf
+10, 0	$break_switch
+11, 30	$_l
+21, 30	$_k
+10, 0	$first_gameset
+10, 0	$days_create
+10, 0	$ml
+10, 0	$mr
+10, 0	$mx_prev
+10, 0	$my_prev
+10, 0	$mschk
+10, 0	$mschk_prev
+10, 0	$ms_state
+10, 0	$ms_state_conf
+10, 0	$ms_state_prev
+10, 0	$ms_state_conf_prev
+10, 0	$msbtn_state
+10, 0	$msbtn_result
+10, 0	$mswhl_state
+11, 500	$obj_btn_state
+11, 500	$btn_state_switch
+10, 0	$flick_state
+10, 0	$flick_mov_x
+10, 0	$flick_mov_y
+10, 0	$flick_add_x
+10, 0	$flick_add_y
+10, 0	$flick_decide
+10, 0	$tm_state
+10, 0	$tcchkstate01
+10, 0	$tcchkstate02
+10, 0	$tcchkstate03
+10, 0	$tcspdstate
+10, 0	$tcchkdefstate01
+10, 0	$tcchkdefstate02
+10, 0	$tcchkdefstate03
+10, 0	$tcspddefstate
+10, 0	$tcspddata
+10, 0	$tcspd_clr_setpos
+10, 0	$tcspd_set
+10, 0	$s_ctl_bar_tc
+10, 0	$s_ctl_bar_pos_tc
+11, 100	$get_cg_flag
+11, 100	$set_cg_max
+11, 100	$get_cg_max
+11, 100	$set_cg_flag
+10, 0	$extra_mode
+10, 0	$gallery_page
+10, 0	$gallery_page_prev
+10, 0	$charater_page
+10, 0	$charater_page_prev
+10, 0	$charater_disp
+10, 0	$charater_disp_prev
+10, 0	$bgm_play_no
+10, 0	$bgm_play_no_prev
+10, 0	$bgm_list_disp
+10, 0	$extra_help_dsip
+10, 0	$gallery_th_no
+10, 0	$th_list_disp
+11, 20	$thcg_posx
+11, 20	$thcg_posy
+10, 0	$th_no_now
+10, 0	$cg_disp_no
+10, 0	$cg_scroll
+10, 0	$cm_menu_clear
+10, 0	$bg_list
+10, 0	$bs_list
+10, 0	$bs_list_prev
+10, 0	$cha_pat_list
+10, 0	$cha_pat_list_prev
+10, 0	$dress_pat_list
+10, 0	$dress_pat_list_prev
+20, 0	$dress_pat_data
+20, 0	$dress_pat_data_prev
+10, 0	$face_pat_list
+10, 0	$face_pat_list_prev
+20, 0	$face_pat_data
+20, 0	$face_pat_data_prev
+10, 0	$dis_pat_list
+10, 0	$dis_pat_list_prev
+11, 36	$bs_list_disp
+11, 7	$ch_list_disp
+11, 3	$sk_list_disp
+11, 9	$mo_list_disp
+11, 3	$kh_list_disp
+11, 3	$ak_list_disp
+11, 2	$tm_list_disp
+11, 1	$hr_list_disp
+11, 2	$ms_list_disp
+11, 2	$cp_list_disp
+11, 1	$sg_list_disp
+11, 2	$at_list_disp
+10, 0	$ed_chihiro02_skip
+10, 0	$omv_play
+10, 0	$movie_fade_in
+10, 0	$sys_koe_check
+10, 0	$brand_call
+10, 0	$get_mwnd_no
+10, 0	$waku_num
+10, 0	$auto_save_control
+10, 0	$selnumbarflag
+11, 6	$selflag
+11, 6	$selcolor
+10, 0	$save_point_state
+10, 0	$obj_rect_x01
+10, 0	$obj_rect_y01
+10, 0	$obj_rect_x02
+10, 0	$obj_rect_y02
+10, 0	$objcd_rect_x01
+10, 0	$objcd_rect_y01
+10, 0	$objcd_rect_x02
+10, 0	$objcd_rect_y02
+10, 0	$obj_rect_pixel
+10, 0	$bgm_name_no
+10, 0	$bgm_name_no_prev
+10, 0	$$bgm_snddelay_status
+11, 16	$$pcmch_snddelay_status
+10, 0	$sys_cfpage_change
+10, 0	$amcheckstate
+10, 0	$ttimestate
+10, 0	$stimestate
+10, 0	$checkdefstate
+10, 0	$ttimedefstate
+10, 0	$stimedefstate
+10, 0	$sys_cf_page
+10, 0	$sys_cf_page_last
+10, 0	$sys_cf_page_prev
+10, 0	$ww_size_state
+10, 0	$ww_size_state_prev
+10, 0	$bg_fade_state
+10, 0	$bs_fade_state
+10, 0	$ev_fade_state
+10, 0	$me_fade_state
+10, 0	$em_disp_state
+10, 0	$msg_skip_state
+10, 0	$all_chk_state
+10, 0	$all_vol_state
+10, 0	$bgm_chk_state
+10, 0	$bgm_vol_state
+10, 0	$voice_chk_state
+10, 0	$voice_tchk_state
+10, 0	$voice_vol_state
+10, 0	$bfade_chk01_state
+10, 0	$bfade_vol_state
+10, 0	$se_chk_state
+10, 0	$se_vol_state
+10, 0	$sys_chk_state
+10, 0	$sys_vol_state
+10, 0	$mov_chk_state
+10, 0	$mov_vol_state
+11, 30	$cv_state
+11, 30	$cv_vol_state
+10, 0	$ms_chk_state
+10, 0	$mss_state
+10, 0	$wb_state01
+10, 0	$wb_state02
+10, 0	$wb_state03
+10, 0	$wb_state04
+10, 0	$wb_chkstate
+11, 30	$es_state
+10, 0	$sys_cfpage_cspd
+10, 0	$cd_state_ready
+10, 0	$sys_cf_help_disp
+10, 0	$s_ctl_bar_pos
+10, 0	$s_ctl_bar
+10, 0	$s_ctl_lbtn_active
+10, 0	$s_ctl_rbtn_active
+10, 0	$s_ctl_bar_stpos
+10, 0	$s_ctl_bar_edpos
+10, 0	$s_ctl_bar_active
+10, 0	$s_ctl_bar_ctlpos
+10, 0	$s_ctl_bar_ctlactive
+10, 0	$s_ctl_bar_objstate
+10, 0	$s_ctl_bar_ctlstate
+10, 0	$s_ctl_bar_lbtnstate
+10, 0	$s_ctl_bar_rbtnstate
+10, 0	$s_ctl_bar_barstate
+10, 0	$s_ctl_bar_ctlpos_prev
+10, 0	$s_ctl_bar_set
+10, 0	$msp_set
+10, 0	$msp_set_prev
+10, 0	$wb_r_set
+10, 0	$wb_g_set
+10, 0	$wb_b_set
+10, 0	$wb_tr_set
+10, 0	$msp_ctl_bar_set
+10, 0	$s_ctl_bar_set_prev
+10, 0	$msp_ctl_bar_set_prev
+10, 0	$msp_touch_state01
+10, 0	$msp_touch_state02
+10, 0	$msp_touch_state03
+10, 0	$ms_pose_test_state
+10, 0	$ms_pose_delay_state
+10, 0	$s_ctr_bar_pos_defult
+10, 0	$ttime_set
+10, 0	$stime_set
+10, 0	$wtime_set
+20, 0	$use_font
+10, 0	$sys_slpage
+10, 0	$sys_slpage_prev
+10, 0	$sys_slpage_new
+10, 0	$sys_slflag
+10, 0	$sys_sldate00
+10, 0	$sysslpage_tab
+10, 0	$sysslpage_tab_prev
+10, 0	$sys_slpage_state
+11, 10	$sys_slpage_exist
+11, 10	$sys_sldata_exist
+11, 50	$sys_sldata
+21, 50	$sys_slsdata
+21, 30	$sys_slname_bg
+21, 100	$sys_slname_btn
+11, 10	$sys_sldata_lock
+10, 0	$sldatastate
+10, 0	$datastatecnt
+10, 0	$statedata01
+10, 0	$statedata02
+10, 0	$sys_slpage_cng
+10, 0	$sys_slpage_cspd
+11, 11	$sys_sldata_disp
+11, 10	$sys_sllock_state
+10, 0	$sys_sldisp_pat
+10, 0	$sys_slhelp_disp
+10, 0	$sys_slpage_change
+11, 10	$sys_sldate_chk
+11, 10	$sys_sldate_year
+11, 10	$sys_sldate_month
+11, 10	$sys_sldate_day
+11, 10	$sys_sldate_week
+11, 10	$sys_sldate_hour
+11, 10	$sys_sldate_minute
+11, 10	$sys_sldate_second
+11, 10	$sys_sldate_millisecond
+11, 10	$sys_sldate_stitle
+21, 10	$sys_slstitle
+21, 10	$sys_slstitlea
+21, 10	$sys_rtimedate
+21, 10	$sys_rtimedatea
+21, 10	$sys_slcomdata
+21, 10	$sys_slcomdatas
+21, 10	$sys_slgametextdata
+10, 0	$sm_cd_state_ready
+10, 0	$skipstate
+10, 0	$askipstate
+10, 0	$autostate
+10, 0	$windowstate
+10, 0	$selstate
+10, 0	$savestate
+10, 0	$loadstate
+10, 0	$skip_start_ready
+10, 0	$auto_start_ready
+10, 0	$help_disp_state
+10, 0	$help_disp_state_prev
 
 $bs_add
 $bs_del
