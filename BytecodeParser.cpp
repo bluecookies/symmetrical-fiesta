@@ -53,14 +53,10 @@ void printLabels(FILE* f, std::vector<Label>::iterator &pLabel, std::vector<Labe
 		label = *pLabel;
 		if (label.offset <= address) {
 			pLabel++;
-		}
-		if (label.offset > 0 && label.offset == address) {
-			fprintf(f, "\nSet%s %x:\t; %s\n", type, label.index, label.name.c_str());
+			if (label.offset > 0 && label.offset == address) {
+				fprintf(f, "\nSet%s %x:\t; %s\n", type, label.index, label.name.c_str());
+			}
 		} else {
-			//if (verbose) {
-			//	Logger::Log(Logger::DEBUG) << type << " " << labe.offset << " > " << std::hex << address << ", index ";
-			//	Logger::Log(Logger::DEBUG) << label.index << ": " << label.name.c_str() << std::endl;
-			//}
 			break;
 		}
 	}
