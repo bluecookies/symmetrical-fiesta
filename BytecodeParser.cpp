@@ -312,13 +312,15 @@ void instCall(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 			}
 		break;
 		case 0x13:
-			if (numArgs1 > 0 && arg2 == 0x00)
+			if (numArgs1 > 0 && arg2 == 0x0a) {
 				fprintf(f, ", %#x", buf.getInt());
+			}
 		break;
 		case 0x4c:
 			//No - 0, (a       ), (), a
 			//Yes- 1, (a,14,14,), (), a
-			if (arg1 == 0x01)
+			//Yes- 0, ( ,14,14,), (), a
+			if (numArgs1 > 0)
 				fprintf(f, ", %#x", buf.getInt());
 		break;
 		case 0x4d:
@@ -330,6 +332,10 @@ void instCall(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 		case 0x5b:
 			if (numArgs1 > 0)
 				fprintf(f, ", %#x", buf.getInt());
+		break;
+		case 0x7f:
+			//  0, (), (), 0xa [0x7f] 
+			fprintf(f, ", %#x", buf.getInt());
 		break;
 		case 0xffffffff:
 			Logger::Log(Logger::WARN, progInfo.address) << " Calling function 0xffffffff.\n";
@@ -419,6 +425,7 @@ void parseBytecode(BytecodeBuffer &buf, std::string filename, SceneInfo sceneInf
 
 			case 0x13:	instDo13Thing(f, buf, progInfo);		break;
 			case 0x14:
+
 			case 0x20:	fprintf(f, "%#x, %#x, %#x", buf.getInt(), buf.getInt(), buf.getInt());
 				break;
 			case 0x21:	fprintf(f, "%#x, %d", buf.getInt(), buf.getChar());
@@ -428,6 +435,7 @@ void parseBytecode(BytecodeBuffer &buf, std::string filename, SceneInfo sceneInf
 			case 0x15:	instDo15Thing(f, buf, progInfo);		break;
 
 			case 0x30:	instCall(f, buf, progInfo);					break;
+
 			case 0x00:
 			default:
 				progInfo.numNops++;
