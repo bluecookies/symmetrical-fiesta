@@ -129,7 +129,7 @@ int main(int argc, char* argv[]) {
 	StringList sceneNames = readStrings(fileStream, header.sceneNameIndex, header.sceneName);
 	
 	std::ofstream outStream("SceneNames.txt");
-	outStream << sceneNames << std::endl << varNames << std::endl << cmdNames;
+	outStream << sceneNames << std::endl << (varInfo + varNames) << std::endl << cmdNames;
 	outStream.close();
 	
 	// Write the global info

@@ -7,8 +7,8 @@
 // most of it figured out by Kelebek
 
 struct HeaderPair {
-	uint32_t offset;
-	uint32_t count;
+	uint32_t offset = 0;
+	uint32_t count = 0;
 };
 
 // Pack file index
@@ -18,7 +18,7 @@ struct FileInfo {
 };
 
 struct ScenePackHeader{
-	uint32_t headerSize;
+	uint32_t headerSize = 0;
 	HeaderPair varInfo;
 	HeaderPair varNameIndex;
 	HeaderPair varName;
@@ -29,8 +29,8 @@ struct ScenePackHeader{
 	HeaderPair sceneName;
 	HeaderPair sceneInfo;
 	HeaderPair sceneData;
-	uint32_t extraKeyUse;
-	uint32_t sourceHeaderLength;
+	uint32_t extraKeyUse = 0;
+	uint32_t sourceHeaderLength = 0;
 };
 
 struct ScriptHeader {
@@ -42,8 +42,8 @@ struct ScriptHeader {
 	HeaderPair markers;
 	HeaderPair localCommandIndex;     // Function ID + Bytecode offset
 	HeaderPair unknown1;		// could be something to do with function (address/param/type?)
-	HeaderPair stringsIndex1;    // string index
-	HeaderPair strings1;    // string data
+	HeaderPair localVarIndex;
+	HeaderPair localVars;
 	HeaderPair functions;
 	HeaderPair functionNameIndex;
 	HeaderPair functionName;
