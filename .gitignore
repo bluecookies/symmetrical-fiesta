@@ -12,6 +12,7 @@
 *.asm
 *.commands
 
+*.bat
 *.txt
 *.key
 

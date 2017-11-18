@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <sstream>
 #include <exception>
+#include <algorithm>
 
 #include "Helper.h"
 #include "Structs.h"
@@ -66,12 +67,7 @@ void printLabels(FILE* f, std::vector<Label>::iterator &pLabel, std::vector<Labe
 
 unsigned int readArgs(BytecodeBuffer &buf, std::vector<unsigned int> &argList, ProgStack &numStack, ProgStack &strStack, bool pop = true) {
 	unsigned int numArg = buf.getInt();
-	unsigned int arg = 0;
-
-	/*if (dataLength - currAddress < 4 * numArg) {
-		Logger::Log(Logger::ERROR) << "Going to overflow." << std::endl;
-		throw std::exception();
-	}*/
+	unsigned int arg = 0, stackCount = 0;
 
 	for (unsigned int counter = 0; counter < numArg; counter++) {
 		arg = buf.getInt();
@@ -85,6 +81,13 @@ unsigned int readArgs(BytecodeBuffer &buf, std::vector<unsigned int> &argList, P
 					strStack.pop_back();
 			} else if (arg == 0x051e) {
 			} else if (arg == 0x0514) {
+			} else if (arg == 0xffffffff) {
+				stackCount = buf.getInt();
+				for (unsigned int counter2 = 0; counter2 < stackCount; counter2++) {
+					arg = buf.getInt();
+					argList.push_back(arg);
+				}
+				argList.push_back(0xffffffff);
 			} else {
 				// actually wrong address, but figure it out
 				Logger::Log(Logger::DEBUG, buf.getAddress()) << " trying to pop stack " << arg << std::endl;
@@ -223,7 +226,6 @@ void parseBytecode(BytecodeBuffer &buf,
 					commandStacks.back()++;	// collapse into lower frame
 				} else {
 					Logger::Log(Logger::ERROR, instAddress) << " Tried to pop base frame.\n";
-					//throw std::exception();
 				}
 			break;
 			case 0x06:
@@ -303,8 +305,19 @@ void parseBytecode(BytecodeBuffer &buf,
 				fprintf(f, "%#x, (", arg1);
 				unsigned int count = readArgs(buf, args, numStack, strStack);
 				for (unsigned int i = 0; i < count; i++) {
-					fprintf(f, "%#x,", args.back());
+					arg = args.back();
 					args.pop_back();
+					if (arg != 0xffffffff) {
+						fprintf(f, "%#x,", arg);
+					} else {
+						fprintf(f, "{");
+						while ((arg = args.back()) != 0xffffffff) {
+							fprintf(f, "%#x,", arg);
+							args.pop_back();
+						}
+						args.pop_back();	// pop off the first 0xffffffff
+						fprintf(f, "}, ");
+					}
 				}
 				fprintf(f, "), (");
 				arg = readArgs(buf, args, numStack, strStack, false);
@@ -367,16 +380,18 @@ void parseBytecode(BytecodeBuffer &buf,
 						if (count == 1)	
 							fprintf(f, ", %#x", buf.getInt());
 					break;
-					case 0:	//Blaah
-						if (count > 3 && arg2 == 0x0a)
-							fprintf(f, ", %#x", buf.getInt());
-					break;
 				}
-				//if (arg == 0x0a)
-					//numStack.push_back(something);
-					//^prettysureneeded?
+				
 				if (commandStacks.size() > 1) {
 					commandStacks.pop_back();
+				}
+				
+				// something, don't know yet
+				if (arg == 0x0a) {
+					numStack.push_back(0);
+					commandStacks.back()++;
+				} else if (arg == 0x14) {
+					strStack.push_back(0);
 				}
 			} break;
 			case 0x00:
