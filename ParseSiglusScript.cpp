@@ -39,21 +39,22 @@ void readScriptHeader(std::ifstream &f, ScriptHeader &header) {
 		Logger::Log(Logger::ERROR) << "Error: Expected script header size 0x84, got 0x" << std::hex << header.headerSize << std::endl;
 		throw std::exception();
 	}
-	readHeaderPair(f, header.bytecode);	// be consistent with naming byteCode vs bytecode
+	readHeaderPair(f, header.bytecode);
 	readHeaderPair(f, header.stringIndex);
 	readHeaderPair(f, header.stringData);
 	
 	readHeaderPair(f, header.labels);
 	readHeaderPair(f, header.markers);
 	
-	readHeaderPair(f, header.functionIndex);    
+	readHeaderPair(f, header.localCommandIndex);    
 	readHeaderPair(f, header.unknown1);
-	readHeaderPair(f, header.stringsIndex1);    
-	readHeaderPair(f, header.strings1);
+	readHeaderPair(f, header.localVarIndex);    
+	readHeaderPair(f, header.localVars);
 	
 	readHeaderPair(f, header.functions);
 	readHeaderPair(f, header.functionNameIndex);
 	readHeaderPair(f, header.functionName);
+	assert(header.functionNameIndex.count == header.functions.count);		// get rid of the asserts
 	
 	readHeaderPair(f, header.varStringIndex);
 	readHeaderPair(f, header.varStringData);
@@ -74,32 +75,117 @@ void readLabels(std::ifstream &stream, std::vector<Label> &labels, HeaderPair in
 	}
 }
 
-LabelData readLabelData(std::ifstream &stream, ScriptHeader header) {
-	LabelData info;
+SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string filename, int fileIndex) {
+	SceneInfo info;
+	
+	// Read scene pack globals
+	// Read scene names, commands and variables
+	// TODO: make safe
+	// including verifying everything in bounds
+	ScriptCommand command;
+	std::ifstream globalInfoFile("SceneInfo.dat", std::ios::in | std::ios::binary);
+	if (!globalInfoFile.is_open()) {
+		Logger::Log(Logger::INFO) << "Could not open global scene info.\n";
+	} else {
+		std::string name;
+		unsigned int count, temp;
+		
+		// Scene names
+		info.thisFile = fileIndex;
+		std::string basename = filename.substr(filename.find_last_of("/\\") + 1);
+		basename = basename.substr(0, basename.find_last_of('.'));
+		
+		
+		globalInfoFile.read((char*) &count, 4);		// unsafe
+		for (unsigned int i = 0; i < count; i++) {
+			std::getline(globalInfoFile, name, '\0');
+			info.sceneNames.push_back(name);
+			if (fileIndex < 0) {
+				if (basename.compare(name) == 0) {
+					fileIndex = info.thisFile = i;
+					Logger::Log(Logger::INFO) << "Determined file index: " << fileIndex << std::endl;
+				}
+			}
+		}
+		
+		// Vars
+		globalInfoFile.read((char*) &count, 4);
+		info.numGlobalVars = count;
+		info.varNames.reserve(count + header.localVarIndex.count);
+		for (unsigned int i = 0; i < count; i++) {
+			globalInfoFile.read((char*) &temp, 4);
+			globalInfoFile.read((char*) &temp, 4);
+			std::getline(globalInfoFile, name, '\0');
+			
+			info.varNames.push_back(name);
+		}
+
+		
+		// Commands
+		globalInfoFile.read((char*) &count, 4);
+		info.numGlobalCommands = count;
+		info.commands.resize(count + header.localCommandIndex.count);
+		for (unsigned int i = 0; i < count; i++) {
+			globalInfoFile.read((char*) &command.offset, 4);
+			globalInfoFile.read((char*) &command.file, 4);
+			command.index = i;
+			std::getline(globalInfoFile, command.name, '\0');
+			info.commands[i] = command;
+		}
+		Logger::Log(Logger::INFO) << "Read " << std::dec << std::to_string(count) << " global commands.\n";
+		
+	}
+	globalInfoFile.close();
 	
 	// Read markers
 	readLabels(stream, info.labels, header.labels);
 	readLabels(stream, info.markers, header.markers);
 	readLabels(stream, info.functions, header.functions);
+	Logger::Log(Logger::INFO) << "Read " << std::dec << header.functions.count << " functions.\n";
+
 	
 	// Read function names
 	StringList functionNames = readStrings(stream, header.functionNameIndex, header.functionName);
-	
-	// TODO: I could do these when reading the header
-	assert(header.functionNameIndex.count == header.functions.count);		// get rid of the asserts too
 	for (auto it = info.functions.begin(); it != info.functions.end(); it++) {
-		(*it).name = functionNames.at(it - info.functions.begin());	// string manipulation scares me
+		it->name = functionNames.at(it - info.functions.begin());
 	}
 	
-	// Read function index
-	info.functionTable.reserve(header.functionIndex.count);
-	stream.seekg(header.functionIndex.offset, std::ios_base::beg);
-	Label label;
-	for (unsigned int i = 0; i < header.functionIndex.count; i++) {
-		stream.read((char*) &label.index, 4);
-		stream.read((char*) &label.offset, 4);
-		info.functionTable.push_back(label);
+	// Read local vars
+	StringList localVars = readStrings(stream, header.localVarIndex, header.localVars);
+	info.varNames.insert(info.varNames.end(), localVars.begin(), localVars.end());
+		
+	// Read local commands
+	stream.seekg(header.localCommandIndex.offset, std::ios::beg);
+	for (unsigned int i = 0; i < header.localCommandIndex.count; i++) {
+		stream.read((char*) &command.index, 4);
+		stream.read((char*) &command.offset, 4);
+		command.name.clear();
+		command.file = info.thisFile;
+		if (command.index < info.commands.size()) {
+			// Local command
+			if (command.index >= info.numGlobalCommands) {
+				auto predAtOffset = [command](Label function) {
+					return (function.offset == command.offset);
+				};
+				auto funcIt = std::find_if(info.functions.begin(), info.functions.end(), predAtOffset);
+				if (funcIt != info.functions.end()) {
+					command.name = funcIt->name;
+					Logger::Log(Logger::DEBUG) << "Command " << command.name << " (" << std::hex << command.index << ") at " << command.offset << std::endl;
+				} else {
+					Logger::Log(Logger::WARN) << "Warning: Local command name " << std::hex << command.index;
+					Logger::Log(Logger::WARN) << " at offset 0x" << command.offset << " not found.\n";
+				}
+				info.commands[command.index] = command;
+			// Global command defined in this file
+			} else if (command.index == 0) {
+				Logger::Log(Logger::DEBUG) << "Command index 0 at offset 0x" << std::hex << command.offset << std::endl;
+			}
+		} else {
+			Logger::Log(Logger::ERROR) << "Error: Local command " << std::hex << command.index;
+			Logger::Log(Logger::ERROR) << " at offset 0x" << command.offset << " has too high index.\n";
+		}
 	}
+	Logger::Log(Logger::INFO) << "Read " << std::dec << header.localCommandIndex.count << " local commands.\n";
 	
 	return info;
 }
@@ -109,16 +195,21 @@ int main(int argc, char* argv[]) {
 	extern int optind;
 	
 	std::string outFilename;
-	static char usageString[] = "Usage: parsess [-o outfile] [-v] <input.ss>";
+	static char usageString[] = "Usage: parsess [-o outfile] [-v] [-i file index] <input.ss>";
 	
+	int fileIndex = -1;
+	// Handle options
 	int option = 0;
-	while ((option = getopt(argc, argv, "o:v")) != -1) {
+	while ((option = getopt(argc, argv, "o:vi:")) != -1) {
 		switch (option) {
 		case 'v':
 			Logger::increaseVerbosity();
 			break;
 		case 'o':
 			outFilename = std::string(optarg);
+		break;
+		case 'i':
+			fileIndex = std::stoi(optarg);
 		break;
 		default:
 			std::cout << usageString << std::endl;
@@ -146,72 +237,29 @@ int main(int argc, char* argv[]) {
 	readScriptHeader(fileStream, header);
 	
 	StringList mainStrings = readStrings(fileStream, header.stringIndex, header.stringData, true);
-	StringList strings1 = readStrings(fileStream, header.stringsIndex1, header.strings1);
 	StringList varStrings = readStrings(fileStream, header.varStringIndex, header.varStringData);
-	
-	Logger::Log(Logger::INFO) << strings1;
-	
+
 	// Read labels, markers, functions, commands
-	LabelData controlInfo = readLabelData(fileStream, header);
-		
-	SceneInfo sceneInfo;
-	// Read scene names, commands and variables
-	// TODO: make safe
-	// including verifying everything in bounds
-	std::ifstream globalInfoFile("SceneInfo.dat", std::ios::in | std::ios::binary);
-	if (!globalInfoFile.is_open()) {
-		Logger::Log(Logger::INFO) << "Could not open scene info.\n";
-	} else {
-		std::string name;
-		unsigned int count, temp;
-		ScriptCommand command;
-		
-		// Scene names
-		globalInfoFile.read((char*) &count, 4);		// unsafe
-		for (unsigned int i = 0; i < count; i++) {
-			std::getline(globalInfoFile, name, '\0');
-			sceneInfo.sceneNames.push_back(name);
-			// weird - should override
-			if (filename.compare(name) >= 0)
-				sceneInfo.thisFile = i;
-		}
-		
-		// Vars
-		globalInfoFile.read((char*) &count, 4);
-		for (unsigned int i = 0; i < count; i++) {
-			globalInfoFile.read((char*) &temp, 4);
-			globalInfoFile.read((char*) &temp, 4);
-			std::getline(globalInfoFile, name, '\0');
-		}
-		
-		// Commands
-		globalInfoFile.read((char*) &count, 4);
-		for (unsigned int i = 0; i < count; i++) {
-			globalInfoFile.read((char*) &command.offset, 4);
-			globalInfoFile.read((char*) &command.file, 4);
-			command.index = i;
-			std::getline(globalInfoFile, command.name, '\0');
-			sceneInfo.commands.push_back(command);
-		}
+	// and global scene pack stuff
+	SceneInfo sceneInfo = readSceneInfo(fileStream, header, filename, fileIndex);
+	
+	BytecodeBuffer bytecode(fileStream, header.bytecode);
+	fileStream.close();
+	
+	try {
+		parseBytecode(bytecode, outFilename, sceneInfo, mainStrings, varStrings);
+	} catch (std::out_of_range &e) {
+		std::cerr << e.what() << std::endl;
 	}
-	globalInfoFile.close();
-	
-	Instructions instList;
-	
-	BytecodeParser parser(fileStream, header.bytecode);
-	parser.parseBytecode(instList, mainStrings, varStrings, sceneInfo);
 	
 	// TODO: handle these
 	if (header.unknown6.count != 0) {
-		Logger::Log(Logger::WARN) << "Unknown6 is not empty.\n";
-	} else if (header.unknown7.count != 0) {
-		Logger::Log(Logger::WARN) << "Unknown7 is not empty.\n";
-	} else if (header.unknown6.offset != header.unknown7.offset) {
-		Logger::Log(Logger::WARN) << "Check this file out, something's weird\n";
+		Logger::Log(Logger::WARN) << "Unknown6 has " << header.unknown6.count << " elements.\n";
+		
 	}
-	fileStream.close();
-	
-	parser.printInstructions(instList, outFilename, controlInfo, sceneInfo);
-	
+	if (header.unknown7.count != 0) {
+		Logger::Log(Logger::WARN) << "Unknown7 has " << header.unknown7.count << " elements.\n";
+	}
+			
 	return 0;
 }

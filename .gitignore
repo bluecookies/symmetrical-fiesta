@@ -12,6 +12,8 @@
 *.asm
 *.commands
 
+*.bat
+*.txt
 *.key
 
 # go away

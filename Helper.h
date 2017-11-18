@@ -58,7 +58,7 @@ inline std::string operator + (HeaderPair pair, const std::string &string) {
 
 inline StringList operator + (std::vector<HeaderPair> pairs, const StringList &strings) {
 	StringList result; result.reserve(strings.size());
-	int numPairs = pairs.size();
+	unsigned int numPairs = pairs.size();
 	for (StringList::const_iterator it = strings.begin(); it != strings.end(); it++) {
 		result.push_back(pairs.at((it - strings.begin()) % numPairs) + *it);
 	}
@@ -95,9 +95,12 @@ namespace Logger {
 	//};
 	extern int LogLevel;
 	
-	inline std::ostream& Log(int level, std::ostream& stream = std::cout) {
+	inline std::ostream& Log(int level, unsigned int address = 0, std::ostream& stream = std::cout) {
 		if (level <= LogLevel) {
-			return stream;
+			if (address > 0)
+				return stream << "Address 0x" << std::hex << address << ": ";
+			else
+				return stream;
 		} else {
 			return nout;
 		}
