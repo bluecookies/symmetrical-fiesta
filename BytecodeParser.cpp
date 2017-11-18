@@ -149,13 +149,13 @@ void parseBytecode(BytecodeBuffer &buf,
 		opcode = buf.getChar();
 		numInsts++;
 		
-		// DEBUG
-		//if (instAddress >= 0x11b47 && instAddress <= 0x11ba0){
+		//DEBUG
+		//if (instAddress >= 0x12e31 && instAddress <= 0x12e89){
 		//	std::cout << std::hex << instAddress << std::dec << std::endl;
 		//	std::cout << "CommandStack: " << commandStacks.size() << " " << commandStacks.back() << std::endl;
 		//	std::cout << "NumStack: " << numStack.size() << " " << numStack.back() << std::endl;
 		//}
-		// END_DEBUG
+		//END_DEBUG
 		
 		// Print labels and commands
 		printLabels(f, labelIt, sceneInfo.labels.end(), instAddress, "Label");
@@ -348,6 +348,7 @@ void parseBytecode(BytecodeBuffer &buf,
 
 				stackTop = numStack.back();
 				numStack.pop_back();
+				commandStacks.back()--;
 				// wary about determining function call address
 				// maybe later
 				fprintf(f, " [%#x] ", stackTop);
@@ -395,15 +396,16 @@ void parseBytecode(BytecodeBuffer &buf,
 					break;
 				}
 				
-				if (commandStacks.size() > 1) {
-					commandStacks.pop_back();
+				if (commandStacks.back() == 0) {
+					if (commandStacks.size() > 1)
+						commandStacks.pop_back();
 				}
 				
 				// something, don't know yet
-				if (arg == 0x0a) {
+				if (arg2 == 0x0a) {
 					numStack.push_back(0);
 					commandStacks.back()++;
-				} else if (arg == 0x14) {
+				} else if (arg2 == 0x14) {
 					strStack.push_back(0);
 				}
 			} break;
