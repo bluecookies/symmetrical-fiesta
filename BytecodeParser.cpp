@@ -65,7 +65,7 @@ void printLabels(FILE* f, std::vector<Label>::iterator &pLabel, std::vector<Labe
 	}
 }
 
-unsigned int readArgs(BytecodeBuffer &buf, std::vector<unsigned int> &argList, ProgStack &numStack, ProgStack &strStack, bool pop = true) {
+unsigned int readArgs(BytecodeBuffer &buf, std::vector<unsigned int> &argList, std::vector<unsigned int> &commandStacks, ProgStack &numStack, ProgStack &strStack, bool pop = true) {
 	unsigned int numArg = buf.getInt();
 	unsigned int arg = 0, stackCount = 0;
 
@@ -74,8 +74,11 @@ unsigned int readArgs(BytecodeBuffer &buf, std::vector<unsigned int> &argList, P
 		argList.push_back(arg);
 		if (pop) {
 			if (arg == 0x0a) {
-				if (!numStack.empty())
+				if (!numStack.empty()) {
 					numStack.pop_back();
+					commandStacks.back()--;	//TODO: turn 0x08 into a marker and store address of stack pointer
+					//IF 0, then warn and pop
+				}
 			} else if (arg == 0x14) {
 				if (!strStack.empty())
 					strStack.pop_back();
@@ -150,11 +153,11 @@ void parseBytecode(BytecodeBuffer &buf,
 		numInsts++;
 		
 		//DEBUG
-		//if (instAddress >= 0x12e31 && instAddress <= 0x12e89){
-		//	std::cout << std::hex << instAddress << std::dec << std::endl;
-		//	std::cout << "CommandStack: " << commandStacks.size() << " " << commandStacks.back() << std::endl;
-		//	std::cout << "NumStack: " << numStack.size() << " " << numStack.back() << std::endl;
-		//}
+		/*if (instAddress >= 0x30196 && instAddress <= 0x3021c){
+			std::cout << std::hex << instAddress << std::dec << std::endl;
+			std::cout << "CommandStack: " << commandStacks.size() << " " << commandStacks.back() << std::endl;
+			std::cout << "NumStack: " << numStack.size() << " " << numStack.back() << std::endl;
+		}*/
 		//END_DEBUG
 		
 		// Print labels and commands
@@ -239,6 +242,8 @@ void parseBytecode(BytecodeBuffer &buf,
 			case 0x06:
 			case 0x09:
 			case 0x32:
+			case 0x33:
+			case 0x34:
 			break;
 			case 0x16:
 				Logger::Log(Logger::INFO, instAddress) << "End of script reached.\n";
@@ -265,7 +270,7 @@ void parseBytecode(BytecodeBuffer &buf,
 			break;
 			case 0x13:
 				fprintf(f, "%#x ", buf.getInt());
-				arg = readArgs(buf, args, numStack, strStack);
+				arg = readArgs(buf, args, commandStacks, numStack, strStack);
 				fprintf(f, "(");
 				for (unsigned int i = 0; i < arg; i++) {
 					fprintf(f, "%#x,", args.back());
@@ -310,7 +315,7 @@ void parseBytecode(BytecodeBuffer &buf,
 				commandStacks.push_back(0);
 			break;
 			case 0x15:
-				arg = readArgs(buf, args, numStack, strStack);
+				arg = readArgs(buf, args, commandStacks, numStack, strStack);
 				fprintf(f, "(");
 				for (unsigned int i = 0; i < arg; i++) {
 					fprintf(f, "%#x,", args.back());
@@ -321,7 +326,7 @@ void parseBytecode(BytecodeBuffer &buf,
 			case 0x30: {
 				arg1 = buf.getInt();
 				fprintf(f, "%#x, (", arg1);
-				unsigned int count = readArgs(buf, args, numStack, strStack);
+				unsigned int count = readArgs(buf, args, commandStacks, numStack, strStack);
 				for (unsigned int i = 0; i < count; i++) {
 					arg = args.back();
 					args.pop_back();
@@ -338,7 +343,7 @@ void parseBytecode(BytecodeBuffer &buf,
 					}
 				}
 				fprintf(f, "), (");
-				arg = readArgs(buf, args, numStack, strStack, false);
+				arg = readArgs(buf, args, commandStacks, numStack, strStack, false);
 				for (unsigned int i = 0; i < arg; i++) {
 					fprintf(f, "%#x,", args.back());
 					args.pop_back();
@@ -369,6 +374,10 @@ void parseBytecode(BytecodeBuffer &buf,
 							fprintf(f, ", %#x", buf.getInt());
 						}
 					break;
+					case 0x13:
+						if (count > 0)
+							fprintf(f, ", %#x", buf.getInt());
+					break;
 					case 0x4c:
 						//No - 0, (a       ), (), a
 						//Yes- 1, (a,14,14,), (), a
@@ -396,10 +405,10 @@ void parseBytecode(BytecodeBuffer &buf,
 					break;
 				}
 				
-				if (commandStacks.back() == 0) {
-					if (commandStacks.size() > 1)
-						commandStacks.pop_back();
-				}
+				//if (commandStacks.back() == 0) {
+				//	if (commandStacks.size() > 1)
+				//		commandStacks.pop_back();
+				//}
 				
 				// something, don't know yet
 				if (arg2 == 0x0a) {
