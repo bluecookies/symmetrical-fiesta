@@ -149,6 +149,14 @@ void parseBytecode(BytecodeBuffer &buf,
 		opcode = buf.getChar();
 		numInsts++;
 		
+		// DEBUG
+		//if (instAddress >= 0x11b47 && instAddress <= 0x11ba0){
+		//	std::cout << std::hex << instAddress << std::dec << std::endl;
+		//	std::cout << "CommandStack: " << commandStacks.size() << " " << commandStacks.back() << std::endl;
+		//	std::cout << "NumStack: " << numStack.size() << " " << numStack.back() << std::endl;
+		//}
+		// END_DEBUG
+		
 		// Print labels and commands
 		printLabels(f, labelIt, sceneInfo.labels.end(), instAddress, "Label");
 		printLabels(f, markerIt, sceneInfo.markers.end(), instAddress, "Marker");
@@ -240,8 +248,10 @@ void parseBytecode(BytecodeBuffer &buf,
 				arg = buf.getInt();
 				fprintf(f, "%#x, %#x", arg1, arg);
 				if (arg1 == 0x0a) {
-					if (!numStack.empty())
+					if (!numStack.empty()) {
 						numStack.pop_back();
+						commandStacks.back()--;	// does this even happen
+					}
 					//Logger::Log(Logger::DEBUG, instAddress) << "Popping 0xa\n";
 				} else if (arg1 == 0x14) {
 					if (!strStack.empty())
@@ -278,14 +288,22 @@ void parseBytecode(BytecodeBuffer &buf,
 			case 0x22:	// calc. 0x10 is subtract?
 				arg1 = buf.getInt();
 				arg2 = buf.getInt();
-				fprintf(f, "%#x, %#x, %d", arg1, arg2, buf.getChar());
+				arg = buf.getChar();
+				fprintf(f, "%#x, %#x, %d", arg1, arg2, arg);
 				if (arg1 == 0xa && arg2 == 0xa) {
-					if (!numStack.empty())
+					if (!numStack.empty()) {
 						numStack.pop_back();
+						commandStacks.back()--;
+					}
 					//if (!numStack.empty())
 					//	numStack.pop_back();
 					// do the calc
 					// numStack.push_back(0);
+				} else if (arg1 == 0x14 && arg2 == 0x14) {
+					if (!strStack.empty())
+							strStack.pop_back();
+					if (arg == 0x01)
+						comment = "string concat";
 				}
 			break;
 			case 0x08:
@@ -329,6 +347,7 @@ void parseBytecode(BytecodeBuffer &buf,
 				fprintf(f, "), %#x", arg2);
 
 				stackTop = numStack.back();
+				numStack.pop_back();
 				// wary about determining function call address
 				// maybe later
 				fprintf(f, " [%#x] ", stackTop);
@@ -358,12 +377,6 @@ void parseBytecode(BytecodeBuffer &buf,
 					case 0x4d:
 						//No - 0, (a), (), a
 						if (arg2 == 0)
-							fprintf(f, ", %#x", buf.getInt());
-					break;
-					case 0x5a:
-						//Yes- 0, (a), (), 0
-						//No - 0, ( ), (), 0
-						if (count > 0)
 							fprintf(f, ", %#x", buf.getInt());
 					break;
 					case 0x5b:
