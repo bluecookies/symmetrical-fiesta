@@ -8,7 +8,7 @@ struct ScriptCommand {
 	// Offset of instruction in script
 	unsigned int offset = 0;
 	// Index of the file it appears in
-	unsigned int file = 0;
+	unsigned int file = 0xFFFFFFFF;
 	// Index of command - might not need
 	unsigned int index = 0;
 	// Command name
@@ -45,6 +45,7 @@ struct Label {
 
 struct SceneInfo {
 	StringList sceneNames, varNames;
+	StringList mainStrings, varStrings;
 	// TODO: if no global info available, infer from local
 	// TODO: handle things when no global available
 	std::vector<ScriptCommand> commands;	// global + local
@@ -76,7 +77,6 @@ class BytecodeBuffer {
 
 // TODO: strings go into scene info too
 // why are they outside
-void parseBytecode(BytecodeBuffer &buf, std::string filename, SceneInfo sceneInfo,
-	const StringList &strings, const StringList &varStrings);
+void parseBytecode(BytecodeBuffer &buf, std::string filename, SceneInfo sceneInfo);
 
 #endif

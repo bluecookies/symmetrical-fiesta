@@ -85,7 +85,8 @@ SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string 
 	ScriptCommand command;
 	std::ifstream globalInfoFile("SceneInfo.dat", std::ios::in | std::ios::binary);
 	if (!globalInfoFile.is_open()) {
-		Logger::Log(Logger::INFO) << "Could not open global scene info.\n";
+		//TODO: make it so it's not important
+		Logger::Log(Logger::ERROR) << "Could not open global scene info.\n";
 	} else {
 		std::string name;
 		unsigned int count, temp;
@@ -128,6 +129,10 @@ SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string 
 		for (unsigned int i = 0; i < count; i++) {
 			globalInfoFile.read((char*) &command.offset, 4);
 			globalInfoFile.read((char*) &command.file, 4);
+			if (command.file >= info.sceneNames.size()) {
+				Logger::Log(Logger::ERROR) << "Command " << std::to_string(i) << " referencing non-existent file index " << std::to_string(command.file) << std::endl;
+				throw std::exception();
+			}
 			command.index = i;
 			std::getline(globalInfoFile, command.name, '\0');
 			info.commands[i] = command;
@@ -236,18 +241,25 @@ int main(int argc, char* argv[]) {
 	ScriptHeader header;
 	readScriptHeader(fileStream, header);
 	
-	StringList mainStrings = readStrings(fileStream, header.stringIndex, header.stringData, true);
-	StringList varStrings = readStrings(fileStream, header.varStringIndex, header.varStringData);
-
 	// Read labels, markers, functions, commands
 	// and global scene pack stuff
-	SceneInfo sceneInfo = readSceneInfo(fileStream, header, filename, fileIndex);
+	SceneInfo sceneInfo;
+	try {
+		sceneInfo = readSceneInfo(fileStream, header, filename, fileIndex);
+	} catch (std::exception &e) {
+		std::cerr << e.what() << std::endl;
+		return 1;
+	}
+	
+	
+	sceneInfo.mainStrings = readStrings(fileStream, header.stringIndex, header.stringData, true);
+	sceneInfo.varStrings = readStrings(fileStream, header.varStringIndex, header.varStringData);
 	
 	BytecodeBuffer bytecode(fileStream, header.bytecode);
 	fileStream.close();
 	
 	try {
-		parseBytecode(bytecode, outFilename, sceneInfo, mainStrings, varStrings);
+		parseBytecode(bytecode, outFilename, sceneInfo);
 	} catch (std::out_of_range &e) {
 		std::cerr << e.what() << std::endl;
 	}

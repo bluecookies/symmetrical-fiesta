@@ -171,7 +171,6 @@ int main(int argc, char* argv[]) {
 	outStream.close();
 	
 	// Dump scene scripts
-	std::ofstream cmdFile;
 	unsigned int offset;
 	for (unsigned int i = 0; i < header.sceneNameIndex.count; i++) {
 		offset = header.sceneData.offset + sceneDataInfo.at(i).offset;
