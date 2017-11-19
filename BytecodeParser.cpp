@@ -45,17 +45,33 @@ StringList populateMnemonics() {
 
 static StringList s_mnemonics = populateMnemonics();
 
-typedef std::vector<unsigned int> ProgStack;
+enum StackType {
+	STACK_UNDEF,
+	STACK_NUM,
+	STACK_STR,
+	STACK_OBJ,
+	STACK_REF
+};
+
+struct StackValue {
+	unsigned int value = 0;
+	StackType type = STACK_UNDEF;
+
+	StackValue() {};
+	StackValue(unsigned int val_, StackType type_) : value(val_), type(type_) {};
+};
+
+typedef std::vector<StackValue> ProgStack;
 
 typedef struct ProgramInfo {
 	// State info
-	ProgStack numStack, strStack;
-	ProgStack stackPointers = {0};
+	ProgStack stack;
+	std::vector<unsigned int> stackPointers = {0};
 	
 	// instruction info
 	unsigned char opcode = 0;
 	unsigned int address = 0;
-	ProgStack args;
+	std::vector<unsigned int> args;
 	std::string comment;
 	
 	// local info
@@ -85,52 +101,65 @@ void printLabels(FILE* f, std::vector<Label>::iterator &pLabel, std::vector<Labe
 unsigned int readArgs(BytecodeBuffer &buf, ProgInfo &progInfo, bool pop = true) {
 	unsigned int numArgs = buf.getInt();
 	unsigned int arg = 0, stackCount = 0;
+	StackValue var;
 
 	for (unsigned int counter = 0; counter < numArgs; counter++) {
 		arg = buf.getInt();
 		progInfo.args.push_back(arg);
 		if (pop) {
 			if (arg == 0x0a) {
-				if (!progInfo.numStack.empty()) {
-					progInfo.numStack.pop_back();
-					if (progInfo.stackPointers.back() > progInfo.numStack.size()) {
+				if (!progInfo.stack.empty()) {
+					var = progInfo.stack.back();
+					progInfo.stack.pop_back();
+					if (var.type != STACK_NUM && var.type != STACK_REF) {
+						Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
+					}
+					
+					if (progInfo.stackPointers.back() > progInfo.stack.size()) {
 						Logger::Log(Logger::WARN, progInfo.address) << " Popped past frame.\n";
 					}
 				}
 			} else if (arg == 0x0e) {
-				if (!progInfo.numStack.empty()) {
-					unsigned int var = progInfo.numStack.back();
-					progInfo.numStack.pop_back();
-					if (var >> 24 != 0x7f) {
-						Logger::Log(Logger::DEBUG, progInfo.address) << " Type 0xe: " << std::hex << var << std::endl;
+				if (!progInfo.stack.empty()) {
+					var = progInfo.stack.back();
+					progInfo.stack.pop_back();
+					// TODO: handle this type
+					
+					if (var.value >> 24 != 0x7f) {
+						Logger::Log(Logger::DEBUG, progInfo.address) << " Type 0xe: " << std::hex << var.value << std::endl;
 					}	
-					if (progInfo.stackPointers.back() > progInfo.numStack.size()) {
+					if (progInfo.stackPointers.back() > progInfo.stack.size()) {
 						Logger::Log(Logger::WARN, progInfo.address) << " Popped past frame.\n";
 					}
 				}
 			} else if (arg == 0x14) {
-				if (!progInfo.strStack.empty()) {
-					progInfo.strStack.pop_back();
+				if (!progInfo.stack.empty()) {
+					var = progInfo.stack.back();
+					progInfo.stack.pop_back();
+					
+					if (var.type != STACK_STR && var.type != STACK_REF) {
+						Logger::Log(Logger::WARN, progInfo.address) << "Non-string type read.\n";
+					}
 				}
 			} else if (arg == 0x51e) {
-				Logger::Log(Logger::DEBUG, progInfo.address) << " Popping 0x51e - " << std::hex;
+				// TODO: HANDLE REF LATER
 				unsigned int a1 = 0xdeadbeef, a2 = 0xdeadbeef, a3 = 0xdeadbeef;
-				if (progInfo.numStack.size() >= 4) {
-					progInfo.numStack.pop_back();
-					a1 = progInfo.numStack.back();
-						progInfo.numStack.pop_back();
-					a2 = progInfo.numStack.back();
-						progInfo.numStack.pop_back();
-					a3 = progInfo.numStack.back();
-						progInfo.numStack.pop_back();
+				if (progInfo.stack.size() >= 4) {
+					progInfo.stack.pop_back();
+					a1 = progInfo.stack.back().value;
+						progInfo.stack.pop_back();
+					a2 = progInfo.stack.back().value;
+						progInfo.stack.pop_back();
+					a3 = progInfo.stack.back().value;
+						progInfo.stack.pop_back();
 				} else {
 					
 					throw std::exception();
 				}
-				if (a1 != 0xffffffff || a2 != 2)
+				if (a1 != 0xffffffff || a2 != 2) {
+					Logger::Log(Logger::WARN, progInfo.address) << " Popping 0x51e - " << std::hex;
 					Logger::Log(Logger::WARN) << a3 << " " << a2 << " " << a1 << std::endl;
-				else
-					Logger::Log(Logger::DEBUG) << std::endl;
+				}
 			} else if (arg == 0xffffffff) {
 				stackCount = buf.getInt();
 				for (unsigned int counter2 = 0; counter2 < stackCount; counter2++) {
@@ -153,7 +182,7 @@ void instPush(FILE* f, BytecodeBuffer &buf, SceneInfo& sceneInfo, ProgInfo& prog
 		arg2 = buf.getInt();
 
 	if (arg1 == 0x0a) {
-		progInfo.numStack.push_back(arg2);
+		progInfo.stack.push_back(StackValue(arg2, STACK_NUM));
 		fprintf(f, "%#x, %#x", arg1, arg2);
 		// TODO: take it out of here and put just when called
 		// maybe. maybe not
@@ -193,7 +222,18 @@ void instPush(FILE* f, BytecodeBuffer &buf, SceneInfo& sceneInfo, ProgInfo& prog
 		} else {
 			Logger::Log(Logger::WARN, progInfo.address) << " trying to access string index " << arg2 << std::endl;
 		}
-		progInfo.strStack.push_back(arg2);
+		progInfo.stack.push_back(StackValue(arg2, STACK_STR));
+	}
+}
+
+
+void instDo04Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
+	unsigned int arg1 = buf.getInt();
+	fprintf(f, "%#x", arg1);
+	if (arg1 == 0x0a) {
+		progInfo.stack.push_back(StackValue(0xdeadbeef, STACK_NUM));
+	} else {
+		Logger::Log(Logger::INFO, progInfo.address) << "Non-num with 0x4\n";
 	}
 }
 
@@ -202,18 +242,16 @@ void instPush(FILE* f, BytecodeBuffer &buf, SceneInfo& sceneInfo, ProgInfo& prog
 // TODO: also handle 0x7d the same things on 0x20 calls
 void instDo05Thing(ProgInfo& progInfo) {
 	if (progInfo.stackPointers.size() > 1) {
-		unsigned int var;
-		while (progInfo.stackPointers.back() < progInfo.numStack.size()) {
-			if (!progInfo.numStack.empty()) {
-				var = progInfo.numStack.back();
-				progInfo.numStack.pop_back();
+		while (progInfo.stackPointers.back() < progInfo.stack.size()) {
+			if (!progInfo.stack.empty()) {
+				progInfo.stack.pop_back();
 			} else {
 				Logger::Log(Logger::ERROR, progInfo.address) << " Popping empty stack.\n";
 			}
 		}
 	
 		progInfo.stackPointers.pop_back();
-		progInfo.numStack.push_back(0xDEADBEEF);
+		progInfo.stack.push_back(StackValue(0xDEADBEEF, STACK_REF));
 	} else {
 		Logger::Log(Logger::ERROR, progInfo.address) << " Tried to pop base frame.\n";
 	}
@@ -223,15 +261,25 @@ void instDo07Thing(FILE* f, BytecodeBuffer &buf, SceneInfo& sceneInfo, ProgInfo&
 	unsigned int arg1, arg2;
 		arg1 = buf.getInt();
 		arg2 = buf.getInt();
+	
+	StackValue var;
 
 	fprintf(f, "%#x, %#x", arg1, arg2);
 	if (arg1 == 0x0a) {
-		if (!progInfo.numStack.empty()) {
-			progInfo.numStack.pop_back();
+		if (!progInfo.stack.empty()) {
+			var = progInfo.stack.back();
+			progInfo.stack.pop_back();
+			
+			if (var.type != STACK_NUM && var.type != STACK_REF)
+				Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
 		}
 	} else if (arg1 == 0x14) {
-		if (!progInfo.strStack.empty()) {
-			progInfo.strStack.pop_back();
+		if (!progInfo.stack.empty()) {
+			var = progInfo.stack.back();
+			progInfo.stack.pop_back();
+			
+			if (var.type != STACK_STR)
+				Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
 		}
 	}
 	try {
@@ -255,18 +303,45 @@ void instDo13Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 void instCalc(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {	
 	// calc. 0x10 is subtract?
 	unsigned int arg1, arg2;
+	StackValue var;
+	
 		arg1 = buf.getInt();
 		arg2 = buf.getInt();
 	unsigned int arg3 = buf.getChar();
 	fprintf(f, "%#x, %#x, %d", arg1, arg2, arg3);
 	if (arg1 == 0xa && arg2 == 0xa) {
-		if (!progInfo.numStack.empty()) {
-			progInfo.numStack.pop_back();
+		if (progInfo.stack.size() >= 2) {
+			var = progInfo.stack.back();
+			progInfo.stack.pop_back();
+			if (var.type != STACK_NUM && var.type != STACK_REF)
+				Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
+				
+			var = progInfo.stack.back();
+			progInfo.stack.pop_back();
+			if (var.type != STACK_NUM && var.type != STACK_REF)
+				Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
+				
+			progInfo.stack.push_back(StackValue(0xdeadbeef, STACK_NUM));
+		} else {
+			Logger::Log(Logger::ERROR, progInfo.address) << " Not enough values for calc\n";
 		}
 		// TODO: figure out the calcs and do them
 	} else if (arg1 == 0x14 && arg2 == 0x14) {
-		if (!progInfo.strStack.empty())
-				progInfo.strStack.pop_back();
+		if (progInfo.stack.size() >= 2) {
+			var = progInfo.stack.back();
+			progInfo.stack.pop_back();
+			if (var.type != STACK_STR && var.type != STACK_REF)
+				Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
+				
+			var = progInfo.stack.back();
+			progInfo.stack.pop_back();
+			if (var.type != STACK_STR && var.type != STACK_REF)
+				Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
+				
+			progInfo.stack.push_back(StackValue(0xdeadbeef, STACK_STR));
+		} else {
+			Logger::Log(Logger::ERROR, progInfo.address) << " Not enough values for calc\n";
+		}
 		if (arg3 == 0x01)
 			progInfo.comment = "string concatenation";
 	} else {
@@ -275,7 +350,7 @@ void instCalc(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 }
 
 void instDo08Thing(ProgInfo& progInfo) {
-	progInfo.stackPointers.push_back(progInfo.numStack.size());
+	progInfo.stackPointers.push_back(progInfo.stack.size());
 }
 
 void instDo15Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
@@ -328,11 +403,11 @@ void instCall(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 	fprintf(f, "), %#x", arg2);
 
 	// Function to call
-	unsigned int stackTop = progInfo.numStack.back();
-	progInfo.numStack.pop_back();
-	fprintf(f, " [%#x] ", stackTop);
+	StackValue stackTop = progInfo.stack.back();
+	progInfo.stack.pop_back();
+	fprintf(f, " [%#x] ", stackTop.value);
 	
-	switch (stackTop) {
+	switch (stackTop.value) {
 		// TODO: "understand" what these mean
 		case 0x0c:
 		case 0x12:
@@ -343,7 +418,7 @@ void instCall(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 		case 0x5b:
 		case 0x64:
 		case 0x7f:
-			if (progInfo.stackPointers.back() == progInfo.numStack.size()) {
+			if (progInfo.stackPointers.back() == progInfo.stack.size()) {
 				fprintf(f, ", %#x", buf.getInt());
 				progInfo.stackPointers.pop_back();
 			}
@@ -356,8 +431,8 @@ void instCall(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 	}
 	
 	// TEMP?
-	while (progInfo.stackPointers.back() < progInfo.numStack.size()) {
-		progInfo.numStack.pop_back();
+	while (progInfo.stackPointers.back() < progInfo.stack.size()) {
+		progInfo.stack.pop_back();
 	}
 	if (progInfo.stackPointers.size() > 1) {
 		progInfo.stackPointers.pop_back();
@@ -366,9 +441,9 @@ void instCall(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 	}
 	
 	if (arg2 == 0x0a) {
-		progInfo.numStack.push_back(0xdeadbeef);
+		progInfo.stack.push_back(StackValue(0xdeadbeef, STACK_NUM));
 	} else if (arg2 == 0x14) {
-		progInfo.strStack.push_back(0xdeadbeef);
+		progInfo.stack.push_back(StackValue(0xdeadbeef, STACK_STR));
 	}
 }
 
@@ -422,10 +497,10 @@ void parseBytecode(BytecodeBuffer &buf, std::string filename, SceneInfo sceneInf
 		
 		switch (progInfo.opcode) {
 			case 0x02:	instPush(f, buf, sceneInfo, progInfo);	break;
+			case 0x04:	instDo04Thing(f, buf, progInfo);		break;
 			
 			case 0x01:
-			case 0x03:
-			case 0x04:	// load value > ??
+			case 0x03:	
 			case 0x10:
 			case 0x11:
 			case 0x12:
