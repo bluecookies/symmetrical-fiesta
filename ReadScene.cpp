@@ -124,9 +124,10 @@ int main(int argc, char* argv[]) {
 		cmdInfo.push_back(pair);
 	}
 	// Read the strings
-	StringList varNames = readStrings(fileStream, header.varNameIndex, header.varName, false);
-	StringList cmdNames = readStrings(fileStream, header.cmdNameIndex, header.cmdName, false);
-	StringList sceneNames = readStrings(fileStream, header.sceneNameIndex, header.sceneName);
+	StringList varNames, cmdNames, sceneNames;
+	readStrings(fileStream, varNames, header.varNameIndex, header.varName, false);
+	readStrings(fileStream, cmdNames, header.cmdNameIndex, header.cmdName, false);
+	readStrings(fileStream, sceneNames, header.sceneNameIndex, header.sceneName);
 	
 	std::ofstream outStream("SceneNames.txt");
 	outStream << sceneNames << std::endl << (varInfo + varNames) << std::endl << cmdNames;

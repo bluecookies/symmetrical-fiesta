@@ -150,13 +150,15 @@ SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string 
 
 	
 	// Read function names
-	StringList functionNames = readStrings(stream, header.functionNameIndex, header.functionName);
+	StringList functionNames;
+	readStrings(stream, functionNames, header.functionNameIndex, header.functionName);
 	for (auto it = info.functions.begin(); it != info.functions.end(); it++) {
 		it->name = functionNames.at(it - info.functions.begin());
 	}
 	
 	// Read local vars
-	StringList localVars = readStrings(stream, header.localVarIndex, header.localVars);
+	StringList localVars;
+	readStrings(stream, localVars, header.localVarIndex, header.localVars);
 	info.varNames.insert(info.varNames.end(), localVars.begin(), localVars.end());
 		
 	// Read local commands
@@ -252,8 +254,8 @@ int main(int argc, char* argv[]) {
 	}
 	
 	
-	sceneInfo.mainStrings = readStrings(fileStream, header.stringIndex, header.stringData, true);
-	sceneInfo.varStrings = readStrings(fileStream, header.varStringIndex, header.varStringData);
+	readStrings(fileStream, sceneInfo.mainStrings, header.stringIndex, header.stringData, true);
+	readStrings(fileStream, sceneInfo.varStrings, header.varStringIndex, header.varStringData);
 	
 	BytecodeBuffer bytecode(fileStream, header.bytecode);
 	fileStream.close();

@@ -28,14 +28,12 @@ void readHeaderPair(unsigned char* buf, HeaderPair &pair) {
 	pair.count = readUInt32(buf+4);
 }
 
-StringList readStrings(std::ifstream &f, HeaderPair index, HeaderPair data, bool decode) {
+// TODO: read them in on one block
+void readStrings(std::ifstream &f, StringList &strings, HeaderPair index, HeaderPair data, bool decode) {
 	assert(index.count == data.count);
-	
-	// Maybe read entire string block into buffer first
-	StringList strings;
-	
+
 	if (index.count == 0)
-		return strings;
+		return;
 	
 	strings.reserve(index.count);
 	
@@ -72,8 +70,6 @@ StringList readStrings(std::ifstream &f, HeaderPair index, HeaderPair data, bool
 	delete[] stringIndices;
 	
 	Logger::Log(Logger::DEBUG) << "Read " << strings.size() << " strings from 0x" << std::hex << data.offset << std::dec << std::endl;
-	
-	return strings;
 }
 
 // Requires stream pointer to be at beginning of table
