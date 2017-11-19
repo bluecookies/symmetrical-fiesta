@@ -107,7 +107,7 @@ namespace Logger {
 	}
 	// Yes, yes, verbosity and level are different
 	inline void increaseVerbosity() {
-		if (LogLevel < DEBUG)
+		if (LogLevel < VERBOSE_DEBUG)
 			LogLevel++;
 	}
 }

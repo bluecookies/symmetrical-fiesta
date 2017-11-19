@@ -257,6 +257,9 @@ int main(int argc, char* argv[]) {
 	readStrings(fileStream, sceneInfo.mainStrings, header.stringIndex, header.stringData, true);
 	readStrings(fileStream, sceneInfo.varStrings, header.varStringIndex, header.varStringData);
 	
+	Logger::Log(Logger::VERBOSE_DEBUG) << sceneInfo.mainStrings;
+	Logger::Log(Logger::VERBOSE_DEBUG) << sceneInfo.varStrings;
+	
 	BytecodeBuffer bytecode(fileStream, header.bytecode);
 	fileStream.close();
 	

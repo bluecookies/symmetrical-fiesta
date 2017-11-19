@@ -8,7 +8,7 @@ if [ $# -eq 0 ]; then
 	done
 else
 	for f in Scene/*.ss; do
-		if bin/parsess $f| grep -q "NOP" ; then
+		if bin/parsess $f| grep -q $1 ; then
 			echo $f
 		fi
 	done

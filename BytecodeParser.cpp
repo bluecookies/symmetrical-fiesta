@@ -97,12 +97,37 @@ unsigned int readArgs(BytecodeBuffer &buf, ProgInfo &progInfo, bool pop = true) 
 						Logger::Log(Logger::WARN, progInfo.address) << " Popped past frame.\n";
 					}
 				}
+			} else if (arg == 0x0e) {
+				if (!progInfo.numStack.empty()) {
+					unsigned int var = progInfo.numStack.back();
+					progInfo.numStack.pop_back();
+					if (var >> 24 != 0x7f) {
+						Logger::Log(Logger::DEBUG, progInfo.address) << " Type 0xe: " << std::hex << var << std::endl;
+					}	
+					if (progInfo.stackPointers.back() > progInfo.numStack.size()) {
+						Logger::Log(Logger::WARN, progInfo.address) << " Popped past frame.\n";
+					}
+				}
 			} else if (arg == 0x14) {
 				if (!progInfo.strStack.empty()) {
 					progInfo.strStack.pop_back();
 				}
-			} else if (arg == 0x051e || arg == 0x0514) {
-				Logger::Log(Logger::VERBOSE_DEBUG, progInfo.address) << " trying to pop stack " << arg << std::endl;
+			} else if (arg == 0x51e) {
+				Logger::Log(Logger::DEBUG, progInfo.address) << " Popping 0x51e - " << std::hex;
+				unsigned int a1 = 0xdeadbeef, a2 = 0xdeadbeef, a3 = 0xdeadbeef;
+				if (progInfo.numStack.size() >= 4) {
+					progInfo.numStack.pop_back();
+					a1 = progInfo.numStack.back();
+						progInfo.numStack.pop_back();
+					a2 = progInfo.numStack.back();
+						progInfo.numStack.pop_back();
+					a3 = progInfo.numStack.back();
+						progInfo.numStack.pop_back();
+				} else {
+					throw std::exception();
+				}
+				if (a1 != 0xffffffff || a2 != 2)
+					Logger::Log(Logger::WARN) << a3 << " " << a2 << " " << a1 << std::endl;
 			} else if (arg == 0xffffffff) {
 				stackCount = buf.getInt();
 				for (unsigned int counter2 = 0; counter2 < stackCount; counter2++) {
@@ -153,6 +178,7 @@ void instPush(FILE* f, BytecodeBuffer &buf, SceneInfo& sceneInfo, ProgInfo& prog
 			unsigned int varIndex = arg2 & 0x00ffffff;
 			if (varIndex < sceneInfo.varNames.size()) {
 				progInfo.comment = sceneInfo.varNames.at(varIndex);
+			} else if (arg2 == 0x7fffffff) {
 			} else {
 				Logger::Log(Logger::WARN, progInfo.address) << " trying to access var index " << arg2 << std::endl;
 			}
@@ -169,16 +195,20 @@ void instPush(FILE* f, BytecodeBuffer &buf, SceneInfo& sceneInfo, ProgInfo& prog
 }
 
 // must guarantee stackPointers will never be empty
+// TODO: handle 0x7d - not sure what they are, references?
+// TODO: also handle 0x7d the same things on 0x20 calls
 void instDo05Thing(ProgInfo& progInfo) {
-	while (progInfo.stackPointers.back() < progInfo.numStack.size()) {
-		if (!progInfo.numStack.empty()) {
-			// TODO: get the variable here, since its not necessary going back on this stack
-			progInfo.numStack.pop_back();
-		} else {
-			Logger::Log(Logger::ERROR, progInfo.address) << " Popping empty stack.\n";
-		}
-	}
 	if (progInfo.stackPointers.size() > 1) {
+		unsigned int var;
+		while (progInfo.stackPointers.back() < progInfo.numStack.size()) {
+			if (!progInfo.numStack.empty()) {
+				var = progInfo.numStack.back();
+				progInfo.numStack.pop_back();
+			} else {
+				Logger::Log(Logger::ERROR, progInfo.address) << " Popping empty stack.\n";
+			}
+		}
+	
 		progInfo.stackPointers.pop_back();
 		progInfo.numStack.push_back(0xDEADBEEF);
 	} else {
@@ -255,6 +285,10 @@ void instDo15Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 	fprintf(f, ")");
 }
 
+// TODO: is 20 a store?
+
+
+// TODO: pop stack pointer if reached
 void instCall(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 	unsigned int arg;
 	unsigned int arg1 = buf.getInt();
@@ -311,11 +345,6 @@ void instCall(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 				fprintf(f, ", %#x", buf.getInt());
 			}
 		break;
-		case 0x13:
-			if (numArgs1 > 0 && arg2 == 0x0a) {
-				fprintf(f, ", %#x", buf.getInt());
-			}
-		break;
 		case 0x4c:
 			//No - 0, (a       ), (), a
 			//Yes- 1, (a,14,14,), (), a
@@ -333,15 +362,30 @@ void instCall(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 			if (numArgs1 > 0)
 				fprintf(f, ", %#x", buf.getInt());
 		break;
+		// TODO: see if this is true for all
+		case 0x13:
+		case 0x64:
 		case 0x7f:
-			//  0, (), (), 0xa [0x7f] 
-			fprintf(f, ", %#x", buf.getInt());
+			if (progInfo.stackPointers.back() == progInfo.numStack.size()) {
+				fprintf(f, ", %#x", buf.getInt());
+				progInfo.stackPointers.pop_back();
+			}
 		break;
 		case 0xffffffff:
 			Logger::Log(Logger::WARN, progInfo.address) << " Calling function 0xffffffff.\n";
 		break;
 		case 0xDEADBEEF:
 			Logger::Log(Logger::WARN, progInfo.address) << " Calling deadbeef\n";
+	}
+	
+	// TEMP?
+	while (progInfo.stackPointers.back() < progInfo.numStack.size()) {
+		progInfo.numStack.pop_back();
+	}
+	if (progInfo.stackPointers.size() > 1) {
+		progInfo.stackPointers.pop_back();
+	} else {
+		Logger::Log(Logger::WARN, progInfo.address) << " Popped past.\n";
 	}
 	
 	if (arg2 == 0x0a) {
@@ -425,7 +469,6 @@ void parseBytecode(BytecodeBuffer &buf, std::string filename, SceneInfo sceneInf
 
 			case 0x13:	instDo13Thing(f, buf, progInfo);		break;
 			case 0x14:
-
 			case 0x20:	fprintf(f, "%#x, %#x, %#x", buf.getInt(), buf.getInt(), buf.getInt());
 				break;
 			case 0x21:	fprintf(f, "%#x, %d", buf.getInt(), buf.getChar());
