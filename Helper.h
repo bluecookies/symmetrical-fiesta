@@ -44,7 +44,7 @@ unsigned int readUInt32(char* buf);
 void readHeaderPair(std::ifstream &stream, HeaderPair &pair);
 void readHeaderPair(unsigned char* buf, HeaderPair &pair);
 
-StringList readStrings(std::ifstream &f, HeaderPair index, HeaderPair data, bool decode = false);
+void readStrings(std::ifstream &f, StringList &strings, HeaderPair index, HeaderPair data, bool decode = false);
 //void printStrings(StringList strings, std::ostream &f = std::cout);
 inline std::ostream& operator << (std::ostream& stream, const StringList &strings) {
 	for (auto &string:strings) {
@@ -107,7 +107,7 @@ namespace Logger {
 	}
 	// Yes, yes, verbosity and level are different
 	inline void increaseVerbosity() {
-		if (LogLevel < DEBUG)
+		if (LogLevel < VERBOSE_DEBUG)
 			LogLevel++;
 	}
 }

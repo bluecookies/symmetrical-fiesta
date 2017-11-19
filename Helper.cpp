@@ -28,17 +28,14 @@ void readHeaderPair(unsigned char* buf, HeaderPair &pair) {
 	pair.count = readUInt32(buf+4);
 }
 
-StringList readStrings(std::ifstream &f, HeaderPair index, HeaderPair data, bool decode) {
+void readStrings(std::ifstream &f, StringList &strings, HeaderPair index, HeaderPair data, bool decode) {
 	assert(index.count == data.count);
-	
-	// Maybe read entire string block into buffer first
-	StringList strings;
-	
+
 	if (index.count == 0)
-		return strings;
+		return;
 	
 	strings.reserve(index.count);
-	
+		
 	f.seekg(index.offset, std::ios_base::beg);
 		
 	// Read offsets and lengths of strings
@@ -47,12 +44,14 @@ StringList readStrings(std::ifstream &f, HeaderPair index, HeaderPair data, bool
 	for (unsigned int i = 0; i < index.count; i++) {
 		readHeaderPair(f, stringIndices[i]);
 	}
-	
+		
 	// Read data
-	char16_t* strBuf = new char16_t[512]; // I hope that's enough
+	std::vector<char16_t> strBuf;
 	for (unsigned int i = 0; i < index.count; i++) { 
 		f.seekg(data.offset + 2 * stringIndices[i].offset, std::ios_base::beg);
-		f.read(reinterpret_cast<char*>(strBuf), 2 * stringIndices[i].count);
+		
+		strBuf.resize(stringIndices[i].count);
+		f.read(reinterpret_cast<char*>(&strBuf[0]), 2 * stringIndices[i].count);
 		
 		if (decode) {
 			for (unsigned int j = 0; j < stringIndices[i].count; j++) {
@@ -60,20 +59,17 @@ StringList readStrings(std::ifstream &f, HeaderPair index, HeaderPair data, bool
 			}
 		}
 		
-		std::u16string string16(strBuf, stringIndices[i].count);
+		std::u16string string16(strBuf.begin(), strBuf.end());
 		try {
 			strings.push_back(g_UCS2Conv.to_bytes(string16));
 		} catch (std::exception &e) {
 			std::cout << "Exception: " << e.what() << std::endl;
   	}
 	}
-	
-	delete[] strBuf;
+
 	delete[] stringIndices;
 	
 	Logger::Log(Logger::DEBUG) << "Read " << strings.size() << " strings from 0x" << std::hex << data.offset << std::dec << std::endl;
-	
-	return strings;
 }
 
 // Requires stream pointer to be at beginning of table
