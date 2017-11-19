@@ -75,10 +75,7 @@ void readLabels(std::ifstream &stream, std::vector<Label> &labels, HeaderPair in
 	}
 }
 
-SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string filename, int fileIndex) {
-	SceneInfo info;
-	
-	// Read scene pack globals
+void readGlobalInfo(SceneInfo &info, std::string filename, int fileIndex, const ScriptHeader &header) {
 	// Read scene names, commands and variables
 	// TODO: make safe
 	// including verifying everything in bounds
@@ -140,8 +137,11 @@ SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string 
 		Logger::Log(Logger::INFO) << "Read " << std::dec << std::to_string(count) << " global commands.\n";
 		
 	}
-	globalInfoFile.close();
-	
+}
+
+void readSceneInfo(SceneInfo &info, std::ifstream &stream, const ScriptHeader &header, std::string filename, int fileIndex) {
+	// Read scene pack globals
+	readGlobalInfo(info, filename, fileIndex, header);
 	// Read markers
 	readLabels(stream, info.labels, header.labels);
 	readLabels(stream, info.markers, header.markers);
@@ -162,6 +162,7 @@ SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string 
 	info.varNames.insert(info.varNames.end(), localVars.begin(), localVars.end());
 		
 	// Read local commands
+	ScriptCommand command;
 	stream.seekg(header.localCommandIndex.offset, std::ios::beg);
 	for (unsigned int i = 0; i < header.localCommandIndex.count; i++) {
 		stream.read((char*) &command.index, 4);
@@ -171,9 +172,11 @@ SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string 
 		if (command.index < info.commands.size()) {
 			// Local command
 			if (command.index >= info.numGlobalCommands) {
+			
 				auto predAtOffset = [command](Label function) {
 					return (function.offset == command.offset);
 				};
+				
 				auto funcIt = std::find_if(info.functions.begin(), info.functions.end(), predAtOffset);
 				if (funcIt != info.functions.end()) {
 					command.name = funcIt->name;
@@ -193,8 +196,6 @@ SceneInfo readSceneInfo(std::ifstream &stream, ScriptHeader header, std::string 
 		}
 	}
 	Logger::Log(Logger::INFO) << "Read " << std::dec << header.localCommandIndex.count << " local commands.\n";
-	
-	return info;
 }
 
 int main(int argc, char* argv[]) {
@@ -247,7 +248,7 @@ int main(int argc, char* argv[]) {
 	// and global scene pack stuff
 	SceneInfo sceneInfo;
 	try {
-		sceneInfo = readSceneInfo(fileStream, header, filename, fileIndex);
+		readSceneInfo(sceneInfo, fileStream, header, filename, fileIndex);
 	} catch (std::exception &e) {
 		std::cerr << e.what() << std::endl;
 		return 1;
@@ -257,11 +258,12 @@ int main(int argc, char* argv[]) {
 	readStrings(fileStream, sceneInfo.mainStrings, header.stringIndex, header.stringData, true);
 	readStrings(fileStream, sceneInfo.varStrings, header.varStringIndex, header.varStringData);
 	
+	
 	Logger::Log(Logger::VERBOSE_DEBUG) << sceneInfo.mainStrings;
 	Logger::Log(Logger::VERBOSE_DEBUG) << sceneInfo.varStrings;
 	
 	BytecodeBuffer bytecode(fileStream, header.bytecode);
-	fileStream.close();
+	//fileStream.close();
 	
 	try {
 		parseBytecode(bytecode, outFilename, sceneInfo);
