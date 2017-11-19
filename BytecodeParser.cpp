@@ -124,10 +124,13 @@ unsigned int readArgs(BytecodeBuffer &buf, ProgInfo &progInfo, bool pop = true) 
 					a3 = progInfo.numStack.back();
 						progInfo.numStack.pop_back();
 				} else {
+					
 					throw std::exception();
 				}
 				if (a1 != 0xffffffff || a2 != 2)
 					Logger::Log(Logger::WARN) << a3 << " " << a2 << " " << a1 << std::endl;
+				else
+					Logger::Log(Logger::DEBUG) << std::endl;
 			} else if (arg == 0xffffffff) {
 				stackCount = buf.getInt();
 				for (unsigned int counter2 = 0; counter2 < stackCount; counter2++) {
@@ -332,38 +335,12 @@ void instCall(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 	switch (stackTop) {
 		// TODO: "understand" what these mean
 		case 0x0c:
-		//Yes- 0, (a), (), 0
-		//No - 0, ( ), (), a
-		//No - 1, (a), (), 0
-		//No - 0, ( ), (), 0
-			if (arg1 == 0 && arg2 == 0x00 && numArgs1 == 1) {	// or at least not 0xa
-				fprintf(f, ", %#x", buf.getInt());
-			}
-		break;
 		case 0x12:
-			if (arg2 == 0x00) {
-				fprintf(f, ", %#x", buf.getInt());
-			}
-		break;
+		case 0x13:
 		case 0x4c:
-			//No - 0, (a       ), (), a
-			//Yes- 1, (a,14,14,), (), a
-			//Yes- 0, ( ,14,14,), (), a
-			if (numArgs1 > 0)
-				fprintf(f, ", %#x", buf.getInt());
-		break;
 		case 0x4d:
-			//No - 0, (a), (), a
-			if (arg2 == 0)
-				fprintf(f, ", %#x", buf.getInt());
-		break;
 		case 0x5a:
 		case 0x5b:
-			if (numArgs1 > 0)
-				fprintf(f, ", %#x", buf.getInt());
-		break;
-		// TODO: see if this is true for all
-		case 0x13:
 		case 0x64:
 		case 0x7f:
 			if (progInfo.stackPointers.back() == progInfo.numStack.size()) {
@@ -389,9 +366,9 @@ void instCall(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 	}
 	
 	if (arg2 == 0x0a) {
-		progInfo.numStack.push_back(3735928559);
+		progInfo.numStack.push_back(0xdeadbeef);
 	} else if (arg2 == 0x14) {
-		progInfo.strStack.push_back(3735928559);
+		progInfo.strStack.push_back(0xdeadbeef);
 	}
 }
 
