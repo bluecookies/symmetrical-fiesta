@@ -79,19 +79,22 @@ typedef struct ProgramInfo {
 	unsigned int numNops = 0;
 } ProgInfo;
 
-void printLabels(FILE* f, std::vector<Label>::iterator &pLabel, std::vector<Label>::iterator end, unsigned int address, const char* type) {
+bool printLabels(FILE* f, std::vector<Label>::iterator &pLabel, std::vector<Label>::iterator end, unsigned int address, const char* type) {
 	Label label;
+	bool printed = false;
 	while (pLabel != end) {
 		label = *pLabel;
 		if (label.offset <= address) {
 			pLabel++;
 			if (label.offset > 0 && label.offset == address) {
 				fprintf(f, "\nSet%s %x:\t; %s\n", type, label.index, label.name.c_str());
+				printed = true;
 			}
 		} else {
 			break;
 		}
 	}
+	return printed;
 }
 
 
@@ -241,10 +244,14 @@ void instDo04Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 // TODO: handle 0x7d - not sure what they are, references?
 // TODO: also handle 0x7d the same things on 0x20 calls
 void instDo05Thing(ProgInfo& progInfo) {
+	StackValue var;
 	if (progInfo.stackPointers.size() > 1) {
 		while (progInfo.stackPointers.back() < progInfo.stack.size()) {
 			if (!progInfo.stack.empty()) {
+				var = progInfo.stack.back();
 				progInfo.stack.pop_back();
+				
+				if 
 			} else {
 				Logger::Log(Logger::ERROR, progInfo.address) << " Popping empty stack.\n";
 			}
@@ -257,6 +264,9 @@ void instDo05Thing(ProgInfo& progInfo) {
 	}
 }
 
+// Might not be pop
+// just a label? since pop would pop past return address usually
+// 0x7d accesses EBP - x?
 void instDo07Thing(FILE* f, BytecodeBuffer &buf, SceneInfo& sceneInfo, ProgInfo& progInfo) {
 	unsigned int arg1, arg2;
 		arg1 = buf.getInt();
@@ -279,7 +289,7 @@ void instDo07Thing(FILE* f, BytecodeBuffer &buf, SceneInfo& sceneInfo, ProgInfo&
 			progInfo.stack.pop_back();
 			
 			if (var.type != STACK_STR)
-				Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
+				Logger::Log(Logger::WARN, progInfo.address) << "Non-string type read.\n";
 		}
 	}
 	try {
@@ -287,6 +297,8 @@ void instDo07Thing(FILE* f, BytecodeBuffer &buf, SceneInfo& sceneInfo, ProgInfo&
 	} catch (std::out_of_range &e) {
 		Logger::Log(Logger::WARN, progInfo.address) << "Missing string id: " << arg2 << std::endl;
 	}
+	
+	progInfo.params.push_back(var);
 }
 
 void instDo13Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
@@ -472,7 +484,7 @@ void parseBytecode(BytecodeBuffer &buf, std::string filename, SceneInfo sceneInf
 	Logger::Log(Logger::DEBUG) << "Parsing " << std::to_string(buf.size()) << " bytes.\n";
 	
 	ProgramInfo progInfo;
-	
+	bool newFunc = false;
 	while (!buf.done()) {
 		// Get address before incrementing
 		progInfo.address = buf.getAddress();
@@ -487,11 +499,17 @@ void parseBytecode(BytecodeBuffer &buf, std::string filename, SceneInfo sceneInf
 		}*/
 		//END_DEBUG
 		
+		newFunc = false;
+		
 		// Print labels and commands
 		printLabels(f, labelIt, sceneInfo.labels.end(), progInfo.address, "Label");
 		printLabels(f, markerIt, sceneInfo.markers.end(), progInfo.address, "Marker");
-		printLabels(f, functionIt, sceneInfo.functions.end(), progInfo.address, "Function");
-		printLabels(f, commandIt, localCommands.end(), progInfo.address, "Command");
+		newFunc |= printLabels(f, functionIt, sceneInfo.functions.end(), progInfo.address, "Function");
+		newFunc |= printLabels(f, commandIt, localCommands.end(), progInfo.address, "Command");
+		
+		if (newFunc) {
+			progInfo.params.clear();
+		}
 		
 		fprintf(f, "%#06x>\t%02x| %s ", progInfo.address, progInfo.opcode, s_mnemonics[progInfo.opcode].c_str());
 		
