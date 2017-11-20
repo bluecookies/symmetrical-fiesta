@@ -67,6 +67,7 @@ typedef struct ProgramInfo {
 	// State info
 	ProgStack stack;
 	std::vector<unsigned int> stackPointers = {0};
+	ProgStack params;
 	
 	// instruction info
 	unsigned char opcode = 0;
@@ -79,19 +80,22 @@ typedef struct ProgramInfo {
 	unsigned int numNops = 0;
 } ProgInfo;
 
-void printLabels(FILE* f, std::vector<Label>::iterator &pLabel, std::vector<Label>::iterator end, unsigned int address, const char* type) {
+bool printLabels(FILE* f, std::vector<Label>::iterator &pLabel, std::vector<Label>::iterator end, unsigned int address, const char* type) {
 	Label label;
+	bool printed = false;
 	while (pLabel != end) {
 		label = *pLabel;
 		if (label.offset <= address) {
 			pLabel++;
 			if (label.offset > 0 && label.offset == address) {
 				fprintf(f, "\nSet%s %x:\t; %s\n", type, label.index, label.name.c_str());
+				printed = true;
 			}
 		} else {
 			break;
 		}
 	}
+	return printed;
 }
 
 
@@ -237,26 +241,59 @@ void instDo04Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 	}
 }
 
+
+// TODO: maybe put stack pointers (0x08) directly onto the stack
+
 // must guarantee stackPointers will never be empty
 // TODO: handle 0x7d - not sure what they are, references?
 // TODO: also handle 0x7d the same things on 0x20 calls
 void instDo05Thing(ProgInfo& progInfo) {
+	StackValue var = progInfo.stack.back();
 	if (progInfo.stackPointers.size() > 1) {
-		while (progInfo.stackPointers.back() < progInfo.stack.size()) {
-			if (!progInfo.stack.empty()) {
-				progInfo.stack.pop_back();
-			} else {
-				Logger::Log(Logger::ERROR, progInfo.address) << " Popping empty stack.\n";
+		if (var.value >> 24 == 0x7d) {
+			progInfo.stack.pop_back();
+			unsigned int argIndex = var.value & 0x00FFFFFF;
+			if (progInfo.stack.empty()) {
+				Logger::Log(Logger::ERROR, progInfo.address) << "Strange command\n";
+				throw std::exception();
 			}
+			unsigned int unknown = progInfo.stack.back().value;
+			progInfo.stack.pop_back();
+			if (unknown != 0x53)
+				Logger::Log(Logger::INFO, progInfo.address) << "Command read " << unknown << std::endl;
+		
+			if (progInfo.stackPointers.back() < progInfo.stack.size()) {
+				Logger::Log(Logger::WARN, progInfo.address) << " Still more things left\n";
+			} else {
+				progInfo.stackPointers.pop_back();
+			}
+		
+			if (argIndex < progInfo.params.size()) {
+				progInfo.stack.push_back(progInfo.params[argIndex]);
+			} else {
+				Logger::Log(Logger::ERROR, progInfo.address) << " Reading argument " << argIndex << " out of bounds\n";
+			}
+		
+		} else {
+			while (progInfo.stackPointers.back() < progInfo.stack.size()) {
+				if (!progInfo.stack.empty()) {
+					var = progInfo.stack.back();
+					progInfo.stack.pop_back();
+				} else {
+					Logger::Log(Logger::ERROR, progInfo.address) << " Popping empty stack.\n";
+				}
+			}
+			progInfo.stackPointers.pop_back();
+			progInfo.stack.push_back(StackValue(0xDEADBEEF, STACK_REF));
 		}
-	
-		progInfo.stackPointers.pop_back();
-		progInfo.stack.push_back(StackValue(0xDEADBEEF, STACK_REF));
 	} else {
 		Logger::Log(Logger::ERROR, progInfo.address) << " Tried to pop base frame.\n";
 	}
 }
 
+// Might not be pop
+// just a label? since pop would pop past return address usually
+// 0x7d accesses EBP - x?
 void instDo07Thing(FILE* f, BytecodeBuffer &buf, SceneInfo& sceneInfo, ProgInfo& progInfo) {
 	unsigned int arg1, arg2;
 		arg1 = buf.getInt();
@@ -273,20 +310,24 @@ void instDo07Thing(FILE* f, BytecodeBuffer &buf, SceneInfo& sceneInfo, ProgInfo&
 			if (var.type != STACK_NUM && var.type != STACK_REF)
 				Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
 		}
+		var.type = STACK_NUM;
 	} else if (arg1 == 0x14) {
 		if (!progInfo.stack.empty()) {
 			var = progInfo.stack.back();
 			progInfo.stack.pop_back();
 			
 			if (var.type != STACK_STR)
-				Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
+				Logger::Log(Logger::WARN, progInfo.address) << "Non-string type read.\n";
 		}
+		var.type = STACK_STR;
 	}
 	try {
 		progInfo.comment = sceneInfo.varStrings.at(arg2);	
 	} catch (std::out_of_range &e) {
 		Logger::Log(Logger::WARN, progInfo.address) << "Missing string id: " << arg2 << std::endl;
 	}
+	
+	progInfo.params.push_back(var);
 }
 
 void instDo13Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
@@ -353,6 +394,8 @@ void instDo08Thing(ProgInfo& progInfo) {
 	progInfo.stackPointers.push_back(progInfo.stack.size());
 }
 
+
+// Ret list?
 void instDo15Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 	unsigned int numArgs = readArgs(buf, progInfo);
 	fprintf(f, "(");
@@ -472,7 +515,7 @@ void parseBytecode(BytecodeBuffer &buf, std::string filename, SceneInfo sceneInf
 	Logger::Log(Logger::DEBUG) << "Parsing " << std::to_string(buf.size()) << " bytes.\n";
 	
 	ProgramInfo progInfo;
-	
+	bool newFunc = false;
 	while (!buf.done()) {
 		// Get address before incrementing
 		progInfo.address = buf.getAddress();
@@ -487,11 +530,17 @@ void parseBytecode(BytecodeBuffer &buf, std::string filename, SceneInfo sceneInf
 		}*/
 		//END_DEBUG
 		
+		newFunc = false;
+		
 		// Print labels and commands
 		printLabels(f, labelIt, sceneInfo.labels.end(), progInfo.address, "Label");
 		printLabels(f, markerIt, sceneInfo.markers.end(), progInfo.address, "Marker");
-		printLabels(f, functionIt, sceneInfo.functions.end(), progInfo.address, "Function");
-		printLabels(f, commandIt, localCommands.end(), progInfo.address, "Command");
+		newFunc |= printLabels(f, functionIt, sceneInfo.functions.end(), progInfo.address, "Function");
+		newFunc |= printLabels(f, commandIt, localCommands.end(), progInfo.address, "Command");
+		
+		if (newFunc) {
+			progInfo.params.clear();
+		}
 		
 		fprintf(f, "%#06x>\t%02x| %s ", progInfo.address, progInfo.opcode, s_mnemonics[progInfo.opcode].c_str());
 		
