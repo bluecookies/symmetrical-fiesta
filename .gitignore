@@ -14,6 +14,7 @@
 
 *.txt
 *.key
+/*.exe
 
 # go away
 .DS_Store
@@ -21,3 +22,5 @@
 Scene/*
 bin/*
 Pack/*
+
+Data/*

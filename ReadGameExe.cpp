@@ -3,6 +3,10 @@
 #include <locale>
 #include <codecvt>
 
+#include <iomanip>
+#include <unistd.h>
+#include <getopt.h>
+
 #include <limits>
 
 #include <cassert>
@@ -28,9 +32,44 @@ static unsigned char XorKey[256] = {
 	0x9D, 0xEA, 0xDD, 0x31, 0x2C, 0xE9, 0xE2, 0x10, 0x22, 0xAA, 0xE1, 0xAD, 0x2C, 0xC4, 0x2D, 0x7F
 };
 
-int main() {
+int main(int argc, char* argv[]) {
+	extern char *optarg;
+	extern int optind;
+	
+	std::string outFilename;
+	static char usageString[] = "Usage: readgameexe [-o outfile] [-v] [-d] <Gameexe.dat>";
+	
+	bool dumpEncoded = false;
 
-	std::fstream fileStream("Gameexe.dat", std::ifstream::in | std::ifstream::binary);
+	// Handle options
+	int option = 0;
+	while ((option = getopt(argc, argv, "o:vd")) != -1) {
+		switch (option) {
+		case 'v':
+			Logger::increaseVerbosity();
+			break;
+		case 'o':
+			outFilename = std::string(optarg);
+		break;
+		case 'd':
+			dumpEncoded = true;
+		break;
+		default:
+			std::cout << usageString << std::endl;
+			return 1;
+		}
+	}
+
+	std::string filename("Scene.pck");
+	if (optind < argc) {
+		filename = argv[optind];
+	}
+
+	if (outFilename.empty())
+		outFilename = filename + std::string(".txt");
+
+
+	std::fstream fileStream(filename, std::ifstream::in | std::ifstream::binary);
 	
 	fileStream.ignore(std::numeric_limits<std::streamsize>::max());
 	unsigned int length = fileStream.gcount() - 8;
@@ -44,16 +83,36 @@ int main() {
 	for (unsigned int i = 0; i < length; i++) {
 		buffer[i] ^= XorKey[i & 0xFF];
 	}
-	
-	assert(readUInt32(buffer) == length);
+	unsigned int compressedSize = readUInt32(buffer);
 	unsigned int decompressedSize = readUInt32(buffer + 4);
+
+	if (compressedSize != length) {
+		Logger::Log(Logger::ERROR) << "Expected " << std::hex << length << ", got " << compressedSize << std::endl;
+		unsigned int possibleKey = (length ^ compressedSize);
+		Logger::Log(Logger::INFO) << "Possibly requiring key starting with " << std::hex << std::setfill('0');
+		for (unsigned int k = 0; k < 4; k++) {
+			Logger::Log(Logger::INFO) << std::setw(2) << (possibleKey & 0xFF) << " ";
+			possibleKey >>= 8;
+		}
+		Logger::Log(Logger::INFO) << std::endl;
+
+		if (dumpEncoded) {
+			fileStream.open(outFilename, std::ios::out | std::ios::binary);
+			fileStream.write((char*) buffer, length);
+			fileStream.flush();
+		}
+
+
+		exit(1);
+	}
+	
 	unsigned char *decompressed = new unsigned char[decompressedSize];
 	decompressData(buffer + 8, decompressed, decompressedSize);
 	
 	std::wstring_convert<std::codecvt_utf8<char16_t>, char16_t> ucs2conv;
 	std::u16string gameExe16((char16_t*) decompressed, decompressedSize >> 1);
 		
-	fileStream.open("Gameexe.txt", std::ofstream::out);
+	fileStream.open(outFilename, std::ios::out);
 	fileStream << ucs2conv.to_bytes(gameExe16);
 	fileStream.close();
 
