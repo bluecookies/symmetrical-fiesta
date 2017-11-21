@@ -220,7 +220,26 @@ int main(int argc, char* argv[]) {
 		delete[] decompressed;
 		CLOSE_OFSTREAM(outFile);
 	}
+
+	// Dump rest
+	unsigned int pos = fileStream.tellg();
+	fileStream.ignore(std::numeric_limits<std::streamsize>::max());
+	unsigned int remainingLength = fileStream.gcount();
+	fileStream.clear();
+	fileStream.seekg(pos, std::ios_base::beg);
+
+	char* dumpBuf = new char[remainingLength];
+	fileStream.read(dumpBuf, remainingLength);
 	fileStream.close();
+	{
+		std::ofstream dumpStream(filename + ".dump", std::ios::out | std::ios::binary);
+		dumpStream.write(dumpBuf, remainingLength);
+		Logger::Log(Logger::INFO) << " Dumped remaining " << remainingLength << "bytes\n";
+		dumpStream.close();
+	}
+	delete[] dumpBuf;
+
+	
 
 	return 0;
 }

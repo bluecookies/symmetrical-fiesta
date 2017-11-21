@@ -12,6 +12,8 @@
 *.asm
 *.commands
 
+*.dump
+
 *.txt
 *.key
 /*.exe
