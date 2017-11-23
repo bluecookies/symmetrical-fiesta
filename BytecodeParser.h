@@ -43,8 +43,35 @@ struct Label {
 	}
 };
 
+#define	STACK_UNDEF		0x0000
+#define	STACK_NUM		0x000a
+#define STACK_NUM_ARR	0x000b
+#define	STACK_NUM_REF	0x000d
+#define STACK_COMMAND	0x000e
+#define	STACK_STR		0x0014
+#define STACK_STR_ARR	0x0015
+#define STACK_STR_REF	0x0017
+#define	STACK_OBJ		0x051e
+#define	STACK_FRAME		0xFFFF
+
+
+struct ScriptVar {
+	unsigned int type = STACK_UNDEF;
+	unsigned int length = 0;
+	//
+	std::string name;
+
+};
+
+
+// TODO: make names more indicative
+// varNames -> globalVars + localVars
+// mainStrings -> localStrings
+// varStrings -> paramNames
+// maybe still separate out commands
 struct SceneInfo {
-	StringList sceneNames, varNames;
+	StringList sceneNames;
+	std::vector<ScriptVar> scriptVars;
 	StringList mainStrings, varStrings;
 	// TODO: if no global info available, infer from local
 	// TODO: handle things when no global available
@@ -56,27 +83,56 @@ struct SceneInfo {
 	std::vector<Label> labels, markers, functions;
 };
 
-class BytecodeBuffer {
+
+struct StackValue {
+	unsigned int value = 0;
+	unsigned int type = STACK_UNDEF;
+
+	StackValue() {};
+	StackValue(unsigned int val_, unsigned int type_) : value(val_), type(type_) {};
+};
+
+typedef std::vector<StackValue> ProgStack;
+
+typedef struct ProgramInfo {
+	// State info
+	ProgStack stack;
+	
+	// instruction info
+	unsigned int programCounter = 0;
+
+	std::vector<unsigned int> args;
+} ProgInfo;
+
+class BytecodeParser {
 	private:
 		unsigned char* bytecode = NULL;
 		unsigned int dataLength = 0;
-		unsigned int currAddress = 0;
+		ProgInfo progInfo;
+		SceneInfo sceneInfo;
+
+		void handle01();
+		void handleEval();
+		void handle08();
+
+		void handlePush();
+		void handlePop();
+		void handleDup();
+		void handleJump(unsigned char condition);
+		void handleCalc();
+		void handleAssign();
+		void handleCall();
+
+		unsigned int readArgs(bool pop = true);
+
 	public:
-		BytecodeBuffer(std::ifstream &f, HeaderPair index);
-		~BytecodeBuffer();
+		BytecodeParser(std::ifstream &f, HeaderPair index, SceneInfo sceneInfo);
+		~BytecodeParser();
 		// TODO: fill in the assign and move
-		
-		unsigned int size();
-		// more like a reader than a buffer now
+
 		unsigned int getInt();
 		unsigned char getChar();
-		unsigned int getAddress();
-		bool done();
+		
+		void parseBytecode();
 };
-
-
-// TODO: strings go into scene info too
-// why are they outside
-void parseBytecode(BytecodeBuffer &buf, std::string filename, SceneInfo sceneInfo);
-
 #endif

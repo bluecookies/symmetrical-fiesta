@@ -1,13 +1,4 @@
 // TODO: function backup? offset? table index thing
-// TODO: check the ranges are right
-
-// TODO: show raw bytes
-
-// TODO (but in the future): recognize control structure: switch is
-// [05]
-// dup stack, push val
-// cmp stack, je
-// pop stack
 
 #define __USE_MINGW_ANSI_STDIO 0
 //#define _GLIBCXX_DEBUG
@@ -79,14 +70,14 @@ void readGlobalInfo(SceneInfo &info, std::string filename, int fileIndex, const 
 	// Read scene names, commands and variables
 	// TODO: make safe
 	// including verifying everything in bounds
-	ScriptCommand command;
+	
 	std::ifstream globalInfoFile("SceneInfo.dat", std::ios::in | std::ios::binary);
 	if (!globalInfoFile.is_open()) {
 		//TODO: make it so it's not important
 		Logger::Log(Logger::ERROR) << "Could not open global scene info.\n";
 	} else {
 		std::string name;
-		unsigned int count, temp;
+		unsigned int count;
 		
 		// Scene names
 		info.thisFile = fileIndex;
@@ -109,13 +100,17 @@ void readGlobalInfo(SceneInfo &info, std::string filename, int fileIndex, const 
 		// Vars
 		globalInfoFile.read((char*) &count, 4);
 		info.numGlobalVars = count;
-		info.varNames.reserve(count + header.localVarIndex.count);
+		info.scriptVars.reserve(count + header.localVarIndex.count);
+
+		ScriptVar variable;
 		for (unsigned int i = 0; i < count; i++) {
-			globalInfoFile.read((char*) &temp, 4);
-			globalInfoFile.read((char*) &temp, 4);
+			globalInfoFile.read((char*) &variable.length, 4);
+			globalInfoFile.read((char*) &variable.type, 4);
 			std::getline(globalInfoFile, name, '\0');
-			
-			info.varNames.push_back(name);
+
+			variable.name = name;
+
+			info.scriptVars.push_back(variable);
 		}
 
 		
@@ -123,6 +118,8 @@ void readGlobalInfo(SceneInfo &info, std::string filename, int fileIndex, const 
 		globalInfoFile.read((char*) &count, 4);
 		info.numGlobalCommands = count;
 		info.commands.resize(count + header.localCommandIndex.count);
+
+		ScriptCommand command;
 		for (unsigned int i = 0; i < count; i++) {
 			globalInfoFile.read((char*) &command.offset, 4);
 			globalInfoFile.read((char*) &command.file, 4);
@@ -159,7 +156,7 @@ void readSceneInfo(SceneInfo &info, std::ifstream &stream, const ScriptHeader &h
 	// Read local vars
 	StringList localVars;
 	readStrings(stream, localVars, header.localVarIndex, header.localVars);
-	info.varNames.insert(info.varNames.end(), localVars.begin(), localVars.end());
+	//info.varNames.insert(info.varNames.end(), localVars.begin(), localVars.end());
 		
 	// Read local commands
 	ScriptCommand command;
@@ -203,19 +200,16 @@ int main(int argc, char* argv[]) {
 	extern int optind;
 	
 	std::string outFilename;
-	static char usageString[] = "Usage: parsess [-o outfile] [-v] [-i file index] <input.ss>";
+	static char usageString[] = "Usage: parsess [-v] [-i file index] <input.ss>";
 	
 	int fileIndex = -1;
 	// Handle options
 	int option = 0;
-	while ((option = getopt(argc, argv, "o:vi:")) != -1) {
+	while ((option = getopt(argc, argv, "vi:")) != -1) {
 		switch (option) {
 		case 'v':
 			Logger::increaseVerbosity();
 			break;
-		case 'o':
-			outFilename = std::string(optarg);
-		break;
 		case 'i':
 			fileIndex = std::stoi(optarg);
 		break;
@@ -238,9 +232,6 @@ int main(int argc, char* argv[]) {
 		return 1;
 	}
 	
-	if (outFilename.empty())
-		outFilename = filename + std::string(".asm");
-	
 	ScriptHeader header;
 	readScriptHeader(fileStream, header);
 	
@@ -262,11 +253,10 @@ int main(int argc, char* argv[]) {
 	Logger::Log(Logger::VERBOSE_DEBUG) << sceneInfo.mainStrings;
 	Logger::Log(Logger::VERBOSE_DEBUG) << sceneInfo.varStrings;
 	
-	BytecodeBuffer bytecode(fileStream, header.bytecode);
-	//fileStream.close();
-	
+	BytecodeParser parser(fileStream, header.bytecode, sceneInfo);
+
 	try {
-		parseBytecode(bytecode, outFilename, sceneInfo);
+		parser.parseBytecode();
 	} catch (std::out_of_range &e) {
 		std::cerr << e.what() << std::endl;
 	}

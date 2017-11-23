@@ -147,7 +147,7 @@ int main(int argc, char* argv[]) {
 		}
 		
 		// var info table
-		// {uint32_t unknown, uint32_t unknown}
+		// {uint32_t length, uint32_t type}
 		count = varInfo.size();
 		outStream.write((char*) &count, 4);
 		for (auto it = varInfo.begin(); it != varInfo.end(); it++) {
