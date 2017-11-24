@@ -12,6 +12,8 @@
 *.asm
 *.commands
 
+*.src
+
 *.dump
 
 *.txt

@@ -147,12 +147,12 @@ int main(int argc, char* argv[]) {
 		}
 		
 		// var info table
-		// {uint32_t unknown, uint32_t unknown}
+		// {uint32_t type, uint32_t length}
 		count = varInfo.size();
 		outStream.write((char*) &count, 4);
 		for (auto it = varInfo.begin(); it != varInfo.end(); it++) {
-			outStream.write((char*) &(it->count), 4);
 			outStream.write((char*) &(it->offset), 4);
+			outStream.write((char*) &(it->count), 4);
 			name = varNames.at(it - varInfo.begin());
 			outStream.write(name.c_str(), name.length());
 			outStream.put('\0');

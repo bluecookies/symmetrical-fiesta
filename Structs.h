@@ -42,8 +42,8 @@ struct ScriptHeader {
 	HeaderPair markers;
 	HeaderPair localCommandIndex;     // Function ID + Bytecode offset
 	HeaderPair unknown1;		// could be something to do with function (address/param/type?)
-	HeaderPair localVarIndex;
-	HeaderPair localVars;
+	HeaderPair staticVarIndex;
+	HeaderPair staticVars;
 	HeaderPair functions;
 	HeaderPair functionNameIndex;
 	HeaderPair functionName;

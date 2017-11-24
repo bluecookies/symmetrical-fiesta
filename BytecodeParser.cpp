@@ -50,40 +50,7 @@ StringList populateMnemonics() {
 
 static StringList s_mnemonics = populateMnemonics();
 
-enum StackType {
-	STACK_UNDEF,
-	STACK_NUM,
-	STACK_STR,
-	STACK_OBJ,
-	STACK_REF
-};
-
-struct StackValue {
-	unsigned int value = 0;
-	StackType type = STACK_UNDEF;
-
-	StackValue() {};
-	StackValue(unsigned int val_, StackType type_) : value(val_), type(type_) {};
-};
-
-typedef std::vector<StackValue> ProgStack;
-
-typedef struct ProgramInfo {
-	// State info
-	ProgStack stack;
-	std::vector<unsigned int> stackPointers = {0};
-	
-	// instruction info
-	unsigned char opcode = 0;
-	unsigned int address = 0;
-	std::vector<unsigned int> args;
-	std::string comment;
-	
-	// local info
-	unsigned int numInsts = 0;
-	unsigned int numNops = 0;
-} ProgInfo;
-
+/*
 void printLabels(FILE* f, std::vector<Label>::iterator &pLabel, std::vector<Label>::iterator end, unsigned int address, const char* type) {
 	Label label;
 	while (pLabel != end) {
@@ -99,10 +66,6 @@ void printLabels(FILE* f, std::vector<Label>::iterator &pLabel, std::vector<Labe
 	}
 }
 
-
-//*******
-// Stuff
-//*******
 unsigned int readArgs(BytecodeBuffer &buf, ProgInfo &progInfo, bool pop = true) {
 	unsigned int numArgs = buf.getInt();
 	unsigned int arg = 0, stackCount = 0;
@@ -116,7 +79,7 @@ unsigned int readArgs(BytecodeBuffer &buf, ProgInfo &progInfo, bool pop = true) 
 				if (!progInfo.stack.empty()) {
 					var = progInfo.stack.back();
 					progInfo.stack.pop_back();
-					if (var.type != STACK_NUM && var.type != STACK_REF) {
+					if (var.type != STACK_NUM) {
 						Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
 					}
 					
@@ -142,7 +105,7 @@ unsigned int readArgs(BytecodeBuffer &buf, ProgInfo &progInfo, bool pop = true) 
 					var = progInfo.stack.back();
 					progInfo.stack.pop_back();
 					
-					if (var.type != STACK_STR && var.type != STACK_REF) {
+					if (var.type != STACK_STR) {
 						Logger::Log(Logger::WARN, progInfo.address) << "Non-string type read.\n";
 					}
 				}
@@ -213,8 +176,8 @@ void instPush(FILE* f, BytecodeBuffer &buf, SceneInfo& sceneInfo, ProgInfo& prog
 		// Var name index
 		} else if (arg2 >> 24 == 0x7f) {
 			unsigned int varIndex = arg2 & 0x00ffffff;
-			if (varIndex < sceneInfo.varNames.size()) {
-				progInfo.comment = sceneInfo.varNames.at(varIndex);
+			if (varIndex < sceneInfo.globalVars.size()) {
+				progInfo.comment = sceneInfo.globalVars.at(varIndex).name;
 			} else if (arg2 == 0x7fffffff) {
 			} else {
 				Logger::Log(Logger::WARN, progInfo.address) << " trying to access var index " << arg2 << std::endl;
@@ -256,41 +219,9 @@ void instDo05Thing(ProgInfo& progInfo) {
 		}
 	
 		progInfo.stackPointers.pop_back();
-		progInfo.stack.push_back(StackValue(0xDEADBEEF, STACK_REF));
+		progInfo.stack.push_back(StackValue(0xDEADBEEF, STACK_NUM));
 	} else {
 		Logger::Log(Logger::ERROR, progInfo.address) << " Tried to pop base frame.\n";
-	}
-}
-
-void instDo07Thing(FILE* f, BytecodeBuffer &buf, SceneInfo& sceneInfo, ProgInfo& progInfo) {
-	unsigned int arg1, arg2;
-		arg1 = buf.getInt();
-		arg2 = buf.getInt();
-	
-	StackValue var;
-
-	fprintf(f, "%#x, %#x", arg1, arg2);
-	if (arg1 == 0x0a) {
-		if (!progInfo.stack.empty()) {
-			var = progInfo.stack.back();
-			progInfo.stack.pop_back();
-			
-			if (var.type != STACK_NUM && var.type != STACK_REF)
-				Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
-		}
-	} else if (arg1 == 0x14) {
-		if (!progInfo.stack.empty()) {
-			var = progInfo.stack.back();
-			progInfo.stack.pop_back();
-			
-			if (var.type != STACK_STR)
-				Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
-		}
-	}
-	try {
-		progInfo.comment = sceneInfo.varStrings.at(arg2);	
-	} catch (std::out_of_range &e) {
-		Logger::Log(Logger::WARN, progInfo.address) << "Missing string id: " << arg2 << std::endl;
 	}
 }
 
@@ -318,12 +249,12 @@ void instCalc(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 		if (progInfo.stack.size() >= 2) {
 			var = progInfo.stack.back();
 			progInfo.stack.pop_back();
-			if (var.type != STACK_NUM && var.type != STACK_REF)
+			if (var.type != STACK_NUM)
 				Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
 				
 			var = progInfo.stack.back();
 			progInfo.stack.pop_back();
-			if (var.type != STACK_NUM && var.type != STACK_REF)
+			if (var.type != STACK_NUM)
 				Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
 				
 			progInfo.stack.push_back(StackValue(0xdeadbeef, STACK_NUM));
@@ -335,12 +266,12 @@ void instCalc(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 		if (progInfo.stack.size() >= 2) {
 			var = progInfo.stack.back();
 			progInfo.stack.pop_back();
-			if (var.type != STACK_STR && var.type != STACK_REF)
+			if (var.type != STACK_STR)
 				Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
 				
 			var = progInfo.stack.back();
 			progInfo.stack.pop_back();
-			if (var.type != STACK_STR && var.type != STACK_REF)
+			if (var.type != STACK_STR)
 				Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
 				
 			progInfo.stack.push_back(StackValue(0xdeadbeef, STACK_STR));
@@ -352,10 +283,6 @@ void instCalc(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 	} else {
 		Logger::Log(Logger::DEBUG, progInfo.address) << " Comparing " << arg1 << " and " << arg2 << std::endl;
 	}
-}
-
-void instDo08Thing(ProgInfo& progInfo) {
-	progInfo.stackPointers.push_back(progInfo.stack.size());
 }
 
 void instDo15Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
@@ -451,28 +378,183 @@ void instCall(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 		progInfo.stack.push_back(StackValue(0xdeadbeef, STACK_STR));
 	}
 }
+*/
+
+unsigned int BytecodeParser::parseFunction(const Label &function, ProgStack &localVars, std::string &outputString) {
+	if (function.offset >= dataLength)
+		throw std::out_of_range("Function offset out of range.");
+
+	currAddress = function.offset;
+	bool argsDone = false, toReturn = false;
+
+	unsigned char opcode;
+
+	localVars.clear();
+	unsigned int numParams = 0;
+
+	// Read instructions
+	while (!toReturn) {
+		opcode = getChar();
+
+		switch (opcode) {
+			case 0x01: getInt();						break;
+			case 0x02: {
+				unsigned int type = getInt();
+				unsigned int value = getInt();
+				stack.push_back(StackValue(value, type));
+			} break;
+			// TODO: make safe
+			case 0x05: {
+				StackValue val;
+				val = stack.back();
+				stack.pop_back();
+				// Local variable
+				if (val.value >> 24 == 0x7d) {
+					StackValue unknown = stack.back();
+					// Throw happy
+					if (unknown.value != 0x53)
+						throw std::logic_error("Expected 0x53");
+					stack.pop_back();
+					if (!stack.back().endFrame)
+						throw std::logic_error("Expected [0x08]");
+
+					stack.pop_back();
+					unsigned int varIndex = val.value & 0x00FFFFFF;
+					// Real exception
+					if (varIndex >= localVars.size())
+						throw std::out_of_range("Local var index out of range.");
+					
+					stack.push_back(localVars[varIndex]);
+
+				} else {
+					throw std::logic_error("Sorry, not handled yet.");
+				}
+			} break;
+			case 0x07: {
+				unsigned int type = getInt();
+				unsigned int nameIndex = getInt();
+				std::string name;
+				try {
+					name = sceneInfo.localVarNames.at(nameIndex);	
+				} catch (std::out_of_range &e) {
+					Logger::Log(Logger::WARN) << "Missing string id: " << nameIndex << std::endl;
+					name = "var" + std::to_string(localVars.size());
+				}
+
+				localVars.push_back(StackValue(0xDEADBEEF, type));
+				localVars.back().name = name;
+
+				if (argsDone) {
+					outputString += "var " + std::to_string(type) + " " + name + ";\n";
+				} else {
+					numParams++;
+				}
+
+			} break;
+			case 0x08: stack.push_back(StackValue());	break;
+			case 0x09: argsDone = true;					break;
+			// not true, need to consider other branches
+			case 0x15: {
+				toReturn = true;
+				outputString += "\treturn; \n";
+			} break;
+			case 0x20: {
+				StackValue lhs, rhs;
+				StackValue val;
+
+				unsigned int LHSType = getInt();
+				unsigned int RHSType = getInt();
+				unsigned int unknown = getInt();
+				if (LHSType != RHSType + 3)
+					Logger::Log(Logger::WARN) << "Assigning type " << RHSType << " to " << LHSType << ".\n";
+
+				rhs = stack.back();
+				if (rhs.type != RHSType)
+					throw std::logic_error("Incorrect type for RHS");
+				stack.pop_back();
+
+				val = stack.back();
+				stack.pop_back();
+				// TODO: check these are all of type 0xa
+				if (val.value >> 24 == 0x00) {
+					unsigned int index = val.value & 0x00FFFFFF;
+					// TODO: implement equality and inequality check
+					// and make static values to test against
+					if (stack.back().value != 0xFFFFFFFF)
+						throw std::logic_error("Expected 0xFFFFFFFF");
+					stack.pop_back();
+
+					val = stack.back();
+					// Global var
+					if (val.value >> 24 == 0x7f) {
+						unsigned int varIndex = val.value & 0x00FFFFFF;
+						if (varIndex >= sceneInfo.globalVars.size())
+							throw std::out_of_range("Variable index out of range");
+						StackValue var = sceneInfo.globalVars[varIndex];
+
+						stack.pop_back();
+						// this is more important
+						if (!stack.back().endFrame)
+							throw std::logic_error("Expected [0x08]");
+
+						stack.pop_back();
+						lhs = StackValue(var.value, var.type - 1);
+						lhs.name = var.name + "[" + std::to_string(index) + "]";
+					}
+					
+
+				}
+				// assign RHS value to LHS
+
+				outputString += "\t" + lhs.name + " = " + rhs.name + ";\n";	// TODO: indentation blocks
+			} break;
+		}
+	}
+
+	return numParams;
+}
 
 
-void parseBytecode(BytecodeBuffer &buf, std::string filename, SceneInfo sceneInfo) {
+void BytecodeParser::parseBytecode(std::string filename) {
 	FILE* f = fopen(filename.c_str(), "wb");
 
+	// Get functions defined in this file
 	std::vector<Label> localCommands;
-	auto predCommandFile = [sceneInfo](ScriptCommand c) {
+	auto predCommandFile = [this](ScriptCommand c) {
 		return c.file == sceneInfo.thisFile;
 	};
 	std::copy_if(sceneInfo.commands.begin(), sceneInfo.commands.end(), 
 		std::back_inserter(localCommands), predCommandFile);
-	
-	std::sort(sceneInfo.labels.begin(),		sceneInfo.labels.end());
-	std::sort(sceneInfo.markers.begin(),	sceneInfo.markers.end());
 	std::sort(sceneInfo.functions.begin(),sceneInfo.functions.end());
 	std::sort(localCommands.begin(),	localCommands.end());
 	
-	// TODO: pretty up, everything
-	auto labelIt = sceneInfo.labels.begin(),
-		markerIt = sceneInfo.markers.begin(),
-		functionIt = sceneInfo.functions.begin(),
-		commandIt = localCommands.begin();
+	auto functionIt = sceneInfo.functions.begin();
+
+	// TODO: fix naming 
+	for (auto &function : localCommands) {
+		if (function.name.empty())
+			function.name = ("fun_" + std::to_string(function.index));
+
+		std::string parsed;
+		ProgStack localVars;
+		unsigned int numParams = parseFunction(function, localVars, parsed);
+
+		std::string paramsString;
+		for (unsigned int i = 0; i < numParams; i++) {
+			if (i != 0) paramsString += ", ";
+			paramsString += std::to_string(localVars[i].type) + " " + localVars[i].name;
+		}
+
+		fprintf(f, "function %s(%s)@[%#x] {\n", function.name.c_str(), paramsString.c_str(), function.offset);
+		fprintf(f, "%s", parsed.c_str());
+		fprintf(f, "}\n");
+	}
+
+
+	/* std::sort(sceneInfo.labels.begin(),		sceneInfo.labels.end());
+	std::sort(sceneInfo.markers.begin(),	sceneInfo.markers.end());
+
+	auto labelIt = sceneInfo.labels.begin(), markerIt = sceneInfo.markers.begin();
 
 	Logger::Log(Logger::DEBUG) << "Parsing " << std::to_string(buf.size()) << " bytes.\n";
 	
@@ -546,16 +628,12 @@ void parseBytecode(BytecodeBuffer &buf, std::string filename, SceneInfo sceneInf
 	Logger::Log(Logger::INFO) << "Parsed " << progInfo.numInsts << " instructions.\n";
 	if (progInfo.numNops > 0) {
 		Logger::Log(Logger::WARN) << "Warning: " << progInfo.numNops << " NOP instructions skipped.\n";
-	}
+	} */
 
 	fclose(f);
 }
 
-
-
-
-// Handle the reading and ownership of the bytecode buffer
-BytecodeBuffer::BytecodeBuffer(std::ifstream &f, HeaderPair index) {
+BytecodeParser::BytecodeParser(std::ifstream &f, HeaderPair index, SceneInfo info) {
 	f.seekg(index.offset, std::ios_base::beg);
 	
 	dataLength = index.count;
@@ -567,17 +645,15 @@ BytecodeBuffer::BytecodeBuffer(std::ifstream &f, HeaderPair index) {
 		throw std::exception();
 	}
 	Logger::Log(Logger::DEBUG) << "Read " << f.gcount() << " bytes of bytecode." << std::endl;
+
+	sceneInfo = info;
 }
 
-BytecodeBuffer::~BytecodeBuffer() {
+BytecodeParser::~BytecodeParser() {
 	delete[] bytecode;
 }
 
-unsigned int BytecodeBuffer::size() {
-	return dataLength;
-}
-// buffer shouldn't be handling address?
-unsigned int BytecodeBuffer::getInt() {
+unsigned int BytecodeParser::getInt() {
 	unsigned int value = 0;
 	if (currAddress + 4 <= dataLength) {
 		value = readUInt32(bytecode + currAddress);
@@ -587,7 +663,7 @@ unsigned int BytecodeBuffer::getInt() {
 	}
 	return value;
 }
-unsigned char BytecodeBuffer::getChar() {
+unsigned char BytecodeParser::getChar() {
 	unsigned char value = 0;
 	if (currAddress < dataLength) {
 		value = bytecode[currAddress++];
@@ -595,12 +671,4 @@ unsigned char BytecodeBuffer::getChar() {
 		throw std::out_of_range("Buffer out of data");
 	}
 	return value;
-}
-
-unsigned int BytecodeBuffer::getAddress() {
-	return currAddress;
-}
-
-bool BytecodeBuffer::done() {
-	return (currAddress >= dataLength);
 }
