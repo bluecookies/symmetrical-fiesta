@@ -108,7 +108,11 @@ class BytecodeParser {
 		void instPop();
 		void instDup();
 
+		void instJump();
+		void instJump(bool ifZero);
+
 		void instAssign();
+		void instCalc();
 		void instCall();
 
 

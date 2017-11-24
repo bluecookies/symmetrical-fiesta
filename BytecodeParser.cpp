@@ -97,55 +97,6 @@ void instDo13Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 	fprintf(f, ")");
 }
 
-void instCalc(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {	
-	// calc. 0x10 is subtract?
-	unsigned int arg1, arg2;
-	StackValue var;
-	
-		arg1 = buf.getInt();
-		arg2 = buf.getInt();
-	unsigned int arg3 = buf.getChar();
-	fprintf(f, "%#x, %#x, %d", arg1, arg2, arg3);
-	if (arg1 == 0xa && arg2 == 0xa) {
-		if (progInfo.stack.size() >= 2) {
-			var = progInfo.stack.back();
-			progInfo.stack.pop_back();
-			if (var.type != STACK_NUM)
-				Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
-				
-			var = progInfo.stack.back();
-			progInfo.stack.pop_back();
-			if (var.type != STACK_NUM)
-				Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
-				
-			progInfo.stack.push_back(StackValue(0xdeadbeef, STACK_NUM));
-		} else {
-			Logger::Log(Logger::ERROR, progInfo.address) << " Not enough values for calc\n";
-		}
-		// TODO: figure out the calcs and do them
-	} else if (arg1 == 0x14 && arg2 == 0x14) {
-		if (progInfo.stack.size() >= 2) {
-			var = progInfo.stack.back();
-			progInfo.stack.pop_back();
-			if (var.type != STACK_STR)
-				Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
-				
-			var = progInfo.stack.back();
-			progInfo.stack.pop_back();
-			if (var.type != STACK_STR)
-				Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
-				
-			progInfo.stack.push_back(StackValue(0xdeadbeef, STACK_STR));
-		} else {
-			Logger::Log(Logger::ERROR, progInfo.address) << " Not enough values for calc\n";
-		}
-		if (arg3 == 0x01)
-			progInfo.comment = "string concatenation";
-	} else {
-		Logger::Log(Logger::DEBUG, progInfo.address) << " Comparing " << arg1 << " and " << arg2 << std::endl;
-	}
-}
-
 void instDo15Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 	unsigned int numArgs = readArgs(buf, progInfo);
 	fprintf(f, "(");
@@ -228,6 +179,9 @@ unsigned int BytecodeParser::parseFunction(const Label &function, ProgStack &loc
 			} break;
 			case 0x08: stack.push_back(StackValue());	break;
 			case 0x09: argsDone = true;					break;
+			case 0x10: instJump();		break;
+			case 0x11: instJump(true);	break;
+			case 0x12: instJump(false);	break;
 			// not true, need to consider other branches
 			case 0x15: {
 				toReturn = true;
@@ -237,6 +191,7 @@ unsigned int BytecodeParser::parseFunction(const Label &function, ProgStack &loc
 			case 0x21: {
 				outputString += "\tInst21(" + std::to_string(getInt()) + ", " + std::to_string(getChar()) + ")\n";
 			} break;
+			case 0x22: instCalc();		break;
 			case 0x30: instCall();		break;
 			default:
 				Logger::Log(Logger::WARN) << "Unhandled instruction " << std::to_string(opcode) << std::endl;
@@ -259,7 +214,8 @@ void BytecodeParser::parseBytecode(std::string filename) {
 		std::back_inserter(localCommands), predCommandFile);
 	std::sort(sceneInfo.functions.begin(),sceneInfo.functions.end());
 	std::sort(localCommands.begin(),	localCommands.end());
-	
+	std::sort(sceneInfo.labels.begin(), sceneInfo.labels.end());
+
 	//auto functionIt = sceneInfo.functions.begin();
 
 	// TODO: fix naming 
@@ -283,9 +239,7 @@ void BytecodeParser::parseBytecode(std::string filename) {
 		fprintf(f, "}\n");
 	}
 
-
-	/* std::sort(sceneInfo.labels.begin(),		sceneInfo.labels.end());
-	std::sort(sceneInfo.markers.begin(),	sceneInfo.markers.end());
+	/*std::sort(sceneInfo.markers.begin(),	sceneInfo.markers.end());
 
 	auto labelIt = sceneInfo.labels.begin(), markerIt = sceneInfo.markers.begin();
 
@@ -458,12 +412,86 @@ void BytecodeParser::instDup() {
 	stack.push_back(stack.back());
 }
 
+void BytecodeParser::instCalc() {
+	unsigned int type1 = getInt();
+	unsigned int type2 = getInt();
+	unsigned char op = getChar();
+
+	if (type1 != type2)
+		Logger::Log(Logger::ERROR) << "Comparing type " << std::to_string(type1) << " with " << std::to_string(type2) << std::endl;
+
+
+	if (stack.size() < 2)
+		throw std::logic_error("Not enough values on stack for comp");
+
+	StackValue var2 = stack.back();
+		stack.pop_back();
+	StackValue var1 = stack.back();
+		stack.pop_back();
+
+	if (type1 == STACK_NUM) {
+		StackValue result(0xDEADBEEF, STACK_NUM);
+		switch (op) {
+			case 1:
+				result.value = var1.value + var2.value;
+				result.name = "(" + var1.name + " + " + var2.name + ")";
+			break;
+			case 2:
+				result.value = var1.value - var2.value;
+				result.name = "(" + var1.name + " - " + var2.name + ")";
+			break;
+			case 3:
+				result.value = var1.value * var2.value;
+				result.name = "(" + var1.name + " * " + var2.name + ")";
+			break;
+			case 4:
+				result.value = var1.value / var2.value;
+				result.name = "(" + var1.name + " / " + var2.name + ")";
+			break;
+			case 16:
+				result.value = var1.value != var2.value;
+				result.name = "(" + var1.name + " != " + var2.name + ")";
+			break;
+			case 18:
+				result.value = var1.value <= var2.value;
+				result.name = "(" + var1.name + " <= " + var2.name + ")";
+			break;
+			case 19:
+				result.value = var1.value > var2.value;
+				result.name = "(" + var1.name + " > " + var2.name + ")";
+			break;
+			case 20:
+				result.value = var1.value >= var2.value;
+				result.name = "(" + var1.name + " >= " + var2.name + ")";
+			break;
+			default:
+				result.name = "(" + var1.name + " <op"+std::to_string(op)+ "> " + var2.name + ")";
+		}
+		stack.push_back(result);
+	} else if (type1 == STACK_STR) {
+		StackValue result(0xDEADBEEF, STACK_STR);
+		switch (op) {
+			case 1:
+				result.value = var1.value;
+				result.name = var1.name + " + " + var2.name;
+			break;
+			case 16:
+				result.value = var1.value != var2.value;
+				result.name = var1.name + " != " + var2.name;
+			break;
+			default:
+				result.name = "(" + var1.name + " <op"+std::to_string(op)+ "> " + var2.name + ")";
+		}
+		stack.push_back(result);
+	} else {
+		Logger::Log(Logger::INFO) << "Comparing type " << type1 << std::endl;
+	}
+}
+
 // Safety depends on readArgs
 void BytecodeParser::instCall() {
 	StackValue arg;
 	unsigned int arg1 = getInt();
-	if (arg1 > 1)
-		Logger::Log(Logger::INFO) << "Call with first value " << std::to_string(arg1) << std::endl;
 	ProgStack argsA, argsB;
 
 	std::string argString("(");
@@ -550,12 +578,19 @@ void BytecodeParser::instCall() {
 		}
 		std::stringstream stream;
 		stream << std::hex << callFn.value;
-		name = "fun_" + stream.str();
+		name = "fun_0x" + stream.str();
+		if (!stack.empty()) {
+			if (!stack.back().endFrame) {
+				name += "_" + stack.back().name;
+			} 
+			stack.pop_back();
+		}
+
 		// TODO TODO TODO TODO:
 		// Dump stack here if can't handle it properly (most cases)
 	}
 	stack.push_back(StackValue(0xdeadbeef, retType));
-	stack.back().name = name + argString;
+	stack.back().name = name + "<" + std::to_string(arg1) + ">" + argString;
 	stack.back().fnCall = true;
 }
 
@@ -583,44 +618,108 @@ void BytecodeParser::instAssign() {
 
 
 	// TODO: check these are all of type 0xa
-	StackValue index, arr;
+	StackValue val;
 	std::string lhs_name;
 
 
 	if (stack.size() < 2)
 		throw std::logic_error("Empty stack - no LHS");
 
-	index = stack.back();
-	while(true) {
-		if (stack.size() < 2)
-			throw std::logic_error("Empty stack - no LHS");
-
+	val = stack.back();
+	if (val.type == STACK_NUM) {
+		StackValue index = val;
 		stack.pop_back();
-		if (index.value >> 24 == 0x7f) {
-			lhs_name += index.name;
-			break;
-		} else if (index.value == 0x53 || index.value == 0x26) {
-			lhs_name += "_" + index.name;
-			break;
-		} else if (stack.back().value != 0xFFFFFFFF) {
-			lhs_name += index.name + "_";
-			index = stack.back();
-		} else {
-			stack.pop_back();
 
-			arr = stack.back();
+		val = stack.back();
+		if (val.type == STACK_NUM && val.value == 0xFFFFFFFF) {
 			stack.pop_back();
-			lhs_name += arr.name+"["+index.name+"]";
-			
-			index = stack.back();
+			if (stack.empty())
+				throw std::logic_error("Empty stack - get array");
+
+			StackValue arr = stack.back();
+			stack.pop_back();
+			if (arr.type != RHSType + 1)
+				throw std::logic_error("Incorrect LHS type - assigning from array");
+
+			lhs_name = arr.name + "[" + index.name + "]";
+
+			popFrame();
+		} else if (val.type == STACK_OBJ) {
+			stack.pop_back();
+			lhs_name = val.name + "[" + index.name + "]";
+		} else if (val.type == STACK_NUM) {
+			if (val.value >> 24 == 0x7f) {
+				lhs_name = val.name;
+			} else {
+				// Get obj from array
+				lhs_name += "DATA";
+				stack.pop_back();
+
+				if (stack.size() < 3)
+					throw std::logic_error("Not enough values in stack to do index.");
+
+				if (stack.back().value != 0xFFFFFFFF)
+					throw std::logic_error(std::to_string(currAddress) + ": Expected 0xFFFFFFFF");
+				stack.pop_back();
+				StackValue arr = stack.back();
+				stack.pop_back();
+				
+				lhs_name += "_"+arr.name+"["+val.name+"]";
+
+				val = stack.back();
+				stack.pop_back();
+
+				lhs_name += "_" + val.name + "[" + index.name + "]";
+			}
+			popFrame();
 		}
 	}
-	popFrame();
 
 	// assign RHS value to LHS
 	outputString += "\t" + lhs_name + " = " + rhs.name + ";\n";	// TODO: indentation blocks
 }
 
+void BytecodeParser::instJump() {
+	unsigned int labelIndex = getInt();
+	auto labelIt = std::find_if(sceneInfo.labels.begin(), sceneInfo.labels.end(), [labelIndex](Label l) {
+		return l.index == labelIndex;
+	});
+
+	if (labelIt == sceneInfo.labels.end()) {
+		Logger::Log(Logger::ERROR) << "Could not find label " << std::hex << labelIndex << std::endl;
+		throw std::logic_error("Could not find label");
+	}
+
+	currAddress = labelIt->offset;
+}
+
+
+void BytecodeParser::instJump(bool ifZero) {
+	if (stack.empty())
+		throw std::logic_error("Stack empty - conditional jump");
+
+	StackValue condition = stack.back();
+	stack.pop_back();
+
+	unsigned int labelIndex = getInt();
+
+	std::stringstream stream;
+	stream << std::hex << labelIndex << std::endl;
+
+	outputString += "\tif("+ std::string(ifZero ? "!" : "") + condition.name + ")\n";
+	outputString += "\t\tgoto 0x" + stream.str();
+
+	/*auto labelIt = std::find_if(sceneInfo.labels.begin(), sceneInfo.labels.end(), [labelIndex](Label l) {
+		return l.index == labelIndex;
+	});
+
+	if (labelIt == sceneInfo.labels.end()) {
+		Logger::Log(Logger::ERROR) << "Could not find label " << std::hex << labelIndex << std::endl;
+		throw std::logic_error("Could not find label");
+	}
+
+	currAddress = labelIt->offset;*/
+}
 
 
 unsigned int BytecodeParser::readArgs(ProgStack &args) {
@@ -665,12 +764,12 @@ unsigned int BytecodeParser::readArgs(ProgStack &args) {
 				args.push_back(var);
 			} else if (var.type == STACK_NUM) {
 				// index
-				StackValue index, arr;
+				StackValue arr;
 				do {
 					if (stack.size() < 3)
 						throw std::logic_error("Not enough values in stack to do index.");
 
-					index = stack.back();
+					var = stack.back();
 					stack.pop_back();
 					if (stack.back().value != 0xFFFFFFFF)
 						throw std::logic_error(std::to_string(currAddress) + ": Expected 0xFFFFFFFF");
@@ -678,10 +777,10 @@ unsigned int BytecodeParser::readArgs(ProgStack &args) {
 					arr = stack.back();
 					stack.pop_back();
 					
-					name += "_"+std::to_string(arr.value)+"["+index.name+"]";
+					name += "_"+arr.name+"["+var.name+"]";
 				} while (arr.value != 0x02);
 
-				if (stack.size() < 2)
+				if (stack.empty())
 					throw std::logic_error("Reading args off empty stack.");
 
 
@@ -689,7 +788,7 @@ unsigned int BytecodeParser::readArgs(ProgStack &args) {
 				stack.pop_back();
 				popFrame();
 
-				name += "_" + std::to_string(var.value);
+				name += "_" + var.name;
 
 				args.push_back(StackValue(0xDEADFACE, STACK_OBJ));
 				args.back().name = name;
@@ -721,7 +820,7 @@ unsigned int BytecodeParser::readArgs(ProgStack &args) {
 
 void BytecodeParser::popFrame() {
 	if (stack.empty())
-		throw std::out_of_range("Popping empty stack - expected [08]");
+		throw std::out_of_range(std::to_string(currAddress) + ": Popping empty stack - expected [08]");
 
 	if (!stack.back().endFrame)
 		throw std::logic_error("Expected [08], got " + std::to_string(stack.back().value));
