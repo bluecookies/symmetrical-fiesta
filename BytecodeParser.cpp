@@ -629,28 +629,28 @@ void BytecodeParser::instAssign() {
 	if (val.type == STACK_NUM) {
 		StackValue index = val;
 		stack.pop_back();
-
-		val = stack.back();
-		if (val.type == STACK_NUM && val.value == 0xFFFFFFFF) {
-			stack.pop_back();
-			if (stack.empty())
-				throw std::logic_error("Empty stack - get array");
-
-			StackValue arr = stack.back();
-			stack.pop_back();
-			if (arr.type != RHSType + 1)
-				throw std::logic_error("Incorrect LHS type - assigning from array");
-
-			lhs_name = arr.name + "[" + index.name + "]";
-
+		if (val.value >> 24 == 0x7f) {
+			lhs_name = val.name;
 			popFrame();
-		} else if (val.type == STACK_OBJ) {
-			stack.pop_back();
-			lhs_name = val.name + "[" + index.name + "]";
-		} else if (val.type == STACK_NUM) {
-			if (val.value >> 24 == 0x7f) {
-				lhs_name = val.name;
-			} else {
+		} else {
+			val = stack.back();
+			if (val.type == STACK_NUM && val.value == 0xFFFFFFFF) {
+				stack.pop_back();
+				if (stack.empty())
+					throw std::logic_error("Empty stack - get array");
+
+				StackValue arr = stack.back();
+				stack.pop_back();
+				if (arr.type != RHSType + 1)
+					throw std::logic_error("Incorrect LHS type - assigning from array");
+
+				lhs_name = arr.name + "[" + index.name + "]";
+
+				popFrame();
+			} else if (val.type == STACK_OBJ) {
+				stack.pop_back();
+				lhs_name = val.name + "[" + index.name + "]";
+			} else if (val.type == STACK_NUM) {
 				// Get obj from array
 				lhs_name += "DATA";
 				stack.pop_back();
@@ -670,8 +670,8 @@ void BytecodeParser::instAssign() {
 				stack.pop_back();
 
 				lhs_name += "_" + val.name + "[" + index.name + "]";
+				popFrame();
 			}
-			popFrame();
 		}
 	}
 
