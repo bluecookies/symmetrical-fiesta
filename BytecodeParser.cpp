@@ -31,14 +31,19 @@ StringList populateMnemonics() {
 	}
 	mnemonics[0x02] = "push";		// value onto target stack
 	mnemonics[0x03] = "pop";		// and discard
-	//mnemonics[0x04] = "dup";
-	mnemonics[0x07] = "pop";		// value from target stack into target var
-	mnemonics[0x08] = "[08]";		// does something with [05] to make it so there's 1 value left
-															// long address maybe? since its followed by a call
+	mnemonics[0x04] = "dup";
+	mnemonics[0x07] = "var";		// declare var
+	mnemonics[0x08] = "[08]";		
+
 	mnemonics[0x10] = "jmp";
-	mnemonics[0x11] = "je";
-	mnemonics[0x12] = "jne";
+	mnemonics[0x11] = "jz";
+	mnemonics[0x12] = "jnz";		// no flags, just stack
+	mnemonics[0x15] = "ret";
+	mnemonics[0x16] = "end";
+	mnemonics[0x20] = "assign";
+	mnemonics[0x22] = "calc";
 	mnemonics[0x30] = "call";
+	//mnemonics[0x32]
 	
 	return mnemonics;
 }
@@ -478,18 +483,10 @@ void parseBytecode(BytecodeBuffer &buf, std::string filename, SceneInfo sceneInf
 		progInfo.address = buf.getAddress();
 		progInfo.opcode = buf.getChar();
 		progInfo.numInsts++;
-		
-		//DEBUG
-		/*if (instAddress >= 0x30196 && instAddress <= 0x3021c){
-			std::cout << std::hex << instAddress << std::dec << std::endl;
-			std::cout << "CommandStack: " << commandStacks.size() << " " << commandStacks.back() << std::endl;
-			std::cout << "NumStack: " << numStack.size() << " " << numStack.back() << std::endl;
-		}*/
-		//END_DEBUG
-		
+
 		// Print labels and commands
 		printLabels(f, labelIt, sceneInfo.labels.end(), progInfo.address, "Label");
-		printLabels(f, markerIt, sceneInfo.markers.end(), progInfo.address, "Marker");
+		printLabels(f, markerIt, sceneInfo.markers.end(), progInfo.address, "EntryPoint");
 		printLabels(f, functionIt, sceneInfo.functions.end(), progInfo.address, "Function");
 		printLabels(f, commandIt, localCommands.end(), progInfo.address, "Command");
 		

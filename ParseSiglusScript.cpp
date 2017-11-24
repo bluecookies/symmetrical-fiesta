@@ -1,13 +1,5 @@
-// TODO: function backup? offset? table index thing
-// TODO: check the ranges are right
-
-// TODO: show raw bytes
-
-// TODO (but in the future): recognize control structure: switch is
-// [05]
-// dup stack, push val
-// cmp stack, je
-// pop stack
+// TODO (but in the future): recognize control structure:
+// also for loops are pretty obvious 
 
 #define __USE_MINGW_ANSI_STDIO 0
 //#define _GLIBCXX_DEBUG
