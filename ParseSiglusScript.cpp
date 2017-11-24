@@ -126,6 +126,8 @@ void readGlobalInfo(SceneInfo &info, std::string filename, int fileIndex, const 
 			}
 			command.index = i;
 			std::getline(globalInfoFile, command.name, '\0');
+			if (command.name.empty())
+				command.name = "fun_" + std::to_string(i);
 			info.commands[i] = command;
 		}
 		Logger::Log(Logger::INFO) << "Read " << std::dec << std::to_string(count) << " global commands.\n";

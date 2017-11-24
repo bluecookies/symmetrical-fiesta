@@ -50,6 +50,7 @@ struct Label {
 
 struct StackValue {
 	bool endFrame = false;
+	bool fnCall = false;
 	unsigned int value = 0xDEADBEEF;
 	unsigned int type = STACK_VOID;
 	std::string name;
@@ -63,6 +64,8 @@ struct StackValue {
 	StackValue(unsigned int val_, unsigned int type_) : value(val_), type(type_) {
 		if (type_ == STACK_NUM)
 			name = std::to_string(val_);
+		else
+			name = "no good";
 	};
 };
 
@@ -97,7 +100,20 @@ class BytecodeParser {
 		unsigned int getInt();
 		unsigned char getChar();
 
-		unsigned int parseFunction(const Label &function, ProgStack &localVars, std::string &outputString);
+		std::string outputString;
+		unsigned int parseFunction(const Label &function, ProgStack &localVars);
+		
+		// Handle instructions
+		void instPush();
+		void instPop();
+		void instDup();
+
+		void instAssign();
+		void instCall();
+
+
+		unsigned int readArgs(ProgStack &args);
+		void popFrame();
 
 	public:
 		BytecodeParser(std::ifstream &f, HeaderPair index, SceneInfo info);

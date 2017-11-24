@@ -66,145 +66,6 @@ void printLabels(FILE* f, std::vector<Label>::iterator &pLabel, std::vector<Labe
 	}
 }
 
-unsigned int readArgs(BytecodeBuffer &buf, ProgInfo &progInfo, bool pop = true) {
-	unsigned int numArgs = buf.getInt();
-	unsigned int arg = 0, stackCount = 0;
-	StackValue var;
-
-	for (unsigned int counter = 0; counter < numArgs; counter++) {
-		arg = buf.getInt();
-		progInfo.args.push_back(arg);
-		if (pop) {
-			if (arg == 0x0a) {
-				if (!progInfo.stack.empty()) {
-					var = progInfo.stack.back();
-					progInfo.stack.pop_back();
-					if (var.type != STACK_NUM) {
-						Logger::Log(Logger::WARN, progInfo.address) << "Non-num type read.\n";
-					}
-					
-					if (progInfo.stackPointers.back() > progInfo.stack.size()) {
-						Logger::Log(Logger::WARN, progInfo.address) << " Popped past frame.\n";
-					}
-				}
-			} else if (arg == 0x0e) {
-				if (!progInfo.stack.empty()) {
-					var = progInfo.stack.back();
-					progInfo.stack.pop_back();
-					// TODO: handle this type
-					
-					if (var.value >> 24 != 0x7f) {
-						Logger::Log(Logger::DEBUG, progInfo.address) << " Type 0xe: " << std::hex << var.value << std::endl;
-					}	
-					if (progInfo.stackPointers.back() > progInfo.stack.size()) {
-						Logger::Log(Logger::WARN, progInfo.address) << " Popped past frame.\n";
-					}
-				}
-			} else if (arg == 0x14) {
-				if (!progInfo.stack.empty()) {
-					var = progInfo.stack.back();
-					progInfo.stack.pop_back();
-					
-					if (var.type != STACK_STR) {
-						Logger::Log(Logger::WARN, progInfo.address) << "Non-string type read.\n";
-					}
-				}
-			} else if (arg == 0x51e) {
-				// TODO: HANDLE REF LATER
-				unsigned int a1 = 0xdeadbeef, a2 = 0xdeadbeef, a3 = 0xdeadbeef;
-				if (progInfo.stack.size() >= 4) {
-					progInfo.stack.pop_back();
-					a1 = progInfo.stack.back().value;
-						progInfo.stack.pop_back();
-					a2 = progInfo.stack.back().value;
-						progInfo.stack.pop_back();
-					a3 = progInfo.stack.back().value;
-						progInfo.stack.pop_back();
-				} else {
-					
-					throw std::exception();
-				}
-				if (a1 != 0xffffffff || a2 != 2) {
-					Logger::Log(Logger::WARN, progInfo.address) << " Popping 0x51e - " << std::hex;
-					Logger::Log(Logger::WARN) << a3 << " " << a2 << " " << a1 << std::endl;
-				}
-			} else if (arg == 0xffffffff) {
-				stackCount = buf.getInt();
-				for (unsigned int counter2 = 0; counter2 < stackCount; counter2++) {
-					progInfo.args.push_back(buf.getInt());
-				}
-				progInfo.args.push_back(0xffffffff);
-			} else {
-				Logger::Log(Logger::DEBUG, progInfo.address) << " trying to pop stack " << arg << std::endl;
-			}
-		}
-	}
-
-	return numArgs;
-}
-
-// TODO: move this either into a class or another file, just have the declarations together or something
-void instPush(FILE* f, BytecodeBuffer &buf, SceneInfo& sceneInfo, ProgInfo& progInfo) {
-	unsigned int	arg1, arg2;
-		arg1 = buf.getInt();
-		arg2 = buf.getInt();
-
-	if (arg1 == 0x0a) {
-		progInfo.stack.push_back(StackValue(arg2, STACK_NUM));
-		fprintf(f, "%#x, %#x", arg1, arg2);
-		// TODO: take it out of here and put just when called
-		// maybe. maybe not
-		
-		// Command ~address~ index
-		if (arg2 >> 24 == 0x7e) {
-			unsigned int commandIndex = arg2 & 0x00ffffff;
-			if (commandIndex < sceneInfo.commands.size()) {
-				ScriptCommand command = sceneInfo.commands.at(commandIndex);
-				progInfo.comment = command.name;
-				std::stringstream stream;
-				stream << std::hex << command.offset;
-
-				if (commandIndex < sceneInfo.numGlobalCommands) {
-					progInfo.comment += " (0x" + stream.str() + " in " + sceneInfo.sceneNames.at(command.file) + ")";
-				} else {
-					// this is a local command
-					progInfo.comment += " (0x" + stream.str() + ")";
-				}
-			} else {
-					Logger::Log(Logger::WARN, progInfo.address) << " trying to access command index " << arg2 << std::endl;
-			}
-		// Var name index
-		} else if (arg2 >> 24 == 0x7f) {
-			unsigned int varIndex = arg2 & 0x00ffffff;
-			if (varIndex < sceneInfo.globalVars.size()) {
-				progInfo.comment = sceneInfo.globalVars.at(varIndex).name;
-			} else if (arg2 == 0x7fffffff) {
-			} else {
-				Logger::Log(Logger::WARN, progInfo.address) << " trying to access var index " << arg2 << std::endl;
-			}
-		}
-	} else if (arg1 == 0x14) {
-		fprintf(f, "%#x, [%#x]", arg1, arg2);
-		if (arg2 <= sceneInfo.mainStrings.size()) {
-			progInfo.comment = sceneInfo.mainStrings.at(arg2);
-		} else {
-			Logger::Log(Logger::WARN, progInfo.address) << " trying to access string index " << arg2 << std::endl;
-		}
-		progInfo.stack.push_back(StackValue(arg2, STACK_STR));
-	}
-}
-
-
-void instDo04Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
-	unsigned int arg1 = buf.getInt();
-	fprintf(f, "%#x", arg1);
-	if (arg1 == 0x0a) {
-		progInfo.stack.push_back(StackValue(0xdeadbeef, STACK_NUM));
-	} else {
-		Logger::Log(Logger::INFO, progInfo.address) << "Non-num with 0x4\n";
-	}
-}
-
 // must guarantee stackPointers will never be empty
 // TODO: handle 0x7d - not sure what they are, references?
 // TODO: also handle 0x7d the same things on 0x20 calls
@@ -293,94 +154,9 @@ void instDo15Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 		progInfo.args.pop_back();
 	}
 	fprintf(f, ")");
-}
+} */
 
-// TODO: is 20 a store?
-
-
-// TODO: pop stack pointer if reached
-void instCall(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
-	unsigned int arg;
-	unsigned int arg1 = buf.getInt();
-	fprintf(f, "%#x, (", arg1);
-	
-	// Arguments to pass to function to be called
-	unsigned int numArgs1 = readArgs(buf, progInfo);
-	for (unsigned int i = 0; i < numArgs1; i++) {
-		arg = progInfo.args.back();
-		progInfo.args.pop_back();
-		
-		if (arg != 0xffffffff) {
-			fprintf(f, "%#x,", arg);
-		} else {
-			fprintf(f, "{");
-			while ((arg = progInfo.args.back()) != 0xffffffff) {
-				fprintf(f, "%#x,", arg);
-				progInfo.args.pop_back();
-			}
-			progInfo.args.pop_back();	// pop off the first 0xffffffff
-			fprintf(f, "}, ");
-		}
-	}
-	fprintf(f, "), (");
-	// I don't know what these are
-	unsigned int numArgs2 = readArgs(buf, progInfo, false);
-	for (unsigned int i = 0; i < numArgs2; i++) {
-		fprintf(f, "%#x,", progInfo.args.back());
-		progInfo.args.pop_back();
-	}
-	
-	// Return type
-	unsigned int arg2 = buf.getInt();
-	fprintf(f, "), %#x", arg2);
-
-	// Function to call
-	StackValue stackTop = progInfo.stack.back();
-	progInfo.stack.pop_back();
-	fprintf(f, " [%#x] ", stackTop.value);
-	
-	switch (stackTop.value) {
-		// TODO: "understand" what these mean
-		case 0x0c:
-		case 0x12:
-		case 0x13:
-		case 0x4c:
-		case 0x4d:
-		case 0x5a:
-		case 0x5b:
-		case 0x64:
-		case 0x7f:
-			if (progInfo.stackPointers.back() == progInfo.stack.size()) {
-				fprintf(f, ", %#x", buf.getInt());
-				progInfo.stackPointers.pop_back();
-			}
-		break;
-		case 0xffffffff:
-			Logger::Log(Logger::WARN, progInfo.address) << " Calling function 0xffffffff.\n";
-		break;
-		case 0xDEADBEEF:
-			Logger::Log(Logger::WARN, progInfo.address) << " Calling deadbeef\n";
-	}
-	
-	// TEMP?
-	while (progInfo.stackPointers.back() < progInfo.stack.size()) {
-		progInfo.stack.pop_back();
-	}
-	if (progInfo.stackPointers.size() > 1) {
-		progInfo.stackPointers.pop_back();
-	} else {
-		Logger::Log(Logger::WARN, progInfo.address) << " Popped past.\n";
-	}
-	
-	if (arg2 == 0x0a) {
-		progInfo.stack.push_back(StackValue(0xdeadbeef, STACK_NUM));
-	} else if (arg2 == 0x14) {
-		progInfo.stack.push_back(StackValue(0xdeadbeef, STACK_STR));
-	}
-}
-*/
-
-unsigned int BytecodeParser::parseFunction(const Label &function, ProgStack &localVars, std::string &outputString) {
+unsigned int BytecodeParser::parseFunction(const Label &function, ProgStack &localVars) {
 	if (function.offset >= dataLength)
 		throw std::out_of_range("Function offset out of range.");
 
@@ -392,17 +168,17 @@ unsigned int BytecodeParser::parseFunction(const Label &function, ProgStack &loc
 	localVars.clear();
 	unsigned int numParams = 0;
 
+
+	stack.clear();
 	// Read instructions
 	while (!toReturn) {
 		opcode = getChar();
 
 		switch (opcode) {
-			case 0x01: getInt();						break;
-			case 0x02: {
-				unsigned int type = getInt();
-				unsigned int value = getInt();
-				stack.push_back(StackValue(value, type));
-			} break;
+			case 0x01: getInt();		break;
+			case 0x02: instPush();		break;
+			case 0x03: instPop();		break;
+			case 0x04: instDup();		break;
 			// TODO: make safe
 			case 0x05: {
 				StackValue val;
@@ -415,10 +191,9 @@ unsigned int BytecodeParser::parseFunction(const Label &function, ProgStack &loc
 					if (unknown.value != 0x53)
 						throw std::logic_error("Expected 0x53");
 					stack.pop_back();
-					if (!stack.back().endFrame)
-						throw std::logic_error("Expected [0x08]");
+					
+					popFrame();
 
-					stack.pop_back();
 					unsigned int varIndex = val.value & 0x00FFFFFF;
 					// Real exception
 					if (varIndex >= localVars.size())
@@ -458,56 +233,13 @@ unsigned int BytecodeParser::parseFunction(const Label &function, ProgStack &loc
 				toReturn = true;
 				outputString += "\treturn; \n";
 			} break;
-			case 0x20: {
-				StackValue lhs, rhs;
-				StackValue val;
-
-				unsigned int LHSType = getInt();
-				unsigned int RHSType = getInt();
-				unsigned int unknown = getInt();
-				if (LHSType != RHSType + 3)
-					Logger::Log(Logger::WARN) << "Assigning type " << RHSType << " to " << LHSType << ".\n";
-
-				rhs = stack.back();
-				if (rhs.type != RHSType)
-					throw std::logic_error("Incorrect type for RHS");
-				stack.pop_back();
-
-				val = stack.back();
-				stack.pop_back();
-				// TODO: check these are all of type 0xa
-				if (val.value >> 24 == 0x00) {
-					unsigned int index = val.value & 0x00FFFFFF;
-					// TODO: implement equality and inequality check
-					// and make static values to test against
-					if (stack.back().value != 0xFFFFFFFF)
-						throw std::logic_error("Expected 0xFFFFFFFF");
-					stack.pop_back();
-
-					val = stack.back();
-					// Global var
-					if (val.value >> 24 == 0x7f) {
-						unsigned int varIndex = val.value & 0x00FFFFFF;
-						if (varIndex >= sceneInfo.globalVars.size())
-							throw std::out_of_range("Variable index out of range");
-						StackValue var = sceneInfo.globalVars[varIndex];
-
-						stack.pop_back();
-						// this is more important
-						if (!stack.back().endFrame)
-							throw std::logic_error("Expected [0x08]");
-
-						stack.pop_back();
-						lhs = StackValue(var.value, var.type - 1);
-						lhs.name = var.name + "[" + std::to_string(index) + "]";
-					}
-					
-
-				}
-				// assign RHS value to LHS
-
-				outputString += "\t" + lhs.name + " = " + rhs.name + ";\n";	// TODO: indentation blocks
+			case 0x20: instAssign();	break;
+			case 0x21: {
+				outputString += "\tInst21(" + std::to_string(getInt()) + ", " + std::to_string(getChar()) + ")\n";
 			} break;
+			case 0x30: instCall();		break;
+			default:
+				Logger::Log(Logger::WARN) << "Unhandled instruction " << std::to_string(opcode) << std::endl;
 		}
 	}
 
@@ -528,16 +260,17 @@ void BytecodeParser::parseBytecode(std::string filename) {
 	std::sort(sceneInfo.functions.begin(),sceneInfo.functions.end());
 	std::sort(localCommands.begin(),	localCommands.end());
 	
-	auto functionIt = sceneInfo.functions.begin();
+	//auto functionIt = sceneInfo.functions.begin();
 
 	// TODO: fix naming 
 	for (auto &function : localCommands) {
 		if (function.name.empty())
 			function.name = ("fun_" + std::to_string(function.index));
+		Logger::Log(Logger::INFO) << "Parsing function: " << function.name << std::endl;
 
-		std::string parsed;
 		ProgStack localVars;
-		unsigned int numParams = parseFunction(function, localVars, parsed);
+		outputString.clear();
+		unsigned int numParams = parseFunction(function, localVars);
 
 		std::string paramsString;
 		for (unsigned int i = 0; i < numParams; i++) {
@@ -546,7 +279,7 @@ void BytecodeParser::parseBytecode(std::string filename) {
 		}
 
 		fprintf(f, "function %s(%s)@[%#x] {\n", function.name.c_str(), paramsString.c_str(), function.offset);
-		fprintf(f, "%s", parsed.c_str());
+		fprintf(f, "%s", outputString.c_str());
 		fprintf(f, "}\n");
 	}
 
@@ -672,3 +405,314 @@ unsigned char BytecodeParser::getChar() {
 	}
 	return value;
 }
+
+// **************************
+// Handle instructions
+// **************************
+
+
+// Safe
+void BytecodeParser::instPush() {
+	unsigned int type = getInt();
+	unsigned int value = getInt();
+	stack.push_back(StackValue(value, type));
+	//TODO: also arrays
+	if (type == STACK_NUM) {
+		if (value >> 24 == 0x7f) {
+			unsigned int varIndex = value & 0x00FFFFFF;
+			if (varIndex < sceneInfo.globalVars.size())
+				stack.back().name = sceneInfo.globalVars[varIndex].name;	// could just copy the var directly
+			else
+				stack.back().name = "g_var_" + std::to_string(varIndex);
+		}
+	} if (type == STACK_STR) {
+		if (value >= sceneInfo.mainStrings.size())
+			throw std::out_of_range("String index out of range");
+		stack.back().name = '"' + sceneInfo.mainStrings[value] + '"';
+	}
+}
+
+void BytecodeParser::instPop() {
+	if (stack.empty())
+		throw std::logic_error("Popping empty stack");
+	unsigned int type = getInt();
+
+	if (stack.back().type != type)
+		throw std::logic_error("Popping unexpected type");
+
+	if (stack.back().fnCall)
+		outputString += "\t" + stack.back().name + ";\n";
+
+	stack.pop_back();
+
+}
+
+void BytecodeParser::instDup() {
+	if (stack.empty())
+		throw std::logic_error("Duplicating empty stack");
+	unsigned int type = getInt();
+
+	if (stack.back().type != type)
+		throw std::logic_error("Duplicating unexpected type");
+
+	stack.push_back(stack.back());
+}
+
+// Safety depends on readArgs
+void BytecodeParser::instCall() {
+	StackValue arg;
+	unsigned int arg1 = getInt();
+	if (arg1 > 1)
+		Logger::Log(Logger::INFO) << "Call with first value " << std::to_string(arg1) << std::endl;
+	ProgStack argsA, argsB;
+
+	std::string argString("(");
+
+	// Arguments to pass to function to be called
+	unsigned int numArgs1 = readArgs(argsA);
+	for (unsigned int i = 0; i < numArgs1; i++) {
+		if (i != 0)
+			argString += ", ";
+
+		arg = argsA.back();
+		argsA.pop_back();
+		
+		if (arg.length == 0) {
+			argString += arg.name;
+		} else {
+			argString += "<" + std::to_string(arg.type - 1) + ">[" + std::to_string(arg.length) + "]";
+		}
+	}
+	argString += ")";
+
+	// I don't know what these are
+	unsigned int numArgs2 = readArgs(argsB);
+	if (numArgs2 > 0) {
+		argString += "{";
+		for (unsigned int i = 0; i < numArgs2; i++) {
+			if (i != 0)
+				argString += ", ";
+
+			arg = argsB.back();
+			argsB.pop_back();
+			
+			if (arg.length == 0) {
+				argString += arg.name;
+			} else {
+				argString += "<" + std::to_string(arg.type - 1) + ">[" + std::to_string(arg.length) + "]";
+			}
+		}
+		argString += "}";
+	}
+	
+	// Return type
+	unsigned int retType = getInt();
+
+	if (stack.empty())
+		throw std::logic_error("Empty stack - function call");
+
+	// Function to call
+	StackValue callFn = stack.back();
+	stack.pop_back();
+
+	// Script command
+	std::string name;
+	if (callFn.value >> 24 == 0x7e) {
+		unsigned int commandIndex = callFn.value & 0x00FFFFFF;
+		popFrame();
+
+		if (commandIndex >= sceneInfo.commands.size())
+			throw std::out_of_range("Command index out of range");
+
+		ScriptCommand command = sceneInfo.commands[commandIndex];
+		name = command.name;
+	} else {
+		switch (callFn.value) {
+			case 0x0c:
+			case 0x12:
+			case 0x13:
+			case 0x4c:
+			case 0x4d:
+			case 0x5a:
+			case 0x5b:
+			case 0x64:
+			case 0x7f:
+				if (stack.back().endFrame) {
+					stack.pop_back();
+					getInt();	// part of command to call?
+				}
+			break;
+			case 0xffffffff:
+				Logger::Log(Logger::WARN) << " Calling function 0xffffffff.\n";
+			break;
+			case 0xDEADBEEF:
+				Logger::Log(Logger::WARN) << " Calling deadbeef\n";
+		}
+		std::stringstream stream;
+		stream << std::hex << callFn.value;
+		name = "fun_" + stream.str();
+	}
+	stack.push_back(StackValue(0xdeadbeef, retType));
+	stack.back().name = name + argString;
+	stack.back().fnCall = true;
+}
+
+
+// Unsafe
+void BytecodeParser::instAssign() {
+	StackValue lhs, rhs;
+
+	unsigned int LHSType = getInt();
+	unsigned int RHSType = getInt();
+	unsigned int unknown = getInt();
+	if (unknown != 1)
+		Logger::Log(Logger::INFO) << "Assigning with third param " << unknown << std::endl;
+
+	if (LHSType != RHSType + 3)
+		Logger::Log(Logger::WARN) << "Assigning type " << RHSType << " to " << LHSType << ".\n";
+
+	if (stack.empty())
+		throw std::logic_error("Empty stack - no RHS");
+
+	rhs = stack.back();
+	if (rhs.type != RHSType)
+		throw std::logic_error("Incorrect type for RHS");
+	stack.pop_back();
+
+	if (stack.empty())
+		throw std::logic_error("Empty stack - no LHS");
+
+	// TODO: check these are all of type 0xa
+	StackValue index, arr;
+	std::string lhs_name;
+	index = stack.back();
+	while(index.value >> 24 == 0x00) {
+		stack.pop_back();
+		// TODO: implement equality and inequality check
+		// and make static values to test against
+		if (stack.back().value != 0xFFFFFFFF) {
+			lhs_name += index.name + "_";
+			index = stack.back();
+		} else {
+			stack.pop_back();
+
+			arr = stack.back();
+			stack.pop_back();
+			lhs_name += arr.name+"["+index.name+"]";
+			popFrame();
+			break;
+		}
+	}
+
+	// assign RHS value to LHS
+	outputString += "\t" + lhs_name + " = " + rhs.name + ";\n";	// TODO: indentation blocks
+}
+
+
+
+unsigned int BytecodeParser::readArgs(ProgStack &args) {
+	unsigned int numArgs = getInt();
+	unsigned int argType = 0, stackCount = 0;
+	StackValue var;
+
+	for (unsigned int counter = 0; counter < numArgs; counter++) {
+		if (stack.empty())
+			throw std::logic_error("Reading args off empty stack.");
+
+		argType = getInt();
+
+		if (argType == STACK_NUM || argType == STACK_STR) {
+			var = stack.back();
+			stack.pop_back();
+			if (var.type != argType) {
+				Logger::Log(Logger::ERROR) << "Wrong type.\n";
+			}
+			args.push_back(var);
+		}
+		/*} else if (arg == 0x0e) {
+			if (!progInfo.stack.empty()) {
+				var = progInfo.stack.back();
+				progInfo.stack.pop_back();
+				// TODO: handle this type
+				
+				if (var.value >> 24 != 0x7f) {
+					Logger::Log(Logger::DEBUG, progInfo.address) << " Type 0xe: " << std::hex << var.value << std::endl;
+				}	
+				if (progInfo.stackPointers.back() > progInfo.stack.size()) {
+					Logger::Log(Logger::WARN, progInfo.address) << " Popped past frame.\n";
+				}
+			}
+		} */
+		// Unsafe
+		else if (argType == STACK_OBJ) {
+			std::string name = "DATA";
+			var = stack.back();
+			if (var.type == argType) {
+				stack.pop_back();
+				args.push_back(var);
+			} else if (var.type == STACK_NUM) {
+				// index
+				StackValue index, arr;
+				do {
+					if (stack.size() < 3)
+						throw std::logic_error("Not enough values in stack to do index.");
+
+					index = stack.back();
+					stack.pop_back();
+					if (stack.back().value != 0xFFFFFFFF)
+						throw std::logic_error(std::to_string(currAddress) + ": Expected 0xFFFFFFFF");
+					stack.pop_back();
+					arr = stack.back();
+					stack.pop_back();
+					
+					name += "_"+std::to_string(arr.value)+"["+index.name+"]";
+				} while (arr.value != 0x02);
+
+				if (stack.size() < 2)
+					throw std::logic_error("Reading args off empty stack.");
+
+
+				var = stack.back();
+				stack.pop_back();
+				popFrame();
+
+				name += "_" + std::to_string(var.value);
+
+				args.push_back(StackValue(0xDEADFACE, STACK_OBJ));
+				args.back().name = name;
+			} else {
+				throw std::logic_error("Expected either numerical or object.");
+			}
+		} else if (argType == 0xffffffff) {
+			stackCount = getInt();
+			if (stack.size() < stackCount)
+				throw std::logic_error("Not enough arguments to pop");
+			unsigned int arrType = 0;
+			for (unsigned int counter2 = 0; counter2 < stackCount; counter2++) {
+				arrType = getInt(); // and check its the same
+				stack.pop_back();
+			}
+
+			args.push_back(StackValue(0xDEADBEEF, arrType+1));
+			args.back().length = stackCount;
+		} else {
+			Logger::Log(Logger::INFO) << "Popping type " << argType << std::endl;
+			if (!stack.empty())
+				stack.pop_back();
+			args.push_back(StackValue(0xDEADBEEF, STACK_VOID));
+		}
+	}
+
+	return numArgs;
+}
+
+void BytecodeParser::popFrame() {
+	if (stack.empty())
+		throw std::out_of_range("Popping empty stack - expected [08]");
+
+	if (!stack.back().endFrame)
+		throw std::logic_error("Expected [08]");
+
+	stack.pop_back();
+}
+
