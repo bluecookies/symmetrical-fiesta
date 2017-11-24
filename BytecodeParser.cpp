@@ -551,6 +551,8 @@ void BytecodeParser::instCall() {
 		std::stringstream stream;
 		stream << std::hex << callFn.value;
 		name = "fun_" + stream.str();
+		// TODO TODO TODO TODO:
+		// Dump stack here if can't handle it properly (most cases)
 	}
 	stack.push_back(StackValue(0xdeadbeef, retType));
 	stack.back().name = name + argString;
@@ -579,18 +581,28 @@ void BytecodeParser::instAssign() {
 		throw std::logic_error("Incorrect type for RHS");
 	stack.pop_back();
 
-	if (stack.empty())
-		throw std::logic_error("Empty stack - no LHS");
 
 	// TODO: check these are all of type 0xa
 	StackValue index, arr;
 	std::string lhs_name;
+
+
+	if (stack.size() < 2)
+		throw std::logic_error("Empty stack - no LHS");
+
 	index = stack.back();
-	while(index.value >> 24 == 0x00) {
+	while(true) {
+		if (stack.size() < 2)
+			throw std::logic_error("Empty stack - no LHS");
+
 		stack.pop_back();
-		// TODO: implement equality and inequality check
-		// and make static values to test against
-		if (stack.back().value != 0xFFFFFFFF) {
+		if (index.value >> 24 == 0x7f) {
+			lhs_name += index.name;
+			break;
+		} else if (index.value == 0x53 || index.value == 0x26) {
+			lhs_name += "_" + index.name;
+			break;
+		} else if (stack.back().value != 0xFFFFFFFF) {
 			lhs_name += index.name + "_";
 			index = stack.back();
 		} else {
@@ -599,10 +611,11 @@ void BytecodeParser::instAssign() {
 			arr = stack.back();
 			stack.pop_back();
 			lhs_name += arr.name+"["+index.name+"]";
-			popFrame();
-			break;
+			
+			index = stack.back();
 		}
 	}
+	popFrame();
 
 	// assign RHS value to LHS
 	outputString += "\t" + lhs_name + " = " + rhs.name + ";\n";	// TODO: indentation blocks
@@ -711,7 +724,7 @@ void BytecodeParser::popFrame() {
 		throw std::out_of_range("Popping empty stack - expected [08]");
 
 	if (!stack.back().endFrame)
-		throw std::logic_error("Expected [08]");
+		throw std::logic_error("Expected [08], got " + std::to_string(stack.back().value));
 
 	stack.pop_back();
 }
