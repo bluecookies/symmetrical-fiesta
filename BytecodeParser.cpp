@@ -31,6 +31,7 @@ Instruction::Instruction(Parser *parser, unsigned char opcode_) {
 	opcode = opcode_;
 }
 
+bool Instruction::expandStrings = true;
 bool Instruction::expandGlobalVars = true;
 bool Instruction::expandCommandNames = true;
 void Instruction::print(Parser*, std::ofstream &stream) const {
@@ -70,7 +71,7 @@ class InstPush: public Instruction {
 			unsigned char valType = value >> 24;
 			unsigned int index = value & 0x00FFFFFF;
 
-			if (valType == 0x7e && expandCommandNames) {
+			if (type == 0xa && valType == 0x7e && expandCommandNames) {
 				std::string cmdName;
 
 				try {
@@ -80,7 +81,7 @@ class InstPush: public Instruction {
 				}
 
 				stream << toHex(address, width) << "\tpush " << cmdName << ":<command>\n";
-			} else if (valType == 0x7f && expandGlobalVars) {
+			} else if (type == 0xa && valType == 0x7f && expandGlobalVars) {
 				std::string varName;
 				try {
 					varName = parser->sceneInfo.globalVars.at(index).name;
@@ -89,6 +90,14 @@ class InstPush: public Instruction {
 				}
 
 				stream << toHex(address, width) << "\tpush " << varName << ":<0x" << toHex(type) << ">\n";
+			} else if (type == 0x14) {
+				std::string stringName;
+				try {
+					stringName = parser->sceneInfo.mainStrings.at(index);
+				} catch (std::out_of_range &e) {
+					stringName = "string" + std::to_string(index);
+				}
+				stream << toHex(address, width) << "\tpush \"" << stringName << "\"\n";
 			} else {
 				stream << toHex(address, width) << "\tpush " << std::to_string(value) << ":<0x" << toHex(type) << ">\n";
 			}
@@ -189,23 +198,6 @@ class InstCall: public Instruction {
 		}
 };
 
-
-/*
-void BytecodeParser::printLabels(std::vector<Label>::iterator &pLabel, std::vector<Label>::iterator end, const char* type) {
-	Label label;
-	while (pLabel != end) {
-		label = *pLabel;
-		if (label.offset <= progInfo.address) {
-			pLabel++;
-			if (label.offset > 0 && label.offset == progInfo.address) {
-				fprintf(f, "\nSet%s %x:\t; %s\n", type, label.index, label.name.c_str());
-			}
-		} else {
-			break;
-		}
-	}
-}
-*/
 /*
 void instDo05Thing(ProgInfo& progInfo) {
 	if (progInfo.stackPointers.size() > 1) {
@@ -360,25 +352,7 @@ void BytecodeParser::parseBytecode() {
 	}
 
 	Instruction::setWidth(instAddress);
-
-	// Get functions defined in this file
-	/*std::vector<Label> localCommands;
-	auto predCommandFile = [this](ScriptCommand c) {
-		return c.file == sceneInfo.thisFile;
-	};
-	std::copy_if(sceneInfo.commands.begin(), sceneInfo.commands.end(), 
-		std::back_inserter(localCommands), predCommandFile);
-	std::sort(sceneInfo.functions.begin(),sceneInfo.functions.end());
-	std::sort(localCommands.begin(),	localCommands.end());
-	std::sort(sceneInfo.markers.begin(),	sceneInfo.markers.end());
-	std::sort(sceneInfo.labels.begin(), sceneInfo.labels.end());
-
-	auto functionIt = sceneInfo.functions.begin();
-	auto commandIt = localCommands.begin();
-	auto labelIt = sceneInfo.labels.begin(), markerIt = sceneInfo.markers.begin();
-
-	Logger::Log(Logger::DEBUG) << "Parsing " << std::to_string(dataLength) << " bytes.\n";
-	
+	/*
 	ProgramInfo progInfo;
 	
 	while (currAddress < dataLength) {
@@ -393,7 +367,6 @@ void BytecodeParser::parseBytecode() {
 		fprintf(f, "%#06x>\t%02x| %s ", progInfo.address, progInfo.opcode, s_mnemonics[progInfo.opcode].c_str());
 		
 		switch (progInfo.opcode) {
-			case 0x03: instPop();		break;
 			case 0x04: instDup();		break;
 
 			case 0x10:
@@ -407,35 +380,16 @@ void BytecodeParser::parseBytecode() {
 			case 0x33:
 			case 0x34:	break;
 			
-			case 0x16:	Logger::Log(Logger::INFO, progInfo.address) << "End of script reached.\n";	break;
 			case 0x07:	instDo07Thing(f, buf, sceneInfo, progInfo);		break;
 
 			case 0x13:	instDo13Thing(f, buf, progInfo);		break;
 			
 			case 0x14:
-			case 0x20:	fprintf(f, "%#x, %#x, %#x", getInt(), getInt(), getInt());
-				break;
 			case 0x21:	fprintf(f, "%#x, %d", getInt(), getChar());
 				break;
 			case 0x22:	instCalc(f, buf, progInfo);					break;
-
-			case 0x15:	instDo15Thing(f, buf, progInfo);		break;
-
-			case 0x30:	instCall(f, buf, progInfo);					break;
-
-			case 0x00:
-			default:
-				progInfo.numNops++;
-				Logger::Log(Logger::INFO) << "Address 0x" << std::hex << std::setw(4) << progInfo.address;
-				Logger::Log(Logger::INFO) << ":  NOP encountered: 0x" << std::setw(2) << +progInfo.opcode << std::dec << std::endl;
 		}
 		
-		if (!progInfo.comment.empty()) {
-			fprintf(f, "\t; %s", progInfo.comment.c_str());
-			progInfo.comment.clear();
-		}
-		
-		fprintf(f, "\n");
 	}
 	
 	Logger::Log(Logger::INFO) << "Parsed " << progInfo.numInsts << " instructions.\n";
@@ -445,9 +399,44 @@ void BytecodeParser::parseBytecode() {
 }
 
 void BytecodeParser::printInstructions(std::string filename) {
-	std::ofstream out(filename);
+	// Get functions defined in this file
+	std::vector<Label> localCommands;
+	auto predCommandFile = [this](ScriptCommand c) {
+		return c.file == sceneInfo.thisFile;
+	};
 
+	std::vector<Label> labels = sceneInfo.labels;
+	std::vector<Label> entrypoints = sceneInfo.markers;
+
+	auto labelIt = labels.begin();
+
+	std::ofstream out(filename);
+	// this is destructive though, so make copy
 	for (const auto &inst:instructions) {
+		// Print labels
+		labelIt = labels.begin();
+		while (labelIt != labels.end()) {
+			if (labelIt->offset == inst->address) {
+				out << "Label " << toHex(labelIt->index) << ":\n";
+
+				labelIt = labels.erase(labelIt);
+			} else {
+				labelIt++;
+			}
+		}
+		// Print entrypoints
+		labelIt = entrypoints.begin();
+		while (labelIt != entrypoints.end()) {
+			if (labelIt->offset == inst->address) {
+				if (labelIt->offset > 0)
+					out << "Entrypoint " << toHex(labelIt->index) << ":\n";
+
+				labelIt = entrypoints.erase(labelIt);
+			} else {
+				labelIt++;
+			}
+		}
+
 		inst->print(this, out);
 	}
 

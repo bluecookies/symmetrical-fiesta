@@ -127,13 +127,15 @@ class BytecodeBuffer {
 typedef class BytecodeParser Parser;
 class Instruction {
 	protected:
-		unsigned int address = 0;
 		unsigned char opcode = 0;
 		static unsigned char width;
 
 	public:	
+		unsigned int address = 0;
+
 		static bool expandGlobalVars;
 		static bool expandCommandNames;
+		static bool expandStrings;
 
 		Instruction(Parser *parser, unsigned char opcode);
 		virtual ~Instruction() {};
