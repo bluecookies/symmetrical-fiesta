@@ -153,16 +153,21 @@ void readSceneInfo(SceneInfo &info, std::ifstream &stream, const ScriptHeader &h
 	}
 	
 	// Read static vars
-	StringList staticVarNames;
-	readStrings(stream, staticVarNames, header.staticVarIndex, header.staticVars);
-	// TODO: try to get static var info
-	ProgStack staticVars;
-	for (auto varName : staticVarNames) {
-		staticVars.push_back(StackValue(0xDEADBEEF, 0xa));
-		staticVars.back().name = varName;
+	// TODO: not just the names
+	if (header.staticVars.count > 0) {
+		StringList staticVarNames;
+		readStrings(stream, staticVarNames, header.staticVarIndex, header.staticVars);
+		// TODO: try to get static var info
+		ProgStack staticVars;
+		for (auto varName : staticVarNames) {
+			staticVars.push_back(StackValue(0xDEADBEEF, 0xa));
+			staticVars.back().name = varName;
+		}
+		info.globalVars.insert(info.globalVars.end(), staticVars.begin(), staticVars.end());
+		Logger::Log(Logger::INFO) << "Read " << std::to_string(header.staticVars.count) << " static variables.\n";
 	}
-	info.globalVars.insert(info.globalVars.end(), staticVars.begin(), staticVars.end());
-		
+	
+
 	// Read local commands
 	ScriptCommand command;
 	stream.seekg(header.localCommandIndex.offset, std::ios::beg);
@@ -182,7 +187,7 @@ void readSceneInfo(SceneInfo &info, std::ifstream &stream, const ScriptHeader &h
 				auto funcIt = std::find_if(info.functions.begin(), info.functions.end(), predAtOffset);
 				if (funcIt != info.functions.end()) {
 					command.name = funcIt->name;
-					Logger::Log(Logger::DEBUG) << "Command " << command.name << " (" << std::hex << command.index << ") at " << command.offset << std::endl;
+					Logger::Log(Logger::VERBOSE_DEBUG) << "Command " << command.name << " (" << std::hex << command.index << ") at " << command.offset << std::endl;
 				} else {
 					Logger::Log(Logger::WARN) << "Warning: Local command name " << std::hex << command.index;
 					Logger::Log(Logger::WARN) << " at offset 0x" << command.offset << " not found.\n";
@@ -264,7 +269,7 @@ int main(int argc, char* argv[]) {
 	Logger::Log(Logger::VERBOSE_DEBUG) << sceneInfo.mainStrings;
 	Logger::Log(Logger::VERBOSE_DEBUG) << sceneInfo.localVarNames;
 	
-	BytecodeParser parser(fileStream, header.bytecode, sceneInfo, outFilename);
+	BytecodeParser parser(fileStream, header.bytecode, sceneInfo);
 	fileStream.close();
 	
 	try {
@@ -272,7 +277,9 @@ int main(int argc, char* argv[]) {
 	} catch (std::out_of_range &e) {
 		std::cerr << e.what() << std::endl;
 	}
-	
+
+	parser.printInstructions(outFilename);
+		
 	// TODO: handle these
 	if (header.unknown6.count != 0) {
 		Logger::Log(Logger::WARN) << "Unknown6 has " << header.unknown6.count << " elements.\n";

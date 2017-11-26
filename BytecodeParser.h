@@ -104,45 +104,68 @@ typedef struct ProgramInfo {
 } ProgInfo;
 
 
-
-class BytecodeParser {
+class BytecodeBuffer {
 	private:
 		unsigned char* bytecode = NULL;
 		unsigned int dataLength = 0;
 		unsigned int currAddress = 0;
 
-		ProgInfo progInfo;
-		SceneInfo sceneInfo;
-
+	public:
 		unsigned int getInt();
 		unsigned char getChar();
+		bool done() {
+			return currAddress == dataLength;
+		};
+		unsigned int getAddress() {
+			return currAddress;
+		};
 
-		FILE* f = nullptr;
+		BytecodeBuffer(std::ifstream& f, unsigned int length);
+		~BytecodeBuffer();
+};
 
-		std::string outputString;
-		void BytecodeParser::printLabels(std::vector<Label>::iterator &pLabel, std::vector<Label>::iterator end, const char* type);
-		
-		// Handle instructions
-		void instPush();
-		void instPop();
-		void instDup();
+typedef class BytecodeParser Parser;
+class Instruction {
+	protected:
+		unsigned int address = 0;
+		unsigned char opcode = 0;
+		static unsigned char width;
 
-		void instJump();
-		void instJump(bool ifZero);
+	public:	
+		static bool expandGlobalVars;
+		static bool expandCommandNames;
 
-		void instAssign();
-		void instCalc();
-		void instCall();
+		Instruction(Parser *parser, unsigned char opcode);
+		virtual ~Instruction() {};
+		static void setWidth(unsigned int maxAddress);
 
+		virtual void print(Parser *parser, std::ofstream &stream) const;
+};
 
-		unsigned int readArgs(ProgStack &args);
-		void popFrame();
+class BytecodeParser {
+	private:
+		BytecodeBuffer* buf;
+
+		ProgInfo progInfo;
+
+		std::vector<Instruction*> instructions;
+	public:
+		unsigned int instAddress = 0;
+		SceneInfo sceneInfo;
+
+		unsigned int getInt() {
+			return buf->getInt();
+		};
+		unsigned char getChar() {
+			return buf->getChar();
+		};
+		unsigned int readArgs(std::vector<unsigned int> &typeList);
+
+		BytecodeParser(std::ifstream &f, HeaderPair index, SceneInfo info);
+		~BytecodeParser();
 
 	public:
-		BytecodeParser(std::ifstream &f, HeaderPair index, SceneInfo info, std::string filename);
-		~BytecodeParser();
-		// TODO: fill in the assign and move
-		
 		void parseBytecode();
+		void printInstructions(std::string filename);
 };
 #endif

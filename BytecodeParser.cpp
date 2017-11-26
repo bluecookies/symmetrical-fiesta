@@ -16,43 +16,181 @@
 
 #include "BytecodeParser.h"
 
-StringList populateMnemonics() {
-	std::stringstream hexStream;
-	hexStream << std::hex << std::setfill('0');
-	
-	StringList mnemonics;
-	mnemonics.resize(0x100);
-	// Temporary
-	mnemonics[0x00] = "nop";
-	for (unsigned short i = 1; i < 256; i++) {
-		hexStream << std::setw(2) << +i;
-		mnemonics[i] = "[" + hexStream.str() + "]";
-		hexStream.str("");
-	}
-	mnemonics[0x02] = "push";		// value onto target stack
-	mnemonics[0x03] = "pop";		// and discard
-	mnemonics[0x04] = "dup";
-	mnemonics[0x07] = "var";		// declare var
-	mnemonics[0x08] = "[08]";		
-	mnemonics[0x09] = "====";
+//move to header
+std::string toHex(unsigned int c, unsigned char width = 0) {
+	std::stringstream ss;
+	if (width > 0)
+		ss << std::setfill('0') << std::setw(width);
+	ss << std::hex << c;
+	return ss.str();
+}
+//
 
-	mnemonics[0x10] = "jmp";
-	mnemonics[0x11] = "jz";
-	mnemonics[0x12] = "jnz";		// no flags, just stack
-	mnemonics[0x13] = "call";
-	mnemonics[0x15] = "ret";
-	mnemonics[0x16] = "end";
-	mnemonics[0x20] = "assign";
-	mnemonics[0x22] = "calc";
-	mnemonics[0x30] = "call";
-	//mnemonics[0x32]
-	
-	return mnemonics;
+Instruction::Instruction(Parser *parser, unsigned char opcode_) {
+	address = parser->instAddress;
+	opcode = opcode_;
 }
 
-static StringList s_mnemonics = populateMnemonics();
+bool Instruction::expandGlobalVars = true;
+bool Instruction::expandCommandNames = true;
+void Instruction::print(Parser*, std::ofstream &stream) const {
+	stream << toHex(address, width) << "\t[" << toHex(opcode, 2) << "]\n";
+}
+
+unsigned char Instruction::width = 6;
+void Instruction::setWidth(unsigned int address) {
+	unsigned char w = 1;
+	while (address > 0) {
+		address /= 0x10;
+		w++;
+	}
+	// Round down to even (up from actual)
+	w = (w / 2) * 2;
+}
 
 
+class InstLine: public Instruction {
+	unsigned int line;
+	public:
+		InstLine(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
+			line = parser->getInt();
+		}
+		void print(Parser*, std::ofstream &stream) const {
+			stream << toHex(address, width) << "\tline " << std::to_string(line) << "\n";
+		}
+};
+class InstPush: public Instruction {
+	unsigned int type, value;
+	public:
+		InstPush(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
+			type = parser->getInt();
+			value = parser->getInt();
+		}
+		void print(Parser* parser, std::ofstream &stream) const {
+			unsigned char valType = value >> 24;
+			unsigned int index = value & 0x00FFFFFF;
+
+			if (valType == 0x7e && expandCommandNames) {
+				std::string cmdName;
+
+				try {
+					cmdName = parser->sceneInfo.commands.at(index).name;
+				} catch (std::out_of_range &e) {
+					cmdName = "command" + std::to_string(index);
+				}
+
+				stream << toHex(address, width) << "\tpush " << cmdName << ":<command>\n";
+			} else if (valType == 0x7f && expandGlobalVars) {
+				std::string varName;
+				try {
+					varName = parser->sceneInfo.globalVars.at(index).name;
+				} catch (std::out_of_range &e) {
+					varName = "var" + std::to_string(index);
+				}
+
+				stream << toHex(address, width) << "\tpush " << varName << ":<0x" << toHex(type) << ">\n";
+			} else {
+				stream << toHex(address, width) << "\tpush " << std::to_string(value) << ":<0x" << toHex(type) << ">\n";
+			}
+		}
+};
+class InstPop: public Instruction {
+	unsigned int type;
+	public:
+		InstPop(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
+			type = parser->getInt();
+		}
+		void print(Parser*, std::ofstream &stream) const {
+			stream << toHex(address, width) << "\tpop <0x" << toHex(type) << ">\n";
+		}
+};
+class InstSentinel: public Instruction {
+	public:
+		InstSentinel(Parser* parser, unsigned char opcode) : Instruction(parser, opcode) {
+		}
+};
+class InstReturn: public Instruction {
+	std::vector<unsigned int> returnTypeList;
+	public:
+		InstReturn(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
+			parser->readArgs(returnTypeList);
+		}
+		void print(Parser*, std::ofstream &stream) const {
+			if (returnTypeList.empty()) {
+				stream << toHex(address, width) << "\treturn\n";
+			} else {
+				stream << toHex(address, width) << "\treturn (";
+				for (auto it = returnTypeList.rbegin(); it != returnTypeList.rend(); it++) {
+					if (it != returnTypeList.rbegin())
+						stream << ", ";
+					stream << "0x" << toHex(*it);
+				}
+				stream << ")\n";
+			}
+		}
+};
+class InstEndScript: public Instruction {
+	public:
+		InstEndScript(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
+
+		}
+		void print(Parser*, std::ofstream &stream) const {
+			stream << toHex(address, width) << "\tendscript\n";
+		}
+
+};
+class InstAssign: public Instruction {
+	unsigned int LHSType, RHSType;
+	unsigned int unknown;
+	public:
+		InstAssign(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
+			opcode = 0x20;
+			LHSType = parser->getInt();
+			RHSType = parser->getInt();
+			unknown = parser->getInt();
+		}
+		void print(Parser*, std::ofstream &stream) const {
+			stream << toHex(address, width) << "\tassign <0x" << toHex(LHSType) << "> <0x" << toHex(RHSType) << "> " << std::to_string(unknown) << std::endl;
+		}
+};
+class InstCall: public Instruction {
+
+	unsigned int fnOption;
+	std::vector<unsigned int> paramTypes, extraTypes;
+	unsigned int returnType;
+	public:
+		InstCall(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
+			fnOption = parser->getInt();
+
+			parser->readArgs(paramTypes);
+			parser->readArgs(extraTypes);
+
+			returnType = parser->getInt();
+		}
+		void print(Parser*, std::ofstream &stream) const {
+			stream << toHex(address, width) << "\tcall " << std::to_string(fnOption) << " (";
+			for (auto it = paramTypes.rbegin(); it != paramTypes.rend(); it++) {
+				if (it != paramTypes.rbegin())
+					stream << ", ";
+				stream << "0x" << toHex(*it);
+			}
+			if (!extraTypes.empty()) {
+				stream << ") ((";
+				for (auto it = extraTypes.rbegin(); it != extraTypes.rend(); it++) {
+					if (it != extraTypes.rbegin())
+						stream << ", ";
+					stream << "0x" << toHex(*it);
+				}
+				stream << ")) => <0x";
+			} else {
+				stream << ") => <0x";
+			}
+			stream << toHex(returnType) << ">\n";
+		}
+};
+
+
+/*
 void BytecodeParser::printLabels(std::vector<Label>::iterator &pLabel, std::vector<Label>::iterator end, const char* type) {
 	Label label;
 	while (pLabel != end) {
@@ -67,7 +205,7 @@ void BytecodeParser::printLabels(std::vector<Label>::iterator &pLabel, std::vect
 		}
 	}
 }
-
+*/
 /*
 void instDo05Thing(ProgInfo& progInfo) {
 	if (progInfo.stackPointers.size() > 1) {
@@ -106,7 +244,7 @@ void instDo15Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
 	}
 	fprintf(f, ")");
 } */
-
+/*
 unsigned int BytecodeParser::parseFunction(const Label &function, ProgStack &localVars) {
 	if (function.offset >= dataLength)
 		throw std::out_of_range("Function offset out of range.");
@@ -197,12 +335,34 @@ unsigned int BytecodeParser::parseFunction(const Label &function, ProgStack &loc
 	}
 
 	return numParams;
-}
+}*/
 
 
 void BytecodeParser::parseBytecode() {
+	unsigned int opcode;
+	while (!buf->done()) {
+		instAddress = buf->getAddress();
+		opcode = getChar();
+
+		switch (opcode) {
+			case 0x01: instructions.push_back(new InstLine(this, opcode));		break;
+			case 0x02: instructions.push_back(new InstPush(this, opcode));		break;
+			case 0x03: instructions.push_back(new InstPop(this, opcode));		break;
+			case 0x08: instructions.push_back(new InstSentinel(this, opcode));	break;
+			case 0x15: instructions.push_back(new InstReturn(this, opcode));	break;
+			case 0x16: instructions.push_back(new InstEndScript(this, opcode));	break;
+			case 0x20: instructions.push_back(new InstAssign(this, opcode));	break;
+			case 0x30: instructions.push_back(new InstCall(this, opcode));		break;
+			default:	
+				Logger::Log(Logger::ERROR) << "Error: Unknown instruction " << toHex(opcode) << " at address 0x" << toHex(instAddress) << std::endl;
+		}
+
+	}
+
+	Instruction::setWidth(instAddress);
+
 	// Get functions defined in this file
-	std::vector<Label> localCommands;
+	/*std::vector<Label> localCommands;
 	auto predCommandFile = [this](ScriptCommand c) {
 		return c.file == sceneInfo.thisFile;
 	};
@@ -222,9 +382,6 @@ void BytecodeParser::parseBytecode() {
 	ProgramInfo progInfo;
 	
 	while (currAddress < dataLength) {
-		// Get address before incrementing
-		progInfo.address = currAddress
-		progInfo.opcode = getChar();
 		progInfo.numInsts++;
 
 		// Print labels and commands
@@ -236,11 +393,9 @@ void BytecodeParser::parseBytecode() {
 		fprintf(f, "%#06x>\t%02x| %s ", progInfo.address, progInfo.opcode, s_mnemonics[progInfo.opcode].c_str());
 		
 		switch (progInfo.opcode) {
-			case 0x02: instPush();		break;
 			case 0x03: instPop();		break;
 			case 0x04: instDup();		break;
 
-			case 0x01:
 			case 0x10:
 			case 0x11:
 			case 0x12:
@@ -254,7 +409,6 @@ void BytecodeParser::parseBytecode() {
 			
 			case 0x16:	Logger::Log(Logger::INFO, progInfo.address) << "End of script reached.\n";	break;
 			case 0x07:	instDo07Thing(f, buf, sceneInfo, progInfo);		break;
-			case 0x08:	instDo08Thing(progInfo);						break;
 
 			case 0x13:	instDo13Thing(f, buf, progInfo);		break;
 			
@@ -287,33 +441,55 @@ void BytecodeParser::parseBytecode() {
 	Logger::Log(Logger::INFO) << "Parsed " << progInfo.numInsts << " instructions.\n";
 	if (progInfo.numNops > 0) {
 		Logger::Log(Logger::WARN) << "Warning: " << progInfo.numNops << " NOP instructions skipped.\n";
+	} */
+}
+
+void BytecodeParser::printInstructions(std::string filename) {
+	std::ofstream out(filename);
+
+	for (const auto &inst:instructions) {
+		inst->print(this, out);
+	}
+
+	out.close();
+}
+
+
+BytecodeParser::BytecodeParser(std::ifstream &f, HeaderPair index, SceneInfo info) {
+	f.seekg(index.offset, std::ios_base::beg);
+	buf = new BytecodeBuffer(f, index.count);
+
+	sceneInfo = info;
+}
+
+BytecodeParser::~BytecodeParser() {
+	delete buf;
+
+	for (auto &inst:instructions) {
+		delete inst;
 	}
 }
 
-BytecodeParser::BytecodeParser(std::ifstream &f, HeaderPair index, SceneInfo info, std::string filename) {
-	f.seekg(index.offset, std::ios_base::beg);
-	
-	dataLength = index.count;
+// Bytecode buffer
+// Handles instruction address and getting values
+
+BytecodeBuffer::BytecodeBuffer(std::ifstream &f, unsigned int length) {
+	dataLength = length;
 	bytecode = new unsigned char[dataLength];
-	
+
 	f.read((char*) bytecode, dataLength);
 	if (f.fail()) {
 		Logger::Log(Logger::ERROR) << "Tried to read " << dataLength << " bytes, got" << f.gcount() << std::endl;
 		throw std::exception();
 	}
 	Logger::Log(Logger::DEBUG) << "Read " << f.gcount() << " bytes of bytecode." << std::endl;
-
-	sceneInfo = info;
-
-	f = fopen(filename.c_str(), "wb");
 }
 
-BytecodeParser::~BytecodeParser() {
+BytecodeBuffer::~BytecodeBuffer(){
 	delete[] bytecode;
-	fclose(f);
 }
 
-unsigned int BytecodeParser::getInt() {
+unsigned int BytecodeBuffer::getInt() {
 	unsigned int value = 0;
 	if (currAddress + 4 <= dataLength) {
 		value = readUInt32(bytecode + currAddress);
@@ -323,7 +499,7 @@ unsigned int BytecodeParser::getInt() {
 	}
 	return value;
 }
-unsigned char BytecodeParser::getChar() {
+unsigned char BytecodeBuffer::getChar() {
 	unsigned char value = 0;
 	if (currAddress < dataLength) {
 		value = bytecode[currAddress++];
@@ -333,12 +509,31 @@ unsigned char BytecodeParser::getChar() {
 	return value;
 }
 
-// **************************
-// Handle instructions
-// **************************
+unsigned int BytecodeParser::readArgs(std::vector<unsigned int> &typeList) {
+	unsigned int numArgs = getInt();
+	unsigned int argType = 0;
+
+	for (unsigned int counter = 0; counter < numArgs; counter++) {
+		argType = getInt();
+		typeList.push_back(argType);
+
+		if (argType == 0xffffffff) {
+			unsigned int arrLength = getInt();
+			typeList.push_back(arrLength);
+
+			unsigned int arrType = 0;
+			for (unsigned int index = 0; index < arrLength; index++) {
+				arrType = getInt();
+				typeList.push_back(arrType);
+			}
+		}
+	}
+
+	return numArgs;
+} 
 
 
-// Safe
+/*
 void BytecodeParser::instPush() {
 	unsigned int type = getInt();
 	unsigned int value = getInt();
@@ -682,7 +877,7 @@ void BytecodeParser::instJump(bool ifZero) {
 	outputString += "\tif("+ std::string(ifZero ? "!" : "") + condition.name + ")\n";
 	outputString += "\t\tgoto 0x" + stream.str();
 
-	/*auto labelIt = std::find_if(sceneInfo.labels.begin(), sceneInfo.labels.end(), [labelIndex](Label l) {
+	auto labelIt = std::find_if(sceneInfo.labels.begin(), sceneInfo.labels.end(), [labelIndex](Label l) {
 		return l.index == labelIndex;
 	});
 
@@ -691,106 +886,11 @@ void BytecodeParser::instJump(bool ifZero) {
 		throw std::logic_error("Could not find label");
 	}
 
-	currAddress = labelIt->offset;*/
+	currAddress = labelIt->offset;
 }
+*/
 
-
-unsigned int BytecodeParser::readArgs(ProgStack &args) {
-	unsigned int numArgs = getInt();
-	unsigned int argType = 0, stackCount = 0;
-	StackValue var;
-
-	for (unsigned int counter = 0; counter < numArgs; counter++) {
-		if (stack.empty())
-			throw std::logic_error("Reading args off empty stack.");
-
-		argType = getInt();
-
-		if (argType == STACK_NUM || argType == STACK_STR) {
-			var = stack.back();
-			stack.pop_back();
-			if (var.type != argType) {
-				Logger::Log(Logger::ERROR) << "Wrong type.\n";
-			}
-			args.push_back(var);
-		}
-		/*} else if (arg == 0x0e) {
-			if (!progInfo.stack.empty()) {
-				var = progInfo.stack.back();
-				progInfo.stack.pop_back();
-				// TODO: handle this type
-				
-				if (var.value >> 24 != 0x7f) {
-					Logger::Log(Logger::DEBUG, progInfo.address) << " Type 0xe: " << std::hex << var.value << std::endl;
-				}	
-				if (progInfo.stackPointers.back() > progInfo.stack.size()) {
-					Logger::Log(Logger::WARN, progInfo.address) << " Popped past frame.\n";
-				}
-			}
-		} */
-		// Unsafe
-		else if (argType == STACK_OBJ) {
-			std::string name = "DATA";
-			var = stack.back();
-			if (var.type == argType) {
-				stack.pop_back();
-				args.push_back(var);
-			} else if (var.type == STACK_NUM) {
-				// index
-				StackValue arr;
-				do {
-					if (stack.size() < 3)
-						throw std::logic_error("Not enough values in stack to do index.");
-
-					var = stack.back();
-					stack.pop_back();
-					if (stack.back().value != 0xFFFFFFFF)
-						throw std::logic_error(std::to_string(currAddress) + ": Expected 0xFFFFFFFF");
-					stack.pop_back();
-					arr = stack.back();
-					stack.pop_back();
-					
-					name += "_"+arr.name+"["+var.name+"]";
-				} while (arr.value != 0x02);
-
-				if (stack.empty())
-					throw std::logic_error("Reading args off empty stack.");
-
-
-				var = stack.back();
-				stack.pop_back();
-				popFrame();
-
-				name += "_" + var.name;
-
-				args.push_back(StackValue(0xDEADFACE, STACK_OBJ));
-				args.back().name = name;
-			} else {
-				throw std::logic_error("Expected either numerical or object.");
-			}
-		} else if (argType == 0xffffffff) {
-			stackCount = getInt();
-			if (stack.size() < stackCount)
-				throw std::logic_error("Not enough arguments to pop");
-			unsigned int arrType = 0;
-			for (unsigned int counter2 = 0; counter2 < stackCount; counter2++) {
-				arrType = getInt(); // and check its the same
-				stack.pop_back();
-			}
-
-			args.push_back(StackValue(0xDEADBEEF, arrType+1));
-			args.back().length = stackCount;
-		} else {
-			Logger::Log(Logger::INFO) << "Popping type " << argType << std::endl;
-			if (!stack.empty())
-				stack.pop_back();
-			args.push_back(StackValue(0xDEADBEEF, STACK_VOID));
-		}
-	}
-
-	return numArgs;
-}
-
+/*
 void BytecodeParser::popFrame() {
 	if (stack.empty())
 		throw std::out_of_range(std::to_string(currAddress) + ": Popping empty stack - expected [08]");
@@ -799,5 +899,5 @@ void BytecodeParser::popFrame() {
 		throw std::logic_error("Expected [08], got " + std::to_string(stack.back().value));
 
 	stack.pop_back();
-}
+} */
 
