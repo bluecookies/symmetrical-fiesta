@@ -40,8 +40,8 @@ void readScriptHeader(std::ifstream &f, ScriptHeader &header) {
 	
 	readHeaderPair(f, header.localCommandIndex);    
 	readHeaderPair(f, header.unknown1);
-	readHeaderPair(f, header.localVarIndex);    
-	readHeaderPair(f, header.localVars);
+	readHeaderPair(f, header.staticVarIndex);    
+	readHeaderPair(f, header.staticVars);
 	
 	readHeaderPair(f, header.functions);
 	readHeaderPair(f, header.functionNameIndex);
@@ -78,7 +78,7 @@ void readGlobalInfo(SceneInfo &info, std::string filename, int fileIndex, const 
 		Logger::Log(Logger::ERROR) << "Could not open global scene info.\n";
 	} else {
 		std::string name;
-		unsigned int count, temp;
+		unsigned int count;
 		
 		// Scene names
 		info.thisFile = fileIndex;
@@ -99,15 +99,17 @@ void readGlobalInfo(SceneInfo &info, std::string filename, int fileIndex, const 
 		}
 		
 		// Vars
+		// TODO: fix notation, so global/local refers to scope, find another name for where its defined
 		globalInfoFile.read((char*) &count, 4);
 		info.numGlobalVars = count;
-		info.varNames.reserve(count + header.localVarIndex.count);
+		info.globalVars.reserve(count + header.staticVarIndex.count);
+		StackValue var(0, 0);
 		for (unsigned int i = 0; i < count; i++) {
-			globalInfoFile.read((char*) &temp, 4);
-			globalInfoFile.read((char*) &temp, 4);
-			std::getline(globalInfoFile, name, '\0');
-			
-			info.varNames.push_back(name);
+			globalInfoFile.read((char*) &var.type, 4);
+			globalInfoFile.read((char*) &var.length, 4);
+			std::getline(globalInfoFile, var.name, '\0');
+
+			info.globalVars.push_back(var);
 		}
 
 		
@@ -124,6 +126,8 @@ void readGlobalInfo(SceneInfo &info, std::string filename, int fileIndex, const 
 			}
 			command.index = i;
 			std::getline(globalInfoFile, command.name, '\0');
+			if (command.name.empty())
+				command.name = "fun_" + std::to_string(i);
 			info.commands[i] = command;
 		}
 		Logger::Log(Logger::INFO) << "Read " << std::dec << std::to_string(count) << " global commands.\n";
@@ -148,10 +152,16 @@ void readSceneInfo(SceneInfo &info, std::ifstream &stream, const ScriptHeader &h
 		it->name = functionNames.at(it - info.functions.begin());
 	}
 	
-	// Read local vars
-	StringList localVars;
-	readStrings(stream, localVars, header.localVarIndex, header.localVars);
-	info.varNames.insert(info.varNames.end(), localVars.begin(), localVars.end());
+	// Read static vars
+	StringList staticVarNames;
+	readStrings(stream, staticVarNames, header.staticVarIndex, header.staticVars);
+	// TODO: try to get static var info
+	ProgStack staticVars;
+	for (auto varName : staticVarNames) {
+		staticVars.push_back(StackValue(0xDEADBEEF, 0xa));
+		staticVars.back().name = varName;
+	}
+	info.globalVars.insert(info.globalVars.end(), staticVars.begin(), staticVars.end());
 		
 	// Read local commands
 	ScriptCommand command;
@@ -248,17 +258,17 @@ int main(int argc, char* argv[]) {
 	
 	
 	readStrings(fileStream, sceneInfo.mainStrings, header.stringIndex, header.stringData, true);
-	readStrings(fileStream, sceneInfo.varStrings, header.varStringIndex, header.varStringData);
+	readStrings(fileStream, sceneInfo.localVarNames, header.varStringIndex, header.varStringData);
 	
 	
 	Logger::Log(Logger::VERBOSE_DEBUG) << sceneInfo.mainStrings;
-	Logger::Log(Logger::VERBOSE_DEBUG) << sceneInfo.varStrings;
+	Logger::Log(Logger::VERBOSE_DEBUG) << sceneInfo.localVarNames;
 	
-	BytecodeBuffer bytecode(fileStream, header.bytecode);
-	//fileStream.close();
+	BytecodeParser parser(fileStream, header.bytecode, sceneInfo, outFilename);
+	fileStream.close();
 	
 	try {
-		parseBytecode(bytecode, outFilename, sceneInfo);
+		parser.parseBytecode();
 	} catch (std::out_of_range &e) {
 		std::cerr << e.what() << std::endl;
 	}
