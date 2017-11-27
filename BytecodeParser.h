@@ -74,12 +74,12 @@ class StackValue {
 		}
 
 		StackValue(unsigned int val_, unsigned int type_) : value(val_), type(type_) {
-			if (type == STACK_NUM) {
-				name = std::to_string(value);
-			} else {
+			//if (type == STACK_NUM) {
+			//	name = std::to_string(value);
+			//} else {
 				// int for intermediate even though its not
 				name = "int" + std::to_string(value);
-			}
+			//}
 		};
 
 		StackValue(unsigned int type_, std::string name_) : type(type_), name(name_) {

@@ -111,6 +111,9 @@ namespace Logger {
 	inline std::ostream& Error(unsigned int address = 0) {
 		return Log(ERROR, address);
 	}
+	inline std::ostream& Warn(unsigned int address = 0) {
+		return Log(WARN, address);
+	}
 
 
 	// Yes, yes, verbosity and level are different

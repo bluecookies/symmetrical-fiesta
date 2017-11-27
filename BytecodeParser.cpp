@@ -104,56 +104,71 @@ class InstLine: public Instruction {
 };
 class InstPush: public Instruction {
 	unsigned int type, value;
+	std::string name;
 	public:
 		InstPush(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
 			type = parser->getInt();
 			value = parser->getInt();
 			parser->stack.push_back(StackValue(value, type));
-		}
-		void print(Parser* parser, std::ofstream &stream) const {
+			
 			if (type == 0xa) {
 				unsigned char valType = value >> 24;
 				unsigned int index = value & 0x00FFFFFF;
+
 				if (valType == 0x7e && expandCommandNames) {
-					std::string cmdName;
-
 					try {
-						cmdName = parser->sceneInfo.commands.at(index).name;
+						name = parser->sceneInfo.commands.at(index).name;
 					} catch (std::out_of_range &e) {
-						cmdName = "command" + std::to_string(index);
+						name = "command" + std::to_string(index);
 					}
-
-					stream << toHex(address, width) << "\tpush " << cmdName << ":command\n";
 				} else if (valType == 0x7f && expandGlobalVars) {
-					std::string varName;
 					try {
-						varName = parser->sceneInfo.globalVars.at(index).name;
+						name = parser->sceneInfo.globalVars.at(index).name;
 					} catch (std::out_of_range &e) {
-						varName = "var" + std::to_string(index);
+						name = "var" + std::to_string(index);
 					}
-
-					stream << toHex(address, width) << "\tpush " << varName << ":variable\n";
 				} else {
-					stream << toHex(address, width) << "\tpush 0x" << toHex(value);
-					if (expandStrings)
-						stream << "\n";
-					else 
-						stream << ":int\n";
+					name = "0x" + toHex(value);
 				}
 			} else if (type == 0x14) {
 				if (expandStrings) {
-					std::string stringName;
 					try {
-						stringName = parser->sceneInfo.mainStrings.at(value);
+						name = parser->sceneInfo.mainStrings.at(value);
 					} catch (std::out_of_range &e) {
-						stringName = "string" + std::to_string(value);
+						name = "string" + std::to_string(value);
 					}
-					stream << toHex(address, width) << "\tpush \"" << stringName << "\"\n";
 				} else {
-					stream << toHex(address, width) << "\tpush [" << std::to_string(value) << "]:str\n";
+					name = std::to_string(value);
 				}
 			} else {
-				stream << toHex(address, width) << "\tpush 0x" << toHex(value) << ":" << VarType(type) << "\n";
+				name = "0x" + toHex(value) + ":" + VarType(type);
+			}
+
+			parser->stack.back().name = name;
+		}
+		void print(Parser*, std::ofstream &stream) const {
+			if (type == 0xa) {
+				stream << toHex(address, width) << "\tpush " << name;
+
+				unsigned char valType = value >> 24;
+
+				if (valType == 0x7e) {
+					stream << ":command\n";
+				} else if (valType == 0x7f) {
+					stream << ":variable\n";
+				} else if (expandStrings) {
+					stream << "\n";
+				} else {
+					stream << ":int\n";
+				}
+			} else if (type == 0x14) {
+				if (expandStrings) {
+					stream << toHex(address, width) << "\tpush \"" << name << "\"\n";
+				} else {
+					stream << toHex(address, width) << "\tpush [" << name << "]:str\n";
+				}
+			} else {
+				stream << toHex(address, width) << "\tpush " << name << "\n";
 				Logger::Log(Logger::INFO) << "Pushing 0x" << toHex(value) << " of type 0x" << toHex(type) << "\n";
 			}
 		}
@@ -217,10 +232,21 @@ class InstEval: public Instruction {
 				next = sp+1;
 
 				if (hasIndex) {
-					val.type = 0xa;	//TODO: look it up depending on what it is
+					if (curr->value >> 24 == 0x7f) {
+						unsigned int varIndex = curr->value & 0x00FFFFFF;
+						try {
+							val.type = parser->sceneInfo.globalVars.at(varIndex).type - 1;
+							//add name here?
+						} catch (std::out_of_range &e) {
+							std::cerr << "Exception " << e.what() << std::endl;
+							val.type = 0xa;
+						}
+					} else {
+						val.type = 0xa;
+					}
 					val.name = curr->name + "[" + index.name + "]";
 					hasIndex = false;
-				} else {
+				} else if (val.type == STACK_VOID) {
 					val = *curr;
 				}
 
@@ -238,6 +264,12 @@ class InstEval: public Instruction {
 					}
 					hasIndex = true;
 					index = val;
+					
+					sp++;
+					parser->stack.pop_back();
+					sp++;
+					parser->stack.pop_back();
+					continue;
 				}
 				
 
@@ -406,18 +438,18 @@ class InstCalc : public Instruction {
 			}
 
 			if (LHSType != RHSType) {
-				Logger::Log(Logger::WARN) << "0x" << toHex(address) << "Comparing type " << VarType(LHSType) << " to " << VarType(RHSType); 
-				Logger::Log(Logger::WARN) << " with operation " << toHex(operation, 2) << std::endl;
+				Logger::Warn(address) << "Comparing type " << VarType(LHSType) << " to " << VarType(RHSType) << " with operation " << toHex(operation, 2) << std::endl;
 				return;
 			}
 			StackValue val2 = parser->stack.back(); parser->stack.pop_back();
 			StackValue val1 = parser->stack.back(); parser->stack.pop_back();
 			if (val1.type != LHSType) {
-				Logger::Error(address) << "Expected type " << VarType(LHSType) << "; got " << val1.type << std::endl;
+				Logger::Error(address) << "Expected type " << VarType(LHSType) << " for var1; got " << VarType(val1.type) << " ("+val1.name+")" << std::endl;
 			}
 			if (val2.type != RHSType) {
-				Logger::Error(address) << "Expected type " << VarType(RHSType) << "; got " << val2.type << std::endl;
+				Logger::Error(address) << "Expected type " << VarType(RHSType) << " for var2; got " << VarType(val2.type) << " ("+val2.name+")" << std::endl;
 			}
+			// todo - get right ttype for equality
 			StackValue val(LHSType, val1.name + " <op" + std::to_string(operation) + "> " + val2.name);
 
 			parser->stack.push_back(val);
@@ -451,6 +483,8 @@ class InstCalc : public Instruction {
 };
 // TODO: add the popping of the return
 class InstCall: public Instruction {
+	unsigned int fnCall = 0;
+	unsigned int fnExtra = 0;
 
 	unsigned int fnOption;
 	std::vector<unsigned int> paramTypes, extraTypes;
@@ -469,8 +503,23 @@ class InstCall: public Instruction {
 				StackGetArg(parser->stack, type, address);
 			}
 
-			// Determine if an extra term is needed
+			// Read function to call (temp) TODO
+			while (!parser->stack.empty()) {
+				if (parser->stack.back().endFrame())
+					break;
 
+				fnCall = parser->stack.back().value;
+				parser->stack.pop_back();
+			}
+			if (parser->stack.empty()) {
+				Logger::Error(address) << "Empty stack when getting function.\n";
+			} else {
+				parser->stack.pop_back();
+			}
+
+			// Determine if an extra term is needed
+			if (fnCall == 0x12)
+				fnExtra = parser->getInt();
 
 			// Push return value
 			parser->stack.push_back(StackValue(returnType, std::string("function(") + "args go here" + ")"));
@@ -500,21 +549,49 @@ class InstCall: public Instruction {
 // Appends line
 class InstSetLine: public Instruction {
 	unsigned int count = 0;
+	std::string text;
 	public:
 		InstSetLine(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
 			count = parser->getInt();
+			if (parser->stack.empty()) {
+				Logger::Error(address) << "Stack empty - append line.\n";
+				return;
+			}
+			if (parser->stack.back().type != STACK_STR) {
+				Logger::Error(address) << "Appending non-string to text.\n";
+				return;
+			}
+			text = parser->stack.back().name;
+			parser->stack.pop_back();
 		}
 		void print(Parser*, std::ofstream &stream) const {
-			stream << toHex(address, width) << "\taddtext 0x" << toHex(count) << "\n";
+			stream << toHex(address, width) << "\taddtext 0x" << toHex(count);
+			if (!text.empty())
+				stream << "\t;" << text;
+			stream << "\n";
 		}
 };
 // Sets name
 class InstSetName: public Instruction {
+	std::string name;
 	public:
 		InstSetName(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
+			if (parser->stack.empty()) {
+				Logger::Error(address) << "Stack empty - set name.\n";
+				return;
+			}
+			if (parser->stack.back().type != STACK_STR) {
+				Logger::Error(address) << "Cannot set type " << VarType(parser->stack.back().type) << " as name.\n";
+				return;
+			}
+			name = parser->stack.back().name;
+			parser->stack.pop_back();
 		}
 		void print(Parser*, std::ofstream &stream) const {
-			stream << toHex(address, width) << "\tsetname\n";
+			stream << toHex(address, width) << "\tsetname";
+			if (!name.empty())
+				stream << "\t;" << name;
+			stream << "\n";
 		}
 };
 
