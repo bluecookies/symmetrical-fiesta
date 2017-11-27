@@ -24,6 +24,19 @@ std::string toHex(unsigned int c, unsigned char width = 0) {
 	ss << std::hex << c;
 	return ss.str();
 }
+
+inline std::string VarType(unsigned int type) {
+	switch (type) {
+		case 0x00: return std::string("void");
+		case 0x0a: return std::string("int");
+		case 0x0b: return std::string("intlist");
+		case 0x14: return std::string("str");
+		case 0x15: return std::string("strlist");
+		case 0x51e: return std::string("obj");	//unsure
+		default:
+			return "<" + toHex(type, 2) + ">";
+	}
+}
 //
 
 Instruction::Instruction(Parser *parser, unsigned char opcode_) {
@@ -49,7 +62,14 @@ void Instruction::setWidth(unsigned int address) {
 	w = (w / 2) * 2;
 }
 
-
+class InstNOP: public Instruction {
+	public:
+		InstNOP(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
+		}
+		void print(Parser*, std::ofstream &stream) const {
+			stream << toHex(address, width) << "\tnop (" << toHex(opcode, 2) << ")\n";
+		}
+};
 class InstLine: public Instruction {
 	unsigned int line;
 	public:
@@ -68,38 +88,50 @@ class InstPush: public Instruction {
 			value = parser->getInt();
 		}
 		void print(Parser* parser, std::ofstream &stream) const {
-			unsigned char valType = value >> 24;
-			unsigned int index = value & 0x00FFFFFF;
+			if (type == 0xa) {
+				unsigned char valType = value >> 24;
+				unsigned int index = value & 0x00FFFFFF;
+				if (valType == 0x7e && expandCommandNames) {
+					std::string cmdName;
 
-			if (type == 0xa && valType == 0x7e && expandCommandNames) {
-				std::string cmdName;
+					try {
+						cmdName = parser->sceneInfo.commands.at(index).name;
+					} catch (std::out_of_range &e) {
+						cmdName = "command" + std::to_string(index);
+					}
 
-				try {
-					cmdName = parser->sceneInfo.commands.at(index).name;
-				} catch (std::out_of_range &e) {
-					cmdName = "command" + std::to_string(index);
+					stream << toHex(address, width) << "\tpush " << cmdName << ":command>\n";
+				} else if (valType == 0x7f && expandGlobalVars) {
+					std::string varName;
+					try {
+						varName = parser->sceneInfo.globalVars.at(index).name;
+					} catch (std::out_of_range &e) {
+						varName = "var" + std::to_string(index);
+					}
+
+					stream << toHex(address, width) << "\tpush " << varName << ":variable\n";
+				} else {
+					stream << toHex(address, width) << "\tpush 0x" << toHex(value);
+					if (expandStrings)
+						stream << "\n";
+					else 
+						stream << ":<int>\n";
 				}
-
-				stream << toHex(address, width) << "\tpush " << cmdName << ":<command>\n";
-			} else if (type == 0xa && valType == 0x7f && expandGlobalVars) {
-				std::string varName;
-				try {
-					varName = parser->sceneInfo.globalVars.at(index).name;
-				} catch (std::out_of_range &e) {
-					varName = "var" + std::to_string(index);
-				}
-
-				stream << toHex(address, width) << "\tpush " << varName << ":<0x" << toHex(type) << ">\n";
 			} else if (type == 0x14) {
-				std::string stringName;
-				try {
-					stringName = parser->sceneInfo.mainStrings.at(index);
-				} catch (std::out_of_range &e) {
-					stringName = "string" + std::to_string(index);
+				if (expandStrings) {
+					std::string stringName;
+					try {
+						stringName = parser->sceneInfo.mainStrings.at(value);
+					} catch (std::out_of_range &e) {
+						stringName = "string" + std::to_string(value);
+					}
+					stream << toHex(address, width) << "\tpush \"" << stringName << "\"\n";
+				} else {
+					stream << toHex(address, width) << "\tpush [" << std::to_string(value) << "]:str\n";
 				}
-				stream << toHex(address, width) << "\tpush \"" << stringName << "\"\n";
 			} else {
-				stream << toHex(address, width) << "\tpush " << std::to_string(value) << ":<0x" << toHex(type) << ">\n";
+				stream << toHex(address, width) << "\tpush 0x" << toHex(value) << ":" << VarType(type) << "\n";
+				Logger::Log(Logger::INFO) << "Pushing 0x" << toHex(value) << " of type 0x" << toHex(type) << "\n";
 			}
 		}
 };
@@ -110,12 +142,43 @@ class InstPop: public Instruction {
 			type = parser->getInt();
 		}
 		void print(Parser*, std::ofstream &stream) const {
-			stream << toHex(address, width) << "\tpop <0x" << toHex(type) << ">\n";
+			stream << toHex(address, width) << "\tpop " << VarType(type) << " \n";
 		}
+};
+class InstDup: public Instruction {
+	unsigned int type;
+	public:
+		InstDup(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
+			type = parser->getInt();
+		}
+		void print(Parser*, std::ofstream &stream) const {
+			stream << toHex(address, width) << "\tdup " << VarType(type) << "\n";
+		}
+};
+class InstEval: public Instruction {
+	public:
+		InstEval(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
+		}
+		void print(Parser*, std::ofstream &stream) const {
+			stream << toHex(address, width) << "\teval\n";
+		}
+};
+// Duplicate everything in current frame
+class InstRep: public Instruction {
+	public:
+		InstRep(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
+		}
+		void print(Parser*, std::ofstream &stream) const {
+			stream << toHex(address, width) << "\trep\n";
+		}
+
 };
 class InstSentinel: public Instruction {
 	public:
 		InstSentinel(Parser* parser, unsigned char opcode) : Instruction(parser, opcode) {
+		}
+		void print(Parser*, std::ofstream &stream) const {
+			stream << toHex(address, width) << "\tframe\n";
 		}
 };
 class InstReturn: public Instruction {
@@ -146,20 +209,58 @@ class InstEndScript: public Instruction {
 		void print(Parser*, std::ofstream &stream) const {
 			stream << toHex(address, width) << "\tendscript\n";
 		}
-
 };
 class InstAssign: public Instruction {
 	unsigned int LHSType, RHSType;
 	unsigned int unknown;
 	public:
 		InstAssign(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
-			opcode = 0x20;
 			LHSType = parser->getInt();
 			RHSType = parser->getInt();
 			unknown = parser->getInt();
 		}
 		void print(Parser*, std::ofstream &stream) const {
-			stream << toHex(address, width) << "\tassign <0x" << toHex(LHSType) << "> <0x" << toHex(RHSType) << "> " << std::to_string(unknown) << std::endl;
+			stream << toHex(address, width) << "\tassign " << VarType(LHSType) << " " << VarType(RHSType) << " " << std::to_string(unknown) << std::endl;
+		}
+};
+class InstCalc : public Instruction {
+	unsigned int LHSType, RHSType;
+	unsigned char operation;
+	public:
+		InstCalc(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
+			LHSType = parser->getInt();
+			RHSType = parser->getInt();
+			operation = parser->getChar();
+
+			if (LHSType != RHSType) {
+				Logger::Log(Logger::WARN) << "Comparing type " << VarType(LHSType) << " to " << VarType(RHSType); 
+				Logger::Log(Logger::WARN) << " with operation " << toHex(operation, 2) << std::endl;
+			}
+		}
+		void print(Parser*, std::ofstream &stream) const {
+			std::string op;
+			if (LHSType == 0xa && RHSType == 0xa) {
+				switch (operation) {
+					case  1: op = "add";	break;
+					case  2: op = "sub"; 	break;
+					case  3: op = "mult"; 	break;
+					case  4: op = "div"; 	break;
+					case 16: op = "neq"; 	break;
+					case 17: op = "lt"; 	break;
+					case 18: op = "leq"; 	break;
+					case 19: op = "gt";		break;
+					case 20: op = "geq";	break;
+					case 32: op = "and";	break;
+				}
+			} else if (LHSType == 0x14 && RHSType == 0x14) {
+				switch (operation) {
+					case  1: op = "concat";	break;
+				}
+			}
+			if (op.empty())
+				stream << toHex(address, width) << "\tcalc " << VarType(LHSType) << " " << VarType(RHSType) << " " << std::to_string(operation) << std::endl;
+			else
+				stream << toHex(address, width) << "\t" << op << "\n";
 		}
 };
 class InstCall: public Instruction {
@@ -190,11 +291,10 @@ class InstCall: public Instruction {
 						stream << ", ";
 					stream << "0x" << toHex(*it);
 				}
-				stream << ")) => <0x";
+				stream << ")) ⇒ " << VarType(returnType) << std::endl;
 			} else {
-				stream << ") => <0x";
+				stream << ") ⇒ " << VarType(returnType) << std::endl;
 			}
-			stream << toHex(returnType) << ">\n";
 		}
 };
 
@@ -336,17 +436,23 @@ void BytecodeParser::parseBytecode() {
 		instAddress = buf->getAddress();
 		opcode = getChar();
 
+		// Maybe move this logic into instruction class
 		switch (opcode) {
 			case 0x01: instructions.push_back(new InstLine(this, opcode));		break;
 			case 0x02: instructions.push_back(new InstPush(this, opcode));		break;
 			case 0x03: instructions.push_back(new InstPop(this, opcode));		break;
+			case 0x04: instructions.push_back(new InstDup(this, opcode));		break;
+			case 0x05: instructions.push_back(new InstEval(this, opcode));		break;
+			case 0x06: instructions.push_back(new InstRep(this, opcode));		break;
 			case 0x08: instructions.push_back(new InstSentinel(this, opcode));	break;
 			case 0x15: instructions.push_back(new InstReturn(this, opcode));	break;
 			case 0x16: instructions.push_back(new InstEndScript(this, opcode));	break;
 			case 0x20: instructions.push_back(new InstAssign(this, opcode));	break;
+			case 0x22: instructions.push_back(new InstCalc(this, opcode));		break;
 			case 0x30: instructions.push_back(new InstCall(this, opcode));		break;
 			default:	
 				Logger::Log(Logger::ERROR) << "Error: Unknown instruction " << toHex(opcode) << " at address 0x" << toHex(instAddress) << std::endl;
+				instructions.push_back(new InstNOP(this, opcode));
 		}
 
 	}
