@@ -48,25 +48,38 @@ struct Label {
 #define STACK_STR	0x14
 #define	STACK_OBJ	0x51e
 
-struct StackValue {
-	bool endFrame = false;
-	bool fnCall = false;
-	unsigned int value = 0xDEADBEEF;
-	unsigned int type = STACK_VOID;
-	std::string name;
+class StackValue {
+	bool isEndFrame = false;
+	StackValue() {}	
 
-	unsigned int length = 0;
+	public:
+		unsigned int value = 0xDEADBEEF;
+		unsigned int type = STACK_VOID;
+		unsigned int length = 0;
+		std::string name;
 
-	// TODO: name this properly
-	StackValue() {
-		endFrame = true;
-	};
-	StackValue(unsigned int val_, unsigned int type_) : value(val_), type(type_) {
-		if (type_ == STACK_NUM)
-			name = std::to_string(val_);
-		else
-			name = "no good";
-	};
+		static StackValue Sentinel() {
+			StackValue val = StackValue();
+			val.isEndFrame = true;
+			return val;
+		};
+
+		bool endFrame() {
+			return isEndFrame;
+		}
+
+		StackValue(unsigned int val_, unsigned int type_) : value(val_), type(type_) {
+			if (type == STACK_NUM) {
+				name = std::to_string(value);
+			} else {
+				// int for intermediate even though its not
+				name = "int" + std::to_string(value);
+			}
+		};
+
+		StackValue(unsigned int type_, std::string name_) : type(type_), name(name_) {
+
+		};
 };
 
 typedef std::vector<StackValue> ProgStack;
@@ -87,22 +100,6 @@ struct SceneInfo {
 	
 	std::vector<Label> labels, markers, functions;
 };
-
-typedef struct ProgramInfo {
-	// State info
-	ProgStack stack;
-	
-	// instruction info
-	unsigned char opcode = 0;
-	unsigned int address = 0;
-	ProgStack args;
-	std::string comment;
-	
-	// local info
-	unsigned int numInsts = 0;
-	unsigned int numNops = 0;
-} ProgInfo;
-
 
 class BytecodeBuffer {
 	private:
@@ -148,12 +145,11 @@ class BytecodeParser {
 	private:
 		BytecodeBuffer* buf;
 
-		ProgInfo progInfo;
-
 		std::vector<Instruction*> instructions;
 	public:
 		unsigned int instAddress = 0;
 		SceneInfo sceneInfo;
+		ProgStack stack;
 
 		unsigned int getInt() {
 			return buf->getInt();

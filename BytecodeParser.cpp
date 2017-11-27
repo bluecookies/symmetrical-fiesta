@@ -1,7 +1,6 @@
 // Parse the bytecode
 // A lot of this is stolen from tanuki
 // https://github.com/bitprime/vn_translation_tools/blob/master/rewrite/
-// also Inori
 
 #include <cstdio>
 #include <iostream>
@@ -30,13 +29,29 @@ inline std::string VarType(unsigned int type) {
 		case 0x00: return std::string("void");
 		case 0x0a: return std::string("int");
 		case 0x0b: return std::string("intlist");
+		case 0x0d: return std::string("intref");
 		case 0x14: return std::string("str");
 		case 0x15: return std::string("strlist");
+		case 0x17: return std::string("strref");
 		case 0x51e: return std::string("obj");	//unsure
 		default:
-			return "<" + toHex(type, 2) + ">";
+			return "<0x" + toHex(type) + ">";
 	}
 }
+
+void StackGetArg(ProgStack &stack, const unsigned int& type, unsigned int address) {
+	if (type == 0xa) {
+		if (stack.empty())
+			throw std::out_of_range("Popping arguments off an empty stack.");
+
+		if (stack.back().type != 0xa) {
+			Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": Cannot get argument of type int with type " << VarType(stack.back().type) << std::endl;
+			return;
+		}
+
+	}
+}
+
 //
 
 Instruction::Instruction(Parser *parser, unsigned char opcode_) {
@@ -86,6 +101,7 @@ class InstPush: public Instruction {
 		InstPush(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
 			type = parser->getInt();
 			value = parser->getInt();
+			parser->stack.push_back(StackValue(value, type));
 		}
 		void print(Parser* parser, std::ofstream &stream) const {
 			if (type == 0xa) {
@@ -100,7 +116,7 @@ class InstPush: public Instruction {
 						cmdName = "command" + std::to_string(index);
 					}
 
-					stream << toHex(address, width) << "\tpush " << cmdName << ":command>\n";
+					stream << toHex(address, width) << "\tpush " << cmdName << ":command\n";
 				} else if (valType == 0x7f && expandGlobalVars) {
 					std::string varName;
 					try {
@@ -115,7 +131,7 @@ class InstPush: public Instruction {
 					if (expandStrings)
 						stream << "\n";
 					else 
-						stream << ":<int>\n";
+						stream << ":int\n";
 				}
 			} else if (type == 0x14) {
 				if (expandStrings) {
@@ -140,6 +156,18 @@ class InstPop: public Instruction {
 	public:
 		InstPop(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
 			type = parser->getInt();
+			if (parser->stack.empty()) {
+				Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": Attempting to pop empty stack.\n";
+				return;
+			}
+			if (parser->stack.back().type != type) {
+				Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": Top of stack has type ";
+				Logger::Log(Logger::ERROR) << VarType(parser->stack.back().type) << "; popping " << VarType(type) << std::endl;
+				return;
+			}
+
+			parser->stack.pop_back();
+
 		}
 		void print(Parser*, std::ofstream &stream) const {
 			stream << toHex(address, width) << "\tpop " << VarType(type) << " \n";
@@ -150,11 +178,27 @@ class InstDup: public Instruction {
 	public:
 		InstDup(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
 			type = parser->getInt();
+
+			if (parser->stack.empty()) {
+				Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": Attempting to duplicate value off empty stack.\n";
+				return;
+			}
+			if (parser->stack.back().type != type) {
+				Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": Top of stack has type ";
+				Logger::Log(Logger::ERROR) << VarType(parser->stack.back().type) << "; duplicating " << VarType(type) << std::endl;
+				return;
+			}
+
+			parser->stack.push_back(parser->stack.back());
 		}
 		void print(Parser*, std::ofstream &stream) const {
 			stream << toHex(address, width) << "\tdup " << VarType(type) << "\n";
 		}
 };
+// TODO TODO: Handle stack for this
+// Dereferences a reference
+// Turns lvalue into rvalue
+// Not entirely sure how to interpret
 class InstEval: public Instruction {
 	public:
 		InstEval(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
@@ -167,18 +211,76 @@ class InstEval: public Instruction {
 class InstRep: public Instruction {
 	public:
 		InstRep(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
+			auto stackPointer = parser->stack.rbegin();
+			while (stackPointer != parser->stack.rend()) {
+				if (stackPointer->endFrame())
+					break;
+				stackPointer++;
+			}
+			if (stackPointer == parser->stack.rend()) {
+				Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": Beginning of frame not found!\n";
+				return;
+			}
+
+			auto stackEnd = parser->stack.end();
+
+			// stackPointer is not rend, so this is fine
+			parser->stack.insert(stackEnd, (stackPointer+1).base(), stackEnd);
 		}
 		void print(Parser*, std::ofstream &stream) const {
 			stream << toHex(address, width) << "\trep\n";
 		}
-
 };
 class InstSentinel: public Instruction {
 	public:
 		InstSentinel(Parser* parser, unsigned char opcode) : Instruction(parser, opcode) {
+			parser->stack.push_back(StackValue::Sentinel());
 		}
 		void print(Parser*, std::ofstream &stream) const {
 			stream << toHex(address, width) << "\tframe\n";
+		}
+};
+class InstJump: public Instruction {
+	bool conditional = false;
+	bool jumpIfZero = false;
+	unsigned int labelIndex = 0;
+	public:
+		InstJump(Parser* parser, unsigned char opcode) : Instruction(parser, opcode) {
+			if (opcode == 0x10) {
+				conditional = false;
+			} else if (opcode == 0x11) {
+				conditional = true;
+				jumpIfZero = true;
+			} else if (opcode == 0x12) {
+				conditional = true;
+				jumpIfZero = false;
+			} else {
+				throw std::logic_error("Unknown jump");
+			}
+
+			labelIndex = parser->getInt();
+
+			if (conditional) {
+				if (parser->stack.empty()) {
+					Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": No values in stack for conditional jump.\n";
+					return;
+				}
+				if (parser->stack.back().type != 0xa) {
+					Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": Conditional jump - stack top is not int.\n";
+					return;
+				}
+				// TODO: handle this maybe
+				parser->stack.pop_back();
+			}
+
+		}
+		void print(Parser*, std::ofstream &stream) const {
+			std::string mne("jump");
+			if (opcode == 0x10)	mne = "jmp";
+			else if (opcode == 0x11) mne = "jz";
+			else if (opcode == 0x12) mne = "jnz";
+
+			stream << toHex(address, width) << "\t" << mne << " 0x" << toHex(labelIndex) << "\n";
 		}
 };
 class InstReturn: public Instruction {
@@ -186,6 +288,8 @@ class InstReturn: public Instruction {
 	public:
 		InstReturn(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
 			parser->readArgs(returnTypeList);
+
+			parser->stack.clear();
 		}
 		void print(Parser*, std::ofstream &stream) const {
 			if (returnTypeList.empty()) {
@@ -210,6 +314,7 @@ class InstEndScript: public Instruction {
 			stream << toHex(address, width) << "\tendscript\n";
 		}
 };
+// TODO TODO: Handle stack for this
 class InstAssign: public Instruction {
 	unsigned int LHSType, RHSType;
 	unsigned int unknown;
@@ -223,6 +328,18 @@ class InstAssign: public Instruction {
 			stream << toHex(address, width) << "\tassign " << VarType(LHSType) << " " << VarType(RHSType) << " " << std::to_string(unknown) << std::endl;
 		}
 };
+class Inst21: public Instruction {
+	unsigned int unknown1;
+	unsigned char unknown2;
+	public:
+		Inst21(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
+			unknown1 = parser->getInt();
+			unknown2 = parser->getChar();
+		}
+		void print(Parser*, std::ofstream &stream) const {
+			stream << toHex(address, width) << "\t[21] 0x" << toHex(unknown1) << " 0x" << toHex(unknown2) << "\n";
+		}
+};
 class InstCalc : public Instruction {
 	unsigned int LHSType, RHSType;
 	unsigned char operation;
@@ -232,10 +349,28 @@ class InstCalc : public Instruction {
 			RHSType = parser->getInt();
 			operation = parser->getChar();
 
-			if (LHSType != RHSType) {
-				Logger::Log(Logger::WARN) << "Comparing type " << VarType(LHSType) << " to " << VarType(RHSType); 
-				Logger::Log(Logger::WARN) << " with operation " << toHex(operation, 2) << std::endl;
+			if (parser->stack.size() < 2) {
+				Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": Not enough values in stack to calculate.\n";
+				return;
 			}
+
+			if (LHSType != RHSType) {
+				Logger::Log(Logger::WARN) << "0x" << toHex(address) << "Comparing type " << VarType(LHSType) << " to " << VarType(RHSType); 
+				Logger::Log(Logger::WARN) << " with operation " << toHex(operation, 2) << std::endl;
+				return;
+			}
+			StackValue val2 = parser->stack.back(); parser->stack.pop_back();
+			StackValue val1 = parser->stack.back(); parser->stack.pop_back();
+			if (val1.type != LHSType) {
+				Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": Expected type " << VarType(LHSType) << "; got " << val1.type << std::endl;
+			}
+			if (val2.type != RHSType) {
+				Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": Expected type " << VarType(RHSType) << "; got " << val2.type << std::endl;
+			}
+			StackValue val(LHSType, val1.name + " <op" + std::to_string(operation) + "> " + val2.name);
+
+			parser->stack.push_back(val);
+
 		}
 		void print(Parser*, std::ofstream &stream) const {
 			std::string op;
@@ -260,9 +395,10 @@ class InstCalc : public Instruction {
 			if (op.empty())
 				stream << toHex(address, width) << "\tcalc " << VarType(LHSType) << " " << VarType(RHSType) << " " << std::to_string(operation) << std::endl;
 			else
-				stream << toHex(address, width) << "\t" << op << "\n";
+				stream << toHex(address, width) << "\tcalc " << op << "\n";
 		}
 };
+// TODO: add the popping of the return
 class InstCall: public Instruction {
 
 	unsigned int fnOption;
@@ -276,20 +412,30 @@ class InstCall: public Instruction {
 			parser->readArgs(extraTypes);
 
 			returnType = parser->getInt();
+
+			// Read args off stack
+			for (const auto &type:paramTypes) {
+				StackGetArg(parser->stack, type, address);
+			}
+
+			// Determine if an extra term is needed
+
+
+			// Push return value
 		}
 		void print(Parser*, std::ofstream &stream) const {
 			stream << toHex(address, width) << "\tcall " << std::to_string(fnOption) << " (";
 			for (auto it = paramTypes.rbegin(); it != paramTypes.rend(); it++) {
 				if (it != paramTypes.rbegin())
 					stream << ", ";
-				stream << "0x" << toHex(*it);
+				stream << VarType(*it);
 			}
 			if (!extraTypes.empty()) {
 				stream << ") ((";
 				for (auto it = extraTypes.rbegin(); it != extraTypes.rend(); it++) {
 					if (it != extraTypes.rbegin())
 						stream << ", ";
-					stream << "0x" << toHex(*it);
+					stream << VarType(*it);
 				}
 				stream << ")) ⇒ " << VarType(returnType) << std::endl;
 			} else {
@@ -298,136 +444,158 @@ class InstCall: public Instruction {
 		}
 };
 
+// TODO: add stack handle for these
+// Appends line
+class InstSetLine: public Instruction {
+	unsigned int count = 0;
+	public:
+		InstSetLine(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
+			count = parser->getInt();
+		}
+		void print(Parser*, std::ofstream &stream) const {
+			stream << toHex(address, width) << "\taddtext 0x" << toHex(count) << "\n";
+		}
+};
+// Sets name
+class InstSetName: public Instruction {
+	public:
+		InstSetName(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
+		}
+		void print(Parser*, std::ofstream &stream) const {
+			stream << toHex(address, width) << "\tsetname\n";
+		}
+};
+
 /*
-void instDo05Thing(ProgInfo& progInfo) {
-	if (progInfo.stackPointers.size() > 1) {
-		while (progInfo.stackPointers.back() < progInfo.stack.size()) {
-			if (!progInfo.stack.empty()) {
-				progInfo.stack.pop_back();
-			} else {
-				Logger::Log(Logger::ERROR, progInfo.address) << " Popping empty stack.\n";
+	void instDo05Thing(ProgInfo& progInfo) {
+		if (progInfo.stackPointers.size() > 1) {
+			while (progInfo.stackPointers.back() < progInfo.stack.size()) {
+				if (!progInfo.stack.empty()) {
+					progInfo.stack.pop_back();
+				} else {
+					Logger::Log(Logger::ERROR, progInfo.address) << " Popping empty stack.\n";
+				}
+			}
+		
+			progInfo.stackPointers.pop_back();
+			progInfo.stack.push_back(StackValue(0xDEADBEEF, STACK_NUM));
+		} else {
+			Logger::Log(Logger::ERROR, progInfo.address) << " Tried to pop base frame.\n";
+		}
+	}
+
+	void instDo13Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
+		fprintf(f, "%#x ", getInt());
+		unsigned int numArgs = readArgs(buf, progInfo);
+		fprintf(f, "(");
+		for (unsigned int i = 0; i < numArgs; i++) {
+			fprintf(f, "%#x,", progInfo.args.back());
+			progInfo.args.pop_back();
+		}
+		fprintf(f, ")");
+	}
+
+	void instDo15Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
+		unsigned int numArgs = readArgs(buf, progInfo);
+		fprintf(f, "(");
+		for (unsigned int i = 0; i < numArgs; i++) {
+			fprintf(f, "%#x,", progInfo.args.back());
+			progInfo.args.pop_back();
+		}
+		fprintf(f, ")");
+	} */
+	/*
+	unsigned int BytecodeParser::parseFunction(const Label &function, ProgStack &localVars) {
+		if (function.offset >= dataLength)
+			throw std::out_of_range("Function offset out of range.");
+
+		currAddress = function.offset;
+		bool argsDone = false, toReturn = false;
+
+		unsigned char opcode;
+
+		localVars.clear();
+		unsigned int numParams = 0;
+
+
+		stack.clear();
+		// Read instructions
+		while (!toReturn) {
+			opcode = getChar();
+
+			switch (opcode) {
+				case 0x03: instPop();		break;
+				case 0x04: instDup();		break;
+				// TODO: make safe
+				case 0x05: {
+					StackValue val;
+					val = stack.back();
+					stack.pop_back();
+					// Local variable
+					if (val.value >> 24 == 0x7d) {
+						StackValue unknown = stack.back();
+						// Throw happy
+						if (unknown.value != 0x53)
+							throw std::logic_error("Expected 0x53");
+						stack.pop_back();
+						
+						popFrame();
+
+						unsigned int varIndex = val.value & 0x00FFFFFF;
+						// Real exception
+						if (varIndex >= localVars.size())
+							throw std::out_of_range("Local var index out of range.");
+						
+						stack.push_back(localVars[varIndex]);
+
+					} else {
+						throw std::logic_error("Sorry, not handled yet.");
+					}
+				} break;
+				case 0x07: {
+					unsigned int type = getInt();
+					unsigned int nameIndex = getInt();
+					std::string name;
+					try {
+						name = sceneInfo.localVarNames.at(nameIndex);	
+					} catch (std::out_of_range &e) {
+						Logger::Log(Logger::WARN) << "Missing string id: " << nameIndex << std::endl;
+						name = "var" + std::to_string(localVars.size());
+					}
+
+					localVars.push_back(StackValue(0xDEADBEEF, type));
+					localVars.back().name = name;
+
+					if (argsDone) {
+						outputString += "var " + std::to_string(type) + " " + name + ";\n";
+					} else {
+						numParams++;
+					}
+
+				} break;
+				case 0x08: stack.push_back(StackValue());	break;
+				case 0x09: argsDone = true;					break;
+				case 0x10: instJump();		break;
+				case 0x11: instJump(true);	break;
+				case 0x12: instJump(false);	break;
+				// not true, need to consider other branches
+				case 0x15: {
+					toReturn = true;
+					outputString += "\treturn; \n";
+				} break;
+				case 0x20: instAssign();	break;
+				case 0x21: {
+					outputString += "\tInst21(" + std::to_string(getInt()) + ", " + std::to_string(getChar()) + ")\n";
+				} break;
+				case 0x22: instCalc();		break;
+				case 0x30: instCall();		break;
+				default:
+					Logger::Log(Logger::WARN) << "Unhandled instruction " << std::to_string(opcode) << std::endl;
 			}
 		}
-	
-		progInfo.stackPointers.pop_back();
-		progInfo.stack.push_back(StackValue(0xDEADBEEF, STACK_NUM));
-	} else {
-		Logger::Log(Logger::ERROR, progInfo.address) << " Tried to pop base frame.\n";
-	}
-}
 
-void instDo13Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
-	fprintf(f, "%#x ", getInt());
-	unsigned int numArgs = readArgs(buf, progInfo);
-	fprintf(f, "(");
-	for (unsigned int i = 0; i < numArgs; i++) {
-		fprintf(f, "%#x,", progInfo.args.back());
-		progInfo.args.pop_back();
-	}
-	fprintf(f, ")");
-}
-
-void instDo15Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
-	unsigned int numArgs = readArgs(buf, progInfo);
-	fprintf(f, "(");
-	for (unsigned int i = 0; i < numArgs; i++) {
-		fprintf(f, "%#x,", progInfo.args.back());
-		progInfo.args.pop_back();
-	}
-	fprintf(f, ")");
-} */
-/*
-unsigned int BytecodeParser::parseFunction(const Label &function, ProgStack &localVars) {
-	if (function.offset >= dataLength)
-		throw std::out_of_range("Function offset out of range.");
-
-	currAddress = function.offset;
-	bool argsDone = false, toReturn = false;
-
-	unsigned char opcode;
-
-	localVars.clear();
-	unsigned int numParams = 0;
-
-
-	stack.clear();
-	// Read instructions
-	while (!toReturn) {
-		opcode = getChar();
-
-		switch (opcode) {
-			case 0x03: instPop();		break;
-			case 0x04: instDup();		break;
-			// TODO: make safe
-			case 0x05: {
-				StackValue val;
-				val = stack.back();
-				stack.pop_back();
-				// Local variable
-				if (val.value >> 24 == 0x7d) {
-					StackValue unknown = stack.back();
-					// Throw happy
-					if (unknown.value != 0x53)
-						throw std::logic_error("Expected 0x53");
-					stack.pop_back();
-					
-					popFrame();
-
-					unsigned int varIndex = val.value & 0x00FFFFFF;
-					// Real exception
-					if (varIndex >= localVars.size())
-						throw std::out_of_range("Local var index out of range.");
-					
-					stack.push_back(localVars[varIndex]);
-
-				} else {
-					throw std::logic_error("Sorry, not handled yet.");
-				}
-			} break;
-			case 0x07: {
-				unsigned int type = getInt();
-				unsigned int nameIndex = getInt();
-				std::string name;
-				try {
-					name = sceneInfo.localVarNames.at(nameIndex);	
-				} catch (std::out_of_range &e) {
-					Logger::Log(Logger::WARN) << "Missing string id: " << nameIndex << std::endl;
-					name = "var" + std::to_string(localVars.size());
-				}
-
-				localVars.push_back(StackValue(0xDEADBEEF, type));
-				localVars.back().name = name;
-
-				if (argsDone) {
-					outputString += "var " + std::to_string(type) + " " + name + ";\n";
-				} else {
-					numParams++;
-				}
-
-			} break;
-			case 0x08: stack.push_back(StackValue());	break;
-			case 0x09: argsDone = true;					break;
-			case 0x10: instJump();		break;
-			case 0x11: instJump(true);	break;
-			case 0x12: instJump(false);	break;
-			// not true, need to consider other branches
-			case 0x15: {
-				toReturn = true;
-				outputString += "\treturn; \n";
-			} break;
-			case 0x20: instAssign();	break;
-			case 0x21: {
-				outputString += "\tInst21(" + std::to_string(getInt()) + ", " + std::to_string(getChar()) + ")\n";
-			} break;
-			case 0x22: instCalc();		break;
-			case 0x30: instCall();		break;
-			default:
-				Logger::Log(Logger::WARN) << "Unhandled instruction " << std::to_string(opcode) << std::endl;
-		}
-	}
-
-	return numParams;
-}*/
+		return numParams;
+	}*/
 
 
 void BytecodeParser::parseBytecode() {
@@ -445,11 +613,17 @@ void BytecodeParser::parseBytecode() {
 			case 0x05: instructions.push_back(new InstEval(this, opcode));		break;
 			case 0x06: instructions.push_back(new InstRep(this, opcode));		break;
 			case 0x08: instructions.push_back(new InstSentinel(this, opcode));	break;
+			case 0x10: 
+			case 0x11: 
+			case 0x12: instructions.push_back(new InstJump(this, opcode));		break;
 			case 0x15: instructions.push_back(new InstReturn(this, opcode));	break;
 			case 0x16: instructions.push_back(new InstEndScript(this, opcode));	break;
 			case 0x20: instructions.push_back(new InstAssign(this, opcode));	break;
+			case 0x21: instructions.push_back(new Inst21(this, opcode));		break;
 			case 0x22: instructions.push_back(new InstCalc(this, opcode));		break;
 			case 0x30: instructions.push_back(new InstCall(this, opcode));		break;
+			case 0x31: instructions.push_back(new InstSetLine(this, opcode));	break;
+			case 0x32: instructions.push_back(new InstSetName(this, opcode));	break;
 			default:	
 				Logger::Log(Logger::ERROR) << "Error: Unknown instruction " << toHex(opcode) << " at address 0x" << toHex(instAddress) << std::endl;
 				instructions.push_back(new InstNOP(this, opcode));
@@ -459,51 +633,26 @@ void BytecodeParser::parseBytecode() {
 
 	Instruction::setWidth(instAddress);
 	/*
-	ProgramInfo progInfo;
-	
-	while (currAddress < dataLength) {
-		progInfo.numInsts++;
-
-		// Print labels and commands
-		printLabels(labelIt, sceneInfo.labels.end(), "Label");
-		printLabels(markerIt, sceneInfo.markers.end(), "EntryPoint");
-		printLabels(functionIt, sceneInfo.functions.end(), "Function");
-		printLabels(commandIt, localCommands.end(), "Command");
+		ProgramInfo progInfo;
 		
-		fprintf(f, "%#06x>\t%02x| %s ", progInfo.address, progInfo.opcode, s_mnemonics[progInfo.opcode].c_str());
-		
-		switch (progInfo.opcode) {
-			case 0x04: instDup();		break;
+		while (currAddress < dataLength) {
+			
+			fprintf(f, "%#06x>\t%02x| %s ", progInfo.address, progInfo.opcode, s_mnemonics[progInfo.opcode].c_str());
+			
+			switch (progInfo.opcode) {
+				case 0x09:
+				case 0x07:	instDo07Thing(f, buf, sceneInfo, progInfo);		break;
 
-			case 0x10:
-			case 0x11:
-			case 0x12:
-			case 0x31:	fprintf(f, "%#x", getInt());	break;
+				case 0x13:	instDo13Thing(f, buf, progInfo);		break;
+				
+				case 0x14:
+			}
 			
-			case 0x06:
-			case 0x09:
-			case 0x32:
-			case 0x33:
-			case 0x34:	break;
-			
-			case 0x07:	instDo07Thing(f, buf, sceneInfo, progInfo);		break;
-
-			case 0x13:	instDo13Thing(f, buf, progInfo);		break;
-			
-			case 0x14:
-			case 0x21:	fprintf(f, "%#x, %d", getInt(), getChar());
-				break;
-			case 0x22:	instCalc(f, buf, progInfo);					break;
-		}
-		
-	}
-	
-	Logger::Log(Logger::INFO) << "Parsed " << progInfo.numInsts << " instructions.\n";
-	if (progInfo.numNops > 0) {
-		Logger::Log(Logger::WARN) << "Warning: " << progInfo.numNops << " NOP instructions skipped.\n";
-	} */
+		}*/
 }
 
+
+// TODO: add commands
 void BytecodeParser::printInstructions(std::string filename) {
 	// Get functions defined in this file
 	std::vector<Label> localCommands;
@@ -523,7 +672,7 @@ void BytecodeParser::printInstructions(std::string filename) {
 		labelIt = labels.begin();
 		while (labelIt != labels.end()) {
 			if (labelIt->offset == inst->address) {
-				out << "Label " << toHex(labelIt->index) << ":\n";
+				out << "Label 0x" << toHex(labelIt->index) << ":\n";
 
 				labelIt = labels.erase(labelIt);
 			} else {
@@ -535,7 +684,7 @@ void BytecodeParser::printInstructions(std::string filename) {
 		while (labelIt != entrypoints.end()) {
 			if (labelIt->offset == inst->address) {
 				if (labelIt->offset > 0)
-					out << "Entrypoint " << toHex(labelIt->index) << ":\n";
+					out << "Entrypoint 0x" << toHex(labelIt->index) << ":\n";
 
 				labelIt = entrypoints.erase(labelIt);
 			} else {
@@ -629,128 +778,6 @@ unsigned int BytecodeParser::readArgs(std::vector<unsigned int> &typeList) {
 
 
 /*
-void BytecodeParser::instPush() {
-	unsigned int type = getInt();
-	unsigned int value = getInt();
-	stack.push_back(StackValue(value, type));
-	//TODO: also arrays
-	if (type == STACK_NUM) {
-		if (value >> 24 == 0x7f) {
-			unsigned int varIndex = value & 0x00FFFFFF;
-			if (varIndex < sceneInfo.globalVars.size())
-				stack.back().name = sceneInfo.globalVars[varIndex].name;	// could just copy the var directly
-			else
-				stack.back().name = "g_var_" + std::to_string(varIndex);
-		}
-	} if (type == STACK_STR) {
-		if (value >= sceneInfo.mainStrings.size())
-			throw std::out_of_range("String index out of range");
-		stack.back().name = '"' + sceneInfo.mainStrings[value] + '"';
-	}
-}
-
-void BytecodeParser::instPop() {
-	if (stack.empty())
-		throw std::logic_error("Popping empty stack");
-	unsigned int type = getInt();
-
-	if (stack.back().type != type)
-		throw std::logic_error("Popping unexpected type");
-
-	if (stack.back().fnCall)
-		outputString += "\t" + stack.back().name + ";\n";
-
-	stack.pop_back();
-
-}
-
-void BytecodeParser::instDup() {
-	if (stack.empty())
-		throw std::logic_error("Duplicating empty stack");
-	unsigned int type = getInt();
-
-	if (stack.back().type != type)
-		throw std::logic_error("Duplicating unexpected type");
-
-	stack.push_back(stack.back());
-}
-
-void BytecodeParser::instCalc() {
-	unsigned int type1 = getInt();
-	unsigned int type2 = getInt();
-	unsigned char op = getChar();
-
-	if (type1 != type2)
-		Logger::Log(Logger::ERROR) << "Comparing type " << std::to_string(type1) << " with " << std::to_string(type2) << std::endl;
-
-
-	if (stack.size() < 2)
-		throw std::logic_error("Not enough values on stack for comp");
-
-	StackValue var2 = stack.back();
-		stack.pop_back();
-	StackValue var1 = stack.back();
-		stack.pop_back();
-
-	if (type1 == STACK_NUM) {
-		StackValue result(0xDEADBEEF, STACK_NUM);
-		switch (op) {
-			case 1:
-				result.value = var1.value + var2.value;
-				result.name = "(" + var1.name + " + " + var2.name + ")";
-			break;
-			case 2:
-				result.value = var1.value - var2.value;
-				result.name = "(" + var1.name + " - " + var2.name + ")";
-			break;
-			case 3:
-				result.value = var1.value * var2.value;
-				result.name = "(" + var1.name + " * " + var2.name + ")";
-			break;
-			case 4:
-				result.value = var1.value / var2.value;
-				result.name = "(" + var1.name + " / " + var2.name + ")";
-			break;
-			case 16:
-				result.value = var1.value != var2.value;
-				result.name = "(" + var1.name + " != " + var2.name + ")";
-			break;
-			case 18:
-				result.value = var1.value <= var2.value;
-				result.name = "(" + var1.name + " <= " + var2.name + ")";
-			break;
-			case 19:
-				result.value = var1.value > var2.value;
-				result.name = "(" + var1.name + " > " + var2.name + ")";
-			break;
-			case 20:
-				result.value = var1.value >= var2.value;
-				result.name = "(" + var1.name + " >= " + var2.name + ")";
-			break;
-			default:
-				result.name = "(" + var1.name + " <op"+std::to_string(op)+ "> " + var2.name + ")";
-		}
-		stack.push_back(result);
-	} else if (type1 == STACK_STR) {
-		StackValue result(0xDEADBEEF, STACK_STR);
-		switch (op) {
-			case 1:
-				result.value = var1.value;
-				result.name = var1.name + " + " + var2.name;
-			break;
-			case 16:
-				result.value = var1.value != var2.value;
-				result.name = var1.name + " != " + var2.name;
-			break;
-			default:
-				result.name = "(" + var1.name + " <op"+std::to_string(op)+ "> " + var2.name + ")";
-		}
-		stack.push_back(result);
-	} else {
-		Logger::Log(Logger::INFO) << "Comparing type " << type1 << std::endl;
-	}
-}
-
 // Safety depends on readArgs
 void BytecodeParser::instCall() {
 	StackValue arg;

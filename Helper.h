@@ -85,6 +85,8 @@ namespace Logger {
 	static NullBuffer nullBuf;
 	static std::ostream nout(&nullBuf);
 
+
+	// add a level prefix or something
 	//enum LogLevel {
 		const int NONE = 0;
 		const int ERROR = 1;
@@ -98,13 +100,19 @@ namespace Logger {
 	inline std::ostream& Log(int level, unsigned int address = 0, std::ostream& stream = std::cout) {
 		if (level <= LogLevel) {
 			if (address > 0)
-				return stream << "Address 0x" << std::hex << address << ": ";
+				return stream << "0x" << std::hex << address << ": ";
 			else
 				return stream;
 		} else {
 			return nout;
 		}
 	}
+
+	inline std::ostream& Error(unsigned int address = 0) {
+		return Log(ERROR, address);
+	}
+
+
 	// Yes, yes, verbosity and level are different
 	inline void increaseVerbosity() {
 		if (LogLevel < VERBOSE_DEBUG)
