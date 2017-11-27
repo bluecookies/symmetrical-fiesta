@@ -40,15 +40,22 @@ inline std::string VarType(unsigned int type) {
 }
 
 void StackGetArg(ProgStack &stack, const unsigned int& type, unsigned int address) {
-	if (type == 0xa) {
-		if (stack.empty())
-			throw std::out_of_range("Popping arguments off an empty stack.");
+	if (stack.empty())
+		throw std::out_of_range("Popping arguments off an empty stack.");
 
+	if (type == 0xa) {
 		if (stack.back().type != 0xa) {
-			Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": Cannot get argument of type int with type " << VarType(stack.back().type) << std::endl;
+			Logger::Error(address) << "Cannot get argument of type int with type " << VarType(stack.back().type) << std::endl;
 			return;
 		}
 
+		stack.pop_back();
+	} else if (type == 0x14) {
+		if (stack.back().type != 0x14) {
+			Logger::Error(address) << "Cannot get argument of type str with type " << VarType(stack.back().type) << std::endl;
+			return;
+		}
+		stack.pop_back();
 	}
 }
 
@@ -157,12 +164,11 @@ class InstPop: public Instruction {
 		InstPop(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
 			type = parser->getInt();
 			if (parser->stack.empty()) {
-				Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": Attempting to pop empty stack.\n";
+				Logger::Error(address) << "Attempting to pop empty stack.\n";
 				return;
 			}
 			if (parser->stack.back().type != type) {
-				Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": Top of stack has type ";
-				Logger::Log(Logger::ERROR) << VarType(parser->stack.back().type) << "; popping " << VarType(type) << std::endl;
+				Logger::Error(address) << "Top of stack has type " << VarType(parser->stack.back().type) << "; popping " << VarType(type) << std::endl;
 				return;
 			}
 
@@ -180,12 +186,11 @@ class InstDup: public Instruction {
 			type = parser->getInt();
 
 			if (parser->stack.empty()) {
-				Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": Attempting to duplicate value off empty stack.\n";
+				Logger::Error(address) << "Attempting to duplicate value off empty stack.\n";
 				return;
 			}
 			if (parser->stack.back().type != type) {
-				Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": Top of stack has type ";
-				Logger::Log(Logger::ERROR) << VarType(parser->stack.back().type) << "; duplicating " << VarType(type) << std::endl;
+				Logger::Error(address) << "Top of stack has type " << VarType(parser->stack.back().type) << "; duplicating " << VarType(type) << std::endl;
 				return;
 			}
 
@@ -195,14 +200,60 @@ class InstDup: public Instruction {
 			stream << toHex(address, width) << "\tdup " << VarType(type) << "\n";
 		}
 };
-// TODO TODO: Handle stack for this
 // Dereferences a reference
 // Turns lvalue into rvalue
 // Not entirely sure how to interpret
 class InstEval: public Instruction {
 	public:
 		InstEval(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
+			StackValue val, index;
+			ProgStack::reverse_iterator curr, next;
+
+			bool hasIndex = false;
+
+			auto sp = parser->stack.rbegin();
+			while (parser->stack.size() > 1 && sp != parser->stack.rend()) {
+				curr = sp;
+				next = sp+1;
+
+				if (hasIndex) {
+					val.type = 0xa;	//TODO: look it up depending on what it is
+					val.name = curr->name + "[" + index.name + "]";
+					hasIndex = false;
+				} else {
+					val = *curr;
+				}
+
+				/*if (curr->value >> 0x24 == 0x7f) {
+
+				} else {
+
+				}*/
+
+
+				if (next->isIndex()) {
+					if (val.type != 0xa) {
+						Logger::Error(address) << "Indexing with non int: " << toHex(val.value) << " (" << VarType(val.type) << ")\n";
+						return;
+					}
+					hasIndex = true;
+					index = val;
+				}
+				
+
+				sp++;
+				parser->stack.pop_back();
+				if (next->endFrame())
+					break;
+			}
+			if (!parser->stack.back().endFrame()) {
+				Logger::Error(address) << "Could not evaluate.\n";
+				return;
+			}
+			parser->stack.pop_back();
+			parser->stack.push_back(val);
 		}
+
 		void print(Parser*, std::ofstream &stream) const {
 			stream << toHex(address, width) << "\teval\n";
 		}
@@ -218,7 +269,7 @@ class InstRep: public Instruction {
 				stackPointer++;
 			}
 			if (stackPointer == parser->stack.rend()) {
-				Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": Beginning of frame not found!\n";
+				Logger::Error(address) << "Beginning of frame not found!\n";
 				return;
 			}
 
@@ -262,11 +313,11 @@ class InstJump: public Instruction {
 
 			if (conditional) {
 				if (parser->stack.empty()) {
-					Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": No values in stack for conditional jump.\n";
+					Logger::Error(address) << "No values in stack for conditional jump.\n";
 					return;
 				}
 				if (parser->stack.back().type != 0xa) {
-					Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": Conditional jump - stack top is not int.\n";
+					Logger::Error(address) << "Conditional jump - stack top is not int.\n";
 					return;
 				}
 				// TODO: handle this maybe
@@ -350,7 +401,7 @@ class InstCalc : public Instruction {
 			operation = parser->getChar();
 
 			if (parser->stack.size() < 2) {
-				Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": Not enough values in stack to calculate.\n";
+				Logger::Error(address) << "Not enough values in stack to calculate.\n";
 				return;
 			}
 
@@ -362,10 +413,10 @@ class InstCalc : public Instruction {
 			StackValue val2 = parser->stack.back(); parser->stack.pop_back();
 			StackValue val1 = parser->stack.back(); parser->stack.pop_back();
 			if (val1.type != LHSType) {
-				Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": Expected type " << VarType(LHSType) << "; got " << val1.type << std::endl;
+				Logger::Error(address) << "Expected type " << VarType(LHSType) << "; got " << val1.type << std::endl;
 			}
 			if (val2.type != RHSType) {
-				Logger::Log(Logger::ERROR) << "0x" << toHex(address) << ": Expected type " << VarType(RHSType) << "; got " << val2.type << std::endl;
+				Logger::Error(address) << "Expected type " << VarType(RHSType) << "; got " << val2.type << std::endl;
 			}
 			StackValue val(LHSType, val1.name + " <op" + std::to_string(operation) + "> " + val2.name);
 
@@ -422,6 +473,7 @@ class InstCall: public Instruction {
 
 
 			// Push return value
+			parser->stack.push_back(StackValue(returnType, std::string("function(") + "args go here" + ")"));
 		}
 		void print(Parser*, std::ofstream &stream) const {
 			stream << toHex(address, width) << "\tcall " << std::to_string(fnOption) << " (";
@@ -625,7 +677,7 @@ void BytecodeParser::parseBytecode() {
 			case 0x31: instructions.push_back(new InstSetLine(this, opcode));	break;
 			case 0x32: instructions.push_back(new InstSetName(this, opcode));	break;
 			default:	
-				Logger::Log(Logger::ERROR) << "Error: Unknown instruction " << toHex(opcode) << " at address 0x" << toHex(instAddress) << std::endl;
+				Logger::Error(instAddress) << "Unknown instruction 0x" << toHex(opcode)<< std::endl;
 				instructions.push_back(new InstNOP(this, opcode));
 		}
 
@@ -723,7 +775,7 @@ BytecodeBuffer::BytecodeBuffer(std::ifstream &f, unsigned int length) {
 
 	f.read((char*) bytecode, dataLength);
 	if (f.fail()) {
-		Logger::Log(Logger::ERROR) << "Tried to read " << dataLength << " bytes, got" << f.gcount() << std::endl;
+		Logger::Error() << "Tried to read " << dataLength << " bytes, got" << f.gcount() << std::endl;
 		throw std::exception();
 	}
 	Logger::Log(Logger::DEBUG) << "Read " << f.gcount() << " bytes of bytecode." << std::endl;

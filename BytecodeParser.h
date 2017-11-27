@@ -49,10 +49,11 @@ struct Label {
 #define	STACK_OBJ	0x51e
 
 class StackValue {
-	bool isEndFrame = false;
-	StackValue() {}	
+	bool isEndFrame = false;	
 
 	public:
+		StackValue() {}
+
 		unsigned int value = 0xDEADBEEF;
 		unsigned int type = STACK_VOID;
 		unsigned int length = 0;
@@ -66,6 +67,10 @@ class StackValue {
 
 		bool endFrame() {
 			return isEndFrame;
+		}
+
+		bool isIndex() {
+			return (type == STACK_NUM && value == 0xFFFFFFFF);
 		}
 
 		StackValue(unsigned int val_, unsigned int type_) : value(val_), type(type_) {
