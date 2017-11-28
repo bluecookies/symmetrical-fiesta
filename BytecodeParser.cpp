@@ -59,6 +59,76 @@ void StackGetArg(ProgStack &stack, const unsigned int& type, unsigned int addres
 	}
 }
 
+StackValue StackGetRef(ProgStack &stack, unsigned int address) {
+	StackValue val, index;
+	ProgStack::reverse_iterator curr, next;
+
+	bool hasIndex = false;
+
+	auto sp = stack.rbegin();
+	while (stack.size() > 1 && sp != stack.rend()) {
+		curr = sp;
+		next = sp+1;
+
+		if (hasIndex) {
+			if (curr->value >> 24 == 0x7f) {
+				val.type = curr->type - 1;
+				/*unsigned int varIndex = curr->value & 0x00FFFFFF;
+				try {
+					val.type = parser->sceneInfo.globalVars.at(varIndex).type - 1;
+					//add name here?
+				} catch (std::out_of_range &e) {
+					std::cerr << "Exception " << e.what() << std::endl;
+					val.type = 0xa;
+				} */
+			} else {
+				val.type = 0xa;
+			}
+			val.name = curr->name + "[" + index.name + "]";
+			hasIndex = false;
+		} else if (val.type == STACK_VOID) {
+			val = *curr;
+		} else {
+			val.name = curr->name + "_" + val.name;
+		}
+
+		/*if (curr->value >> 0x24 == 0x7f) {
+
+		} else {
+
+		}*/
+
+
+		if (next->isIndex()) {
+			if (val.type != 0xa) {
+				Logger::Error(address) << "Indexing with non int: " << toHex(val.value) << " (" << VarType(val.type) << ")\n";
+				throw std::domain_error("");
+			}
+			hasIndex = true;
+			index = val;
+			
+			sp++;
+			stack.pop_back();
+			sp++;
+			stack.pop_back();
+			continue;
+		}
+		
+
+		sp++;
+		stack.pop_back();
+		if (next->endFrame())
+			break;
+	}
+	if (!stack.back().endFrame()) {
+		Logger::Error(address) << "Could not evaluate.\n";
+		throw std::logic_error("");
+	}
+	stack.pop_back();
+
+	return val;
+}
+
 //
 
 Instruction::Instruction(Parser *parser, unsigned char opcode_) {
@@ -183,7 +253,7 @@ class InstPop: public Instruction {
 				return;
 			}
 			if (parser->stack.back().type != type) {
-				Logger::Error(address) << "Top of stack has type " << VarType(parser->stack.back().type) << "; popping " << VarType(type) << std::endl;
+				Logger::Error(address) << "Top of stack has is " << parser->stack.back().name << " (type " << VarType(parser->stack.back().type) << "); popping " << VarType(type) << std::endl;
 				return;
 			}
 
@@ -221,68 +291,7 @@ class InstDup: public Instruction {
 class InstEval: public Instruction {
 	public:
 		InstEval(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
-			StackValue val, index;
-			ProgStack::reverse_iterator curr, next;
-
-			bool hasIndex = false;
-
-			auto sp = parser->stack.rbegin();
-			while (parser->stack.size() > 1 && sp != parser->stack.rend()) {
-				curr = sp;
-				next = sp+1;
-
-				if (hasIndex) {
-					if (curr->value >> 24 == 0x7f) {
-						unsigned int varIndex = curr->value & 0x00FFFFFF;
-						try {
-							val.type = parser->sceneInfo.globalVars.at(varIndex).type - 1;
-							//add name here?
-						} catch (std::out_of_range &e) {
-							std::cerr << "Exception " << e.what() << std::endl;
-							val.type = 0xa;
-						}
-					} else {
-						val.type = 0xa;
-					}
-					val.name = curr->name + "[" + index.name + "]";
-					hasIndex = false;
-				} else if (val.type == STACK_VOID) {
-					val = *curr;
-				}
-
-				/*if (curr->value >> 0x24 == 0x7f) {
-
-				} else {
-
-				}*/
-
-
-				if (next->isIndex()) {
-					if (val.type != 0xa) {
-						Logger::Error(address) << "Indexing with non int: " << toHex(val.value) << " (" << VarType(val.type) << ")\n";
-						return;
-					}
-					hasIndex = true;
-					index = val;
-					
-					sp++;
-					parser->stack.pop_back();
-					sp++;
-					parser->stack.pop_back();
-					continue;
-				}
-				
-
-				sp++;
-				parser->stack.pop_back();
-				if (next->endFrame())
-					break;
-			}
-			if (!parser->stack.back().endFrame()) {
-				Logger::Error(address) << "Could not evaluate.\n";
-				return;
-			}
-			parser->stack.pop_back();
+			StackValue val = StackGetRef(parser->stack, address);
 			parser->stack.push_back(val);
 		}
 
@@ -401,14 +410,36 @@ class InstEndScript: public Instruction {
 class InstAssign: public Instruction {
 	unsigned int LHSType, RHSType;
 	unsigned int unknown;
+
+	std::string statement;
 	public:
 		InstAssign(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
 			LHSType = parser->getInt();
 			RHSType = parser->getInt();
 			unknown = parser->getInt();
+
+			std::string lval, rval;
+			if (parser->stack.empty()) {
+				Logger::Error(address) << "Assigning off empty stack.\n";
+				return;
+			}
+			// Read rhs
+			StackValue val = parser->stack.back();
+			if (val.type != RHSType) {
+				Logger::Error(address) << "Expected type " << VarType(RHSType) << "; got " << VarType(val.type) << std::endl;
+				return;
+			}
+			rval = val.name;
+			parser->stack.pop_back();
+			// Read lhs
+			val = StackGetRef(parser->stack, address);
+			lval = val.name;
+
+			statement = lval + " = " + rval;
 		}
 		void print(Parser*, std::ofstream &stream) const {
-			stream << toHex(address, width) << "\tassign " << VarType(LHSType) << " " << VarType(RHSType) << " " << std::to_string(unknown) << std::endl;
+			stream << toHex(address, width) << "\tassign " << VarType(LHSType) << " " << VarType(RHSType) << " " << std::to_string(unknown);
+			stream << "\t; " << statement << std::endl;
 		}
 };
 class Inst21: public Instruction {
@@ -449,8 +480,31 @@ class InstCalc : public Instruction {
 			if (val2.type != RHSType) {
 				Logger::Error(address) << "Expected type " << VarType(RHSType) << " for var2; got " << VarType(val2.type) << " ("+val2.name+")" << std::endl;
 			}
-			// todo - get right ttype for equality
-			StackValue val(LHSType, val1.name + " <op" + std::to_string(operation) + "> " + val2.name);
+
+			StackValue val;
+			if (LHSType == 0xa && RHSType == 0xa) {
+				switch (operation) {
+					case  1: val = StackValue(STACK_NUM, val1.name + " + " + val2.name); break;
+					case  2: val = StackValue(STACK_NUM, val1.name + " - " + val2.name); break;
+					case  3: val = StackValue(STACK_NUM, val1.name + " * " + val2.name); break;
+					case  4: val = StackValue(STACK_NUM, val1.name + " / " + val2.name); break;
+					case 16: val = StackValue(STACK_NUM, val1.name + " != " + val2.name); break;
+					case 17: val = StackValue(STACK_NUM, val1.name + " < " + val2.name); break;
+					case 18: val = StackValue(STACK_NUM, val1.name + " <= " + val2.name); break;
+					case 19: val = StackValue(STACK_NUM, val1.name + " > " + val2.name); break;
+					case 20: val = StackValue(STACK_NUM, val1.name + " >= " + val2.name); break;
+					case 32: val = StackValue(STACK_NUM, val1.name + " && " + val2.name); break;
+					default: val = StackValue(STACK_NUM, val1.name + " <op" + std::to_string(operation) + "> " + val2.name); break;
+				}
+			} else if (LHSType == 0x14 && RHSType == 0x14) {
+				switch (operation) {
+					case  1: val = StackValue(STACK_STR, val1.name + " + " + val2.name); break;
+					case 16: val = StackValue(STACK_NUM, val1.name + " != " + val2.name); break;
+					default: val = StackValue(STACK_STR, val1.name + " <op" + std::to_string(operation) + "> " + val2.name); break;
+				}
+			} else {
+				val = StackValue(LHSType, val1.name + " <op" + std::to_string(operation) + "> " + val2.name);
+			}
 
 			parser->stack.push_back(val);
 
@@ -522,10 +576,13 @@ class InstCall: public Instruction {
 				fnExtra = parser->getInt();
 
 			// Push return value
-			parser->stack.push_back(StackValue(returnType, std::string("function(") + "args go here" + ")"));
+			if (fnCall != 0x54) {
+				parser->stack.push_back(StackValue(returnType, std::string("function(") + "args go here" + ")"));
+				Logger::Warn(address) << VarType(returnType) <<  " " <<toHex(fnCall) << std::endl;
+			}
 		}
 		void print(Parser*, std::ofstream &stream) const {
-			stream << toHex(address, width) << "\tcall " << std::to_string(fnOption) << " (";
+			stream << toHex(address, width) << "\tcall 0x" << toHex(fnCall) << " " << std::to_string(fnOption) << " (";
 			for (auto it = paramTypes.rbegin(); it != paramTypes.rend(); it++) {
 				if (it != paramTypes.rbegin())
 					stream << ", ";
