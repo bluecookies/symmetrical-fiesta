@@ -27,7 +27,7 @@
 void readScenePackHeader(std::ifstream &f, ScenePackHeader &header) {
 	f.read((char*) &header.headerSize, 4);
 	if (header.headerSize != 0x5C) {
-		Logger::Log(Logger::ERROR) << "Error: Expected scene pack header size 0x5C, got 0x" << std::hex << header.headerSize << std::endl;
+		Logger::Error() << "Expected scene pack header size 0x5C, got 0x" << std::hex << header.headerSize << std::endl;
 		throw std::exception();
 	}
 	
@@ -193,9 +193,9 @@ int main(int argc, char* argv[]) {
 		unsigned int decompressedSize = readUInt32(buffer + 4);
 		
 		if (sceneDataInfo.at(i).count != compressedSize) {
-			Logger::Log(Logger::ERROR) << "Error at pack " << +i << ": " << sceneNames.at(i) << std::endl;
-			Logger::Log(Logger::ERROR) << "Expected " << std::hex << sceneDataInfo.at(i).count << " at address 0x";
-			Logger::Log(Logger::ERROR) << offset << ", got " << compressedSize << ".\n";
+			Logger::Error() << "Error at pack " << +i << ": " << sceneNames.at(i) << std::endl;
+			Logger::Error() << "Expected " << std::hex << sceneDataInfo.at(i).count << " at address 0x";
+			Logger::Error() << offset << ", got " << compressedSize << ".\n";
 			if (header.extraKeyUse && !keyProvided) {
 				unsigned int possibleKey = (sceneDataInfo.at(i).count ^ compressedSize);
 				std::cout << "Possibly requiring key starting with " << std::hex << std::setfill('0');
@@ -234,7 +234,7 @@ int main(int argc, char* argv[]) {
 	{
 		std::ofstream dumpStream(filename + ".dump", std::ios::out | std::ios::binary);
 		dumpStream.write(dumpBuf, remainingLength);
-		Logger::Log(Logger::INFO) << " Dumped remaining " << remainingLength << "bytes\n";
+		Logger::Info() << " Dumped remaining " << remainingLength << "bytes\n";
 		dumpStream.close();
 	}
 	delete[] dumpBuf;

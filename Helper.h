@@ -89,10 +89,10 @@ namespace Logger {
 	// add a level prefix or something
 	//enum LogLevel {
 		const int NONE = 0;
-		const int ERROR = 1;
-		const int WARN = 2;
-		const int INFO = 3;
-		const int DEBUG = 4;
+		const int LEVEL_ERROR = 1;
+		const int LEVEL_WARN = 2;
+		const int LEVEL_INFO = 3;
+		const int LEVEL_DEBUG = 4;
 		const int VERBOSE_DEBUG = 5;
 	//};
 	extern int LogLevel;
@@ -108,13 +108,19 @@ namespace Logger {
 		}
 	}
 
+	// Maybe not functions, but just references that change statically
 	inline std::ostream& Error(unsigned int address = 0) {
-		return Log(ERROR, address);
+		return Log(LEVEL_ERROR, address) << "Error: ";
 	}
 	inline std::ostream& Warn(unsigned int address = 0) {
-		return Log(WARN, address);
+		return Log(LEVEL_WARN, address) << "Warning: ";
 	}
-
+	inline std::ostream& Info(unsigned int address = 0) {
+		return Log(LEVEL_INFO, address);
+	}
+	inline std::ostream& Debug(unsigned int address = 0) {
+		return Log(LEVEL_DEBUG, address);
+	}
 
 	// Yes, yes, verbosity and level are different
 	inline void increaseVerbosity() {

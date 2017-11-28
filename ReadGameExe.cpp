@@ -87,14 +87,14 @@ int main(int argc, char* argv[]) {
 	unsigned int decompressedSize = readUInt32(buffer + 4);
 
 	if (compressedSize != length) {
-		Logger::Log(Logger::ERROR) << "Expected " << std::hex << length << ", got " << compressedSize << std::endl;
+		Logger::Error() << "Expected " << std::hex << length << ", got " << compressedSize << std::endl;
 		unsigned int possibleKey = (length ^ compressedSize);
-		Logger::Log(Logger::INFO) << "Possibly requiring key starting with " << std::hex << std::setfill('0');
+		Logger::Info() << "Possibly requiring key starting with " << std::hex << std::setfill('0');
 		for (unsigned int k = 0; k < 4; k++) {
-			Logger::Log(Logger::INFO) << std::setw(2) << (possibleKey & 0xFF) << " ";
+			Logger::Info() << std::setw(2) << (possibleKey & 0xFF) << " ";
 			possibleKey >>= 8;
 		}
-		Logger::Log(Logger::INFO) << std::endl;
+		Logger::Info() << std::endl;
 
 		if (dumpEncoded) {
 			fileStream.open(outFilename, std::ios::out | std::ios::binary);

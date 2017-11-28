@@ -6,7 +6,7 @@
 #include "Structs.h"
 
 std::wstring_convert<std::codecvt_utf8<char16_t>, char16_t> g_UCS2Conv;
-int Logger::LogLevel = Logger::INFO;
+int Logger::LogLevel = Logger::LEVEL_INFO;
 
 unsigned int readUInt32(unsigned char* buf) {
 	return buf[0] + (buf[1] << 8) + (buf[2] << 16) + (buf[3] << 24);
@@ -69,7 +69,7 @@ void readStrings(std::ifstream &f, StringList &strings, HeaderPair index, Header
 
 	delete[] stringIndices;
 	
-	Logger::Log(Logger::DEBUG) << "Read " << strings.size() << " strings from 0x" << std::hex << data.offset << std::dec << std::endl;
+	Logger::Debug() << "Read " << strings.size() << " strings from 0x" << std::hex << data.offset << std::dec << std::endl;
 }
 
 // Requires stream pointer to be at beginning of table

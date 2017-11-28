@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <exception>
 #include <algorithm>
+#include <vector>
+#include <set>
 
 #include "Helper.h"
 #include "Structs.h"
@@ -239,7 +241,7 @@ class InstPush: public Instruction {
 				}
 			} else {
 				stream << toHex(address, width) << "\tpush " << name << "\n";
-				Logger::Log(Logger::INFO) << "Pushing 0x" << toHex(value) << " of type 0x" << toHex(type) << "\n";
+				Logger::Info() << "Pushing 0x" << toHex(value) << " of type 0x" << toHex(type) << "\n";
 			}
 		}
 };
@@ -253,7 +255,7 @@ class InstPop: public Instruction {
 				return;
 			}
 			if (parser->stack.back().type != type) {
-				Logger::Error(address) << "Top of stack has is " << parser->stack.back().name << " (type " << VarType(parser->stack.back().type) << "); popping " << VarType(type) << std::endl;
+				Logger::Error(address) << "Top of stack is " << parser->stack.back().name << " (type " << VarType(parser->stack.back().type) << "); popping " << VarType(type) << std::endl;
 				return;
 			}
 
@@ -337,6 +339,7 @@ class InstJump: public Instruction {
 	bool jumpIfZero = false;
 	unsigned int labelIndex = 0;
 	public:
+		unsigned int jumpAddress = 0;
 		InstJump(Parser* parser, unsigned char opcode) : Instruction(parser, opcode) {
 			if (opcode == 0x10) {
 				conditional = false;
@@ -364,6 +367,17 @@ class InstJump: public Instruction {
 				// TODO: handle this maybe
 				parser->stack.pop_back();
 			}
+
+			auto labelIt = std::find_if(parser->sceneInfo.labels.begin(), parser->sceneInfo.labels.end(), [this](Label l) {
+				return l.index == labelIndex;
+			});
+
+			if (labelIt == parser->sceneInfo.labels.end()) {
+				Logger::Error(address) << "Could not find label " << std::hex << labelIndex << std::endl;
+				throw std::logic_error("Could not find label");
+			}
+
+			jumpAddress = labelIt->offset;
 
 		}
 		void print(Parser*, std::ofstream &stream) const {
@@ -578,7 +592,6 @@ class InstCall: public Instruction {
 			// Push return value
 			if (fnCall != 0x54) {
 				parser->stack.push_back(StackValue(returnType, std::string("function(") + "args go here" + ")"));
-				Logger::Warn(address) << VarType(returnType) <<  " " <<toHex(fnCall) << std::endl;
 			}
 		}
 		void print(Parser*, std::ofstream &stream) const {
@@ -652,233 +665,152 @@ class InstSetName: public Instruction {
 		}
 };
 
-/*
-	void instDo05Thing(ProgInfo& progInfo) {
-		if (progInfo.stackPointers.size() > 1) {
-			while (progInfo.stackPointers.back() < progInfo.stack.size()) {
-				if (!progInfo.stack.empty()) {
-					progInfo.stack.pop_back();
-				} else {
-					Logger::Log(Logger::ERROR, progInfo.address) << " Popping empty stack.\n";
-				}
-			}
-		
-			progInfo.stackPointers.pop_back();
-			progInfo.stack.push_back(StackValue(0xDEADBEEF, STACK_NUM));
-		} else {
-			Logger::Log(Logger::ERROR, progInfo.address) << " Tried to pop base frame.\n";
-		}
+
+Instruction* Instruction::newInst(Parser *parser, unsigned char opcode) {
+	switch (opcode) {
+		case 0x01: return new InstLine(parser, opcode);
+		case 0x02: return new InstPush(parser, opcode);
+		case 0x03: return new InstPop(parser, opcode);
+		case 0x04: return new InstDup(parser, opcode);
+		case 0x05: return new InstEval(parser, opcode);
+		case 0x06: return new InstRep(parser, opcode);
+		case 0x08: return new InstSentinel(parser, opcode);
+		case 0x10: 
+		case 0x11: 
+		case 0x12: return new InstJump(parser, opcode);
+		case 0x15: return new InstReturn(parser, opcode);
+		case 0x16: return new InstEndScript(parser, opcode);
+		case 0x20: return new InstAssign(parser, opcode);
+		case 0x21: return new Inst21(parser, opcode);
+		case 0x22: return new InstCalc(parser, opcode);
+		case 0x30: return new InstCall(parser, opcode);
+		case 0x31: return new InstSetLine(parser, opcode);
+		case 0x32: return new InstSetName(parser, opcode);
+		default:	
+			Logger::Error(parser->instAddress) << "Unknown instruction 0x" << toHex(opcode)<< std::endl;
+			return new InstNOP(parser, opcode);
 	}
-
-	void instDo13Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
-		fprintf(f, "%#x ", getInt());
-		unsigned int numArgs = readArgs(buf, progInfo);
-		fprintf(f, "(");
-		for (unsigned int i = 0; i < numArgs; i++) {
-			fprintf(f, "%#x,", progInfo.args.back());
-			progInfo.args.pop_back();
-		}
-		fprintf(f, ")");
-	}
-
-	void instDo15Thing(FILE* f, BytecodeBuffer &buf, ProgInfo& progInfo) {
-		unsigned int numArgs = readArgs(buf, progInfo);
-		fprintf(f, "(");
-		for (unsigned int i = 0; i < numArgs; i++) {
-			fprintf(f, "%#x,", progInfo.args.back());
-			progInfo.args.pop_back();
-		}
-		fprintf(f, ")");
-	} */
-	/*
-	unsigned int BytecodeParser::parseFunction(const Label &function, ProgStack &localVars) {
-		if (function.offset >= dataLength)
-			throw std::out_of_range("Function offset out of range.");
-
-		currAddress = function.offset;
-		bool argsDone = false, toReturn = false;
-
-		unsigned char opcode;
-
-		localVars.clear();
-		unsigned int numParams = 0;
-
-
-		stack.clear();
-		// Read instructions
-		while (!toReturn) {
-			opcode = getChar();
-
-			switch (opcode) {
-				case 0x03: instPop();		break;
-				case 0x04: instDup();		break;
-				// TODO: make safe
-				case 0x05: {
-					StackValue val;
-					val = stack.back();
-					stack.pop_back();
-					// Local variable
-					if (val.value >> 24 == 0x7d) {
-						StackValue unknown = stack.back();
-						// Throw happy
-						if (unknown.value != 0x53)
-							throw std::logic_error("Expected 0x53");
-						stack.pop_back();
-						
-						popFrame();
-
-						unsigned int varIndex = val.value & 0x00FFFFFF;
-						// Real exception
-						if (varIndex >= localVars.size())
-							throw std::out_of_range("Local var index out of range.");
-						
-						stack.push_back(localVars[varIndex]);
-
-					} else {
-						throw std::logic_error("Sorry, not handled yet.");
-					}
-				} break;
-				case 0x07: {
-					unsigned int type = getInt();
-					unsigned int nameIndex = getInt();
-					std::string name;
-					try {
-						name = sceneInfo.localVarNames.at(nameIndex);	
-					} catch (std::out_of_range &e) {
-						Logger::Log(Logger::WARN) << "Missing string id: " << nameIndex << std::endl;
-						name = "var" + std::to_string(localVars.size());
-					}
-
-					localVars.push_back(StackValue(0xDEADBEEF, type));
-					localVars.back().name = name;
-
-					if (argsDone) {
-						outputString += "var " + std::to_string(type) + " " + name + ";\n";
-					} else {
-						numParams++;
-					}
-
-				} break;
-				case 0x08: stack.push_back(StackValue());	break;
-				case 0x09: argsDone = true;					break;
-				case 0x10: instJump();		break;
-				case 0x11: instJump(true);	break;
-				case 0x12: instJump(false);	break;
-				// not true, need to consider other branches
-				case 0x15: {
-					toReturn = true;
-					outputString += "\treturn; \n";
-				} break;
-				case 0x20: instAssign();	break;
-				case 0x21: {
-					outputString += "\tInst21(" + std::to_string(getInt()) + ", " + std::to_string(getChar()) + ")\n";
-				} break;
-				case 0x22: instCalc();		break;
-				case 0x30: instCall();		break;
-				default:
-					Logger::Log(Logger::WARN) << "Unhandled instruction " << std::to_string(opcode) << std::endl;
-			}
-		}
-
-		return numParams;
-	}*/
-
+}
 
 void BytecodeParser::parseBytecode() {
-	unsigned int opcode;
-	while (!buf->done()) {
-		instAddress = buf->getAddress();
-		opcode = getChar();
+	std::vector<ProgBranch> toTraverse;
+	std::vector<Label> labels = sceneInfo.labels;
 
-		// Maybe move this logic into instruction class
-		switch (opcode) {
-			case 0x01: instructions.push_back(new InstLine(this, opcode));		break;
-			case 0x02: instructions.push_back(new InstPush(this, opcode));		break;
-			case 0x03: instructions.push_back(new InstPop(this, opcode));		break;
-			case 0x04: instructions.push_back(new InstDup(this, opcode));		break;
-			case 0x05: instructions.push_back(new InstEval(this, opcode));		break;
-			case 0x06: instructions.push_back(new InstRep(this, opcode));		break;
-			case 0x08: instructions.push_back(new InstSentinel(this, opcode));	break;
-			case 0x10: 
-			case 0x11: 
-			case 0x12: instructions.push_back(new InstJump(this, opcode));		break;
-			case 0x15: instructions.push_back(new InstReturn(this, opcode));	break;
-			case 0x16: instructions.push_back(new InstEndScript(this, opcode));	break;
-			case 0x20: instructions.push_back(new InstAssign(this, opcode));	break;
-			case 0x21: instructions.push_back(new Inst21(this, opcode));		break;
-			case 0x22: instructions.push_back(new InstCalc(this, opcode));		break;
-			case 0x30: instructions.push_back(new InstCall(this, opcode));		break;
-			case 0x31: instructions.push_back(new InstSetLine(this, opcode));	break;
-			case 0x32: instructions.push_back(new InstSetName(this, opcode));	break;
-			default:	
-				Logger::Error(instAddress) << "Unknown instruction 0x" << toHex(opcode)<< std::endl;
-				instructions.push_back(new InstNOP(this, opcode));
+	for (auto &entrypoint:sceneInfo.markers) {
+		if (entrypoint.offset > 0)
+			toTraverse.push_back(ProgBranch(entrypoint.offset));
+		// maybe make block here and attach pointer to label?
+	}
+	toTraverse.push_back(0);
+
+	while (!toTraverse.empty()) {
+		ProgBranch branch = toTraverse.back();
+		toTraverse.pop_back();
+		
+		// Create block if not existing
+		BasicBlock* pBlock = addBlock(branch.address);
+		if (pBlock == nullptr) {
+			Logger::Log(Logger::VERBOSE_DEBUG) << "0x" << toHex(branch.address) << ": Block already parsed.\n";
+			continue;
+		}
+		// New block
+		Logger::Log(Logger::VERBOSE_DEBUG) << "0x" << toHex(branch.address) << ": Parsing new branch.\n";
+
+		// Make labels point to this block
+		for (auto& label:labels) {
+			if (label.offset == branch.address) {
+				label.pBlock = pBlock;
+			}
 		}
 
+		// Set instruction pointer
+		buf->setAddress(branch.address);
+
+		// Read instructions until a return/endofscript is reached
+		// Create new blocks and push onto list as necessary
+		unsigned char opcode;
+		unsigned int nextAddress;
+		while (true) {
+			instAddress = buf->getAddress();
+			opcode = getChar();
+
+			Instruction* pInst = Instruction::newInst(this, opcode);
+			pBlock->pushInst(pInst);
+
+			nextAddress = buf->getAddress();
+
+			if (opcode == 0x15 || opcode == 0x16) {
+				// We are done with this branch.
+				// add next address to unread list
+				break;
+			} else if (opcode == 0x10) {
+				// add next address to unread list
+
+				InstJump* pJump = static_cast<InstJump*>(pInst);
+
+				pBlock = addBlock(pJump->jumpAddress);
+
+				// If target has been parsed, this branch is done
+				if (pBlock == nullptr)
+					break;
+				// otherwise resume at target
+				buf->setAddress(pJump->jumpAddress);
+			} else if (opcode == 0x11 || opcode == 0x12) {
+				InstJump* pJump = static_cast<InstJump*>(pInst);
+				toTraverse.push_back(pJump->jumpAddress);
+
+				pBlock = addBlock(nextAddress);
+
+				// This might happen if the next instruction has a label
+				// that was jumped to earlier
+				if (pBlock == nullptr)
+					break;
+			}
+			// maybe do something about calls (in this file) and 0x13 instruction
+			// not necessary if there is no recursion though
+
+			// Check to see if should start a new block - at new instruction pointer
+			std::vector<unsigned int> labelIndices;
+			instAddress = buf->getAddress();
+			for (auto& label:labels) {
+				if (label.offset == instAddress) {
+					labelIndices.push_back(label.index);
+				}
+			}
+			if (!labelIndices.empty()) {
+				// Only create a new block if current block not empty
+				if (instAddress != pBlock->startAddress) {
+					pBlock = addBlock(instAddress);
+					if (pBlock == nullptr) {
+						Logger::Debug(instAddress) << "Block already parsed!\n";
+						break; 
+					}
+				}
+
+				for (const auto &index:labelIndices) {
+					labels.at(index).pBlock = pBlock;
+				}
+			}
+		}
 	}
 
-	Instruction::setWidth(instAddress);
-	/*
-		ProgramInfo progInfo;
-		
-		while (currAddress < dataLength) {
-			
-			fprintf(f, "%#06x>\t%02x| %s ", progInfo.address, progInfo.opcode, s_mnemonics[progInfo.opcode].c_str());
-			
-			switch (progInfo.opcode) {
-				case 0x09:
-				case 0x07:	instDo07Thing(f, buf, sceneInfo, progInfo);		break;
-
-				case 0x13:	instDo13Thing(f, buf, progInfo);		break;
-				
-				case 0x14:
-			}
-			
-		}*/
+	// for each address in unread
+	// if address is one of the block starts, remove it
+	// otherwise read until the next exit (adding next instruction to unread)
 }
 
 
-// TODO: add commands
 void BytecodeParser::printInstructions(std::string filename) {
 	// Get functions defined in this file
-	std::vector<Label> localCommands;
+	/* std::vector<Label> localCommands;
 	auto predCommandFile = [this](ScriptCommand c) {
 		return c.file == sceneInfo.thisFile;
-	};
-
-	std::vector<Label> labels = sceneInfo.labels;
-	std::vector<Label> entrypoints = sceneInfo.markers;
-
-	auto labelIt = labels.begin();
+	}; */
 
 	std::ofstream out(filename);
 	// this is destructive though, so make copy
-	for (const auto &inst:instructions) {
-		// Print labels
-		labelIt = labels.begin();
-		while (labelIt != labels.end()) {
-			if (labelIt->offset == inst->address) {
-				out << "Label 0x" << toHex(labelIt->index) << ":\n";
-
-				labelIt = labels.erase(labelIt);
-			} else {
-				labelIt++;
-			}
-		}
-		// Print entrypoints
-		labelIt = entrypoints.begin();
-		while (labelIt != entrypoints.end()) {
-			if (labelIt->offset == inst->address) {
-				if (labelIt->offset > 0)
-					out << "Entrypoint 0x" << toHex(labelIt->index) << ":\n";
-
-				labelIt = entrypoints.erase(labelIt);
-			} else {
-				labelIt++;
-			}
-		}
-
-		inst->print(this, out);
+	for (const auto &block:blocks) {
+		block->printInstructions(this, out);
 	}
 
 	out.close();
@@ -890,14 +822,33 @@ BytecodeParser::BytecodeParser(std::ifstream &f, HeaderPair index, SceneInfo inf
 	buf = new BytecodeBuffer(f, index.count);
 
 	sceneInfo = info;
+	Instruction::setWidth(index.count);
 }
 
 BytecodeParser::~BytecodeParser() {
 	delete buf;
 
+
+	for (auto &block:blocks) {
+		delete block;
+	}
+}
+
+std::set<unsigned int> BasicBlock::blockAddresses;
+unsigned int BasicBlock::count;
+BasicBlock::~BasicBlock() {
 	for (auto &inst:instructions) {
 		delete inst;
 	}
+}
+
+
+void BasicBlock::printInstructions(Parser* parser, std::ofstream &out) {
+	out << "L" << std::to_string(index) << ":\n";
+	for (const auto &inst:instructions) {
+		inst->print(parser, out);
+	}
+	out << std::endl;
 }
 
 // Bytecode buffer
@@ -912,7 +863,7 @@ BytecodeBuffer::BytecodeBuffer(std::ifstream &f, unsigned int length) {
 		Logger::Error() << "Tried to read " << dataLength << " bytes, got" << f.gcount() << std::endl;
 		throw std::exception();
 	}
-	Logger::Log(Logger::DEBUG) << "Read " << f.gcount() << " bytes of bytecode." << std::endl;
+	Logger::Debug() << "Read " << f.gcount() << " bytes of bytecode." << std::endl;
 }
 
 BytecodeBuffer::~BytecodeBuffer(){
@@ -961,6 +912,21 @@ unsigned int BytecodeParser::readArgs(std::vector<unsigned int> &typeList) {
 
 	return numArgs;
 } 
+
+bool BytecodeParser::isParsed(unsigned int address) {
+	return std::binary_search(BasicBlock::blockAddresses.begin(), BasicBlock::blockAddresses.end(), address);
+	//return (blocks.end() != std::find_if(blocks.begin(), blocks.end(), [address](BasicBlock* pBlock) {
+	//	return (pBlock->startAddress == address);
+	//}));
+}
+
+BasicBlock* BytecodeParser::addBlock(unsigned int address) {
+	if (isParsed(address))
+		return nullptr;
+	BasicBlock* pBlock = new BasicBlock(address);
+	blocks.push_back(pBlock);
+	return pBlock;
+}
 
 
 /*
@@ -1153,50 +1119,7 @@ void BytecodeParser::instAssign() {
 
 	// assign RHS value to LHS
 	outputString += "\t" + lhs_name + " = " + rhs.name + ";\n";	// TODO: indentation blocks
-}
-
-void BytecodeParser::instJump() {
-	unsigned int labelIndex = getInt();
-	auto labelIt = std::find_if(sceneInfo.labels.begin(), sceneInfo.labels.end(), [labelIndex](Label l) {
-		return l.index == labelIndex;
-	});
-
-	if (labelIt == sceneInfo.labels.end()) {
-		Logger::Log(Logger::ERROR) << "Could not find label " << std::hex << labelIndex << std::endl;
-		throw std::logic_error("Could not find label");
-	}
-
-	currAddress = labelIt->offset;
-}
-
-
-void BytecodeParser::instJump(bool ifZero) {
-	if (stack.empty())
-		throw std::logic_error("Stack empty - conditional jump");
-
-	StackValue condition = stack.back();
-	stack.pop_back();
-
-	unsigned int labelIndex = getInt();
-
-	std::stringstream stream;
-	stream << std::hex << labelIndex << std::endl;
-
-	outputString += "\tif("+ std::string(ifZero ? "!" : "") + condition.name + ")\n";
-	outputString += "\t\tgoto 0x" + stream.str();
-
-	auto labelIt = std::find_if(sceneInfo.labels.begin(), sceneInfo.labels.end(), [labelIndex](Label l) {
-		return l.index == labelIndex;
-	});
-
-	if (labelIt == sceneInfo.labels.end()) {
-		Logger::Log(Logger::ERROR) << "Could not find label " << std::hex << labelIndex << std::endl;
-		throw std::logic_error("Could not find label");
-	}
-
-	currAddress = labelIt->offset;
-}
-*/
+} */
 
 /*
 void BytecodeParser::popFrame() {
