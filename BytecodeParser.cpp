@@ -2,6 +2,8 @@
 // A lot of this is stolen from tanuki
 // https://github.com/bitprime/vn_translation_tools/blob/master/rewrite/
 
+// TODO: handle successor and predecessor
+
 #include <cstdio>
 #include <iostream>
 #include <iomanip>
@@ -701,7 +703,7 @@ void BytecodeParser::parseBytecode() {
 			toTraverse.push_back(ProgBranch(entrypoint.offset));
 		// maybe make block here and attach pointer to label?
 	}
-	toTraverse.push_back(0);
+	toTraverse.push_back(ProgBranch(0x0));
 
 	while (!toTraverse.empty()) {
 		ProgBranch branch = toTraverse.back();
@@ -725,6 +727,9 @@ void BytecodeParser::parseBytecode() {
 
 		// Set instruction pointer
 		buf->setAddress(branch.address);
+
+		// Restore stack
+		stack = branch.stack;
 
 		// Read instructions until a return/endofscript is reached
 		// Create new blocks and push onto list as necessary
@@ -757,7 +762,7 @@ void BytecodeParser::parseBytecode() {
 				buf->setAddress(pJump->jumpAddress);
 			} else if (opcode == 0x11 || opcode == 0x12) {
 				InstJump* pJump = static_cast<InstJump*>(pInst);
-				toTraverse.push_back(pJump->jumpAddress);
+				toTraverse.push_back(ProgBranch(pJump->jumpAddress, stack));
 
 				pBlock = addBlock(nextAddress);
 
@@ -800,7 +805,7 @@ void BytecodeParser::parseBytecode() {
 }
 
 
-void BytecodeParser::printInstructions(std::string filename) {
+void BytecodeParser::printInstructions(std::string filename, bool sorted) {
 	// Get functions defined in this file
 	/* std::vector<Label> localCommands;
 	auto predCommandFile = [this](ScriptCommand c) {
@@ -808,7 +813,13 @@ void BytecodeParser::printInstructions(std::string filename) {
 	}; */
 
 	std::ofstream out(filename);
-	// this is destructive though, so make copy
+
+	if (sorted) {
+		auto sorter = [](BasicBlock* pBlock1, BasicBlock* pBlock2) {
+			return (pBlock1->startAddress < pBlock2->startAddress);
+		};
+		std::sort(blocks.begin(), blocks.end(), sorter);
+	}
 	for (const auto &block:blocks) {
 		block->printInstructions(this, out);
 	}
@@ -927,208 +938,3 @@ BasicBlock* BytecodeParser::addBlock(unsigned int address) {
 	blocks.push_back(pBlock);
 	return pBlock;
 }
-
-
-/*
-// Safety depends on readArgs
-void BytecodeParser::instCall() {
-	StackValue arg;
-	unsigned int arg1 = getInt();
-	ProgStack argsA, argsB;
-
-	std::string argString("(");
-
-	// Arguments to pass to function to be called
-	unsigned int numArgs1 = readArgs(argsA);
-	for (unsigned int i = 0; i < numArgs1; i++) {
-		if (i != 0)
-			argString += ", ";
-
-		arg = argsA.back();
-		argsA.pop_back();
-		
-		if (arg.length == 0) {
-			argString += arg.name;
-		} else {
-			argString += "<" + std::to_string(arg.type - 1) + ">[" + std::to_string(arg.length) + "]";
-		}
-	}
-	argString += ")";
-
-	// I don't know what these are
-	unsigned int numArgs2 = readArgs(argsB);
-	if (numArgs2 > 0) {
-		argString += "{";
-		for (unsigned int i = 0; i < numArgs2; i++) {
-			if (i != 0)
-				argString += ", ";
-
-			arg = argsB.back();
-			argsB.pop_back();
-			
-			if (arg.length == 0) {
-				argString += arg.name;
-			} else {
-				argString += "<" + std::to_string(arg.type - 1) + ">[" + std::to_string(arg.length) + "]";
-			}
-		}
-		argString += "}";
-	}
-	
-	// Return type
-	unsigned int retType = getInt();
-
-	if (stack.empty())
-		throw std::logic_error("Empty stack - function call");
-
-	// Function to call
-	StackValue callFn = stack.back();
-	stack.pop_back();
-
-	// Script command
-	std::string name;
-	if (callFn.value >> 24 == 0x7e) {
-		unsigned int commandIndex = callFn.value & 0x00FFFFFF;
-		popFrame();
-
-		if (commandIndex >= sceneInfo.commands.size())
-			throw std::out_of_range("Command index out of range");
-
-		ScriptCommand command = sceneInfo.commands[commandIndex];
-		name = command.name;
-	} else {
-		switch (callFn.value) {
-			case 0x0c:
-			case 0x12:
-			case 0x13:
-			case 0x4c:
-			case 0x4d:
-			case 0x5a:
-			case 0x5b:
-			case 0x64:
-			case 0x7f:
-				if (stack.back().endFrame) {
-					stack.pop_back();
-					getInt();	// part of command to call?
-				}
-			break;
-			case 0xffffffff:
-				Logger::Log(Logger::WARN) << " Calling function 0xffffffff.\n";
-			break;
-			case 0xDEADBEEF:
-				Logger::Log(Logger::WARN) << " Calling deadbeef\n";
-		}
-		std::stringstream stream;
-		stream << std::hex << callFn.value;
-		name = "fun_0x" + stream.str();
-		if (!stack.empty()) {
-			if (!stack.back().endFrame) {
-				name += "_" + stack.back().name;
-			} 
-			stack.pop_back();
-		}
-
-		// TODO TODO TODO TODO:
-		// Dump stack here if can't handle it properly (most cases)
-	}
-	stack.push_back(StackValue(0xdeadbeef, retType));
-	stack.back().name = name + "<" + std::to_string(arg1) + ">" + argString;
-	stack.back().fnCall = true;
-}
-
-
-// Unsafe
-void BytecodeParser::instAssign() {
-	StackValue lhs, rhs;
-
-	unsigned int LHSType = getInt();
-	unsigned int RHSType = getInt();
-	unsigned int unknown = getInt();
-	if (unknown != 1)
-		Logger::Log(Logger::INFO) << "Assigning with third param " << unknown << std::endl;
-
-	if (LHSType != RHSType + 3)
-		Logger::Log(Logger::WARN) << "Assigning type " << RHSType << " to " << LHSType << ".\n";
-
-	if (stack.empty())
-		throw std::logic_error("Empty stack - no RHS");
-
-	rhs = stack.back();
-	if (rhs.type != RHSType)
-		throw std::logic_error("Incorrect type for RHS");
-	stack.pop_back();
-
-
-	// TODO: check these are all of type 0xa
-	StackValue val;
-	std::string lhs_name;
-
-
-	if (stack.size() < 2)
-		throw std::logic_error("Empty stack - no LHS");
-
-	val = stack.back();
-	if (val.type == STACK_NUM) {
-		StackValue index = val;
-		stack.pop_back();
-		if (val.value >> 24 == 0x7f) {
-			lhs_name = val.name;
-			popFrame();
-		} else {
-			val = stack.back();
-			if (val.type == STACK_NUM && val.value == 0xFFFFFFFF) {
-				stack.pop_back();
-				if (stack.empty())
-					throw std::logic_error("Empty stack - get array");
-
-				StackValue arr = stack.back();
-				stack.pop_back();
-				if (arr.type != RHSType + 1)
-					throw std::logic_error("Incorrect LHS type - assigning from array");
-
-				lhs_name = arr.name + "[" + index.name + "]";
-
-				popFrame();
-			} else if (val.type == STACK_OBJ) {
-				stack.pop_back();
-				lhs_name = val.name + "[" + index.name + "]";
-			} else if (val.type == STACK_NUM) {
-				// Get obj from array
-				lhs_name += "DATA";
-				stack.pop_back();
-
-				if (stack.size() < 3)
-					throw std::logic_error("Not enough values in stack to do index.");
-
-				if (stack.back().value != 0xFFFFFFFF)
-					throw std::logic_error(std::to_string(currAddress) + ": Expected 0xFFFFFFFF");
-				stack.pop_back();
-				StackValue arr = stack.back();
-				stack.pop_back();
-				
-				lhs_name += "_"+arr.name+"["+val.name+"]";
-
-				val = stack.back();
-				stack.pop_back();
-
-				lhs_name += "_" + val.name + "[" + index.name + "]";
-				popFrame();
-			}
-		}
-	}
-
-	// assign RHS value to LHS
-	outputString += "\t" + lhs_name + " = " + rhs.name + ";\n";	// TODO: indentation blocks
-} */
-
-/*
-void BytecodeParser::popFrame() {
-	if (stack.empty())
-		throw std::out_of_range(std::to_string(currAddress) + ": Popping empty stack - expected [08]");
-
-	if (!stack.back().endFrame)
-		throw std::logic_error("Expected [08], got " + std::to_string(stack.back().value));
-
-	stack.pop_back();
-} */
-

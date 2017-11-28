@@ -218,7 +218,7 @@ class BytecodeParser {
 
 	public:
 		void parseBytecode();
-		void printInstructions(std::string filename);
+		void printInstructions(std::string filename, bool sorted = true);
 
 		BasicBlock* addBlock(unsigned int address);
 };
