@@ -122,11 +122,11 @@ class Instruction {
 class BasicBlock {
 	private:
 		static unsigned int count;
-		unsigned int index;
 
 		std::vector<Instruction*> instructions;
 	public:
 		unsigned int startAddress = 0;
+		unsigned int index;
 		static std::set<unsigned int> blockAddresses;
 
 		std::set<BasicBlock*> prec;
@@ -149,6 +149,10 @@ class BasicBlock {
 		};
 
 		void printInstructions(Parser* parser, std::ofstream &out);
+
+		unsigned int size() {
+			return instructions.size();
+		}
 };
 
 
@@ -233,6 +237,7 @@ class BytecodeParser {
 	public:
 		void parseBytecode();
 		void printInstructions(std::string filename, bool sorted = true);
+		void dumpCFG(std::string filename);
 
 		BasicBlock* addBlock(BasicBlock* pBlock, unsigned int address);
 };

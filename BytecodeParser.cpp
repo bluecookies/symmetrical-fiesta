@@ -841,6 +841,27 @@ void BytecodeParser::printInstructions(std::string filename, bool sorted) {
 	out.close();
 }
 
+void BytecodeParser::dumpCFG(std::string filename) {
+	std::ofstream out(filename);
+	// should be same - check
+	out << "strict digraph " << "CFG" << " {\n";
+	out << "\tnode [shape=box]\n";
+	for (const auto &block:blocks) {
+		out << "\tBlock" << std::to_string(block->index) << " -> {";
+		for (auto p = block->succ.begin(); p != block->succ.end(); p++) {
+			if (p != block->succ.begin())
+				out << "; ";
+			out << "Block" << std::to_string((*p)->index);
+		}
+		out << "}\n";
+	}
+
+	out << "}\n";
+
+	out.close();
+}
+
+
 
 BytecodeParser::BytecodeParser(std::ifstream &f, HeaderPair index, SceneInfo info) {
 	f.seekg(index.offset, std::ios_base::beg);

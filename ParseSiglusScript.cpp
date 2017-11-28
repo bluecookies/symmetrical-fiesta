@@ -277,6 +277,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	parser.printInstructions(outFilename);
+	parser.dumpCFG(filename + ".gv");
 		
 	// TODO: handle these
 	if (header.unknown6.count != 0) {
