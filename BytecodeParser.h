@@ -7,6 +7,16 @@
 
 #include "Helper.h"
 
+static inline std::string toHex(unsigned int c, unsigned char width = 0) {
+	std::stringstream ss;
+	if (width > 0)
+		ss << std::setfill('0') << std::setw(width);
+	ss << std::hex << c;
+	return ss.str();
+}
+
+std::string VarType(unsigned int type);
+
 struct ScriptCommand {
 	// Offset of instruction in script
 	unsigned int offset = 0;
@@ -115,12 +125,15 @@ class BasicBlock {
 		unsigned int index;
 
 		std::vector<Instruction*> instructions;
-
-		std::vector<BasicBlock*> prec;
-		std::vector<BasicBlock*> succ;		
 	public:
 		unsigned int startAddress = 0;
 		static std::set<unsigned int> blockAddresses;
+
+		std::set<BasicBlock*> prec;
+		std::set<BasicBlock*> succ;		
+
+		std::set<unsigned int> labels;
+		std::set<unsigned int> entrypoints;
 
 		BasicBlock(unsigned int address) : startAddress(address) {
 			index = count;
@@ -172,6 +185,7 @@ class ProgBranch {
 	public:
 		unsigned int address = 0;
 		ProgStack stack;
+		BasicBlock* prev = nullptr;
 		ProgBranch(unsigned int address_) : address(address_) {};
 		ProgBranch(unsigned int address_, ProgStack stack_) : address(address_), stack(stack_) {};
 };
@@ -220,6 +234,6 @@ class BytecodeParser {
 		void parseBytecode();
 		void printInstructions(std::string filename, bool sorted = true);
 
-		BasicBlock* addBlock(unsigned int address);
+		BasicBlock* addBlock(BasicBlock* pBlock, unsigned int address);
 };
 #endif

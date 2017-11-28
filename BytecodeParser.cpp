@@ -3,6 +3,8 @@
 // https://github.com/bitprime/vn_translation_tools/blob/master/rewrite/
 
 // TODO: handle successor and predecessor
+// TODO: dump dead/unreachable code
+// TODO: ifs, switches, for loops (also one instruction jumps/dominations)
 
 #include <cstdio>
 #include <iostream>
@@ -19,16 +21,7 @@
 
 #include "BytecodeParser.h"
 
-//move to header
-std::string toHex(unsigned int c, unsigned char width = 0) {
-	std::stringstream ss;
-	if (width > 0)
-		ss << std::setfill('0') << std::setw(width);
-	ss << std::hex << c;
-	return ss.str();
-}
-
-inline std::string VarType(unsigned int type) {
+std::string VarType(unsigned int type) {
 	switch (type) {
 		case 0x00: return std::string("void");
 		case 0x0a: return std::string("int");
@@ -42,6 +35,7 @@ inline std::string VarType(unsigned int type) {
 			return "<0x" + toHex(type) + ">";
 	}
 }
+
 
 void StackGetArg(ProgStack &stack, const unsigned int& type, unsigned int address) {
 	if (stack.empty())
@@ -63,7 +57,7 @@ void StackGetArg(ProgStack &stack, const unsigned int& type, unsigned int addres
 	}
 }
 
-StackValue StackGetRef(ProgStack &stack, unsigned int address) {
+StackValue StackGetRef(ProgStack &stack, unsigned int address, ProgStack &vars) {
 	StackValue val, index;
 	ProgStack::reverse_iterator curr, next;
 
@@ -76,15 +70,14 @@ StackValue StackGetRef(ProgStack &stack, unsigned int address) {
 
 		if (hasIndex) {
 			if (curr->value >> 24 == 0x7f) {
-				val.type = curr->type - 1;
-				/*unsigned int varIndex = curr->value & 0x00FFFFFF;
+				unsigned int varIndex = curr->value & 0x00FFFFFF;
 				try {
-					val.type = parser->sceneInfo.globalVars.at(varIndex).type - 1;
+					val.type = vars.at(varIndex).type - 1;
 					//add name here?
 				} catch (std::out_of_range &e) {
 					std::cerr << "Exception " << e.what() << std::endl;
 					val.type = 0xa;
-				} */
+				}
 			} else {
 				val.type = 0xa;
 			}
@@ -295,7 +288,7 @@ class InstDup: public Instruction {
 class InstEval: public Instruction {
 	public:
 		InstEval(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
-			StackValue val = StackGetRef(parser->stack, address);
+			StackValue val = StackGetRef(parser->stack, address, parser->sceneInfo.globalVars);
 			parser->stack.push_back(val);
 		}
 
@@ -448,7 +441,7 @@ class InstAssign: public Instruction {
 			rval = val.name;
 			parser->stack.pop_back();
 			// Read lhs
-			val = StackGetRef(parser->stack, address);
+			val = StackGetRef(parser->stack, address, parser->sceneInfo.globalVars);
 			lval = val.name;
 
 			statement = lval + " = " + rval;
@@ -699,8 +692,10 @@ void BytecodeParser::parseBytecode() {
 	std::vector<Label> labels = sceneInfo.labels;
 
 	for (auto &entrypoint:sceneInfo.markers) {
-		if (entrypoint.offset > 0)
+		if (entrypoint.offset > 0) {
 			toTraverse.push_back(ProgBranch(entrypoint.offset));
+		}
+
 		// maybe make block here and attach pointer to label?
 	}
 	toTraverse.push_back(ProgBranch(0x0));
@@ -710,7 +705,7 @@ void BytecodeParser::parseBytecode() {
 		toTraverse.pop_back();
 		
 		// Create block if not existing
-		BasicBlock* pBlock = addBlock(branch.address);
+		BasicBlock* pBlock = addBlock(branch.prev, branch.address);
 		if (pBlock == nullptr) {
 			Logger::Log(Logger::VERBOSE_DEBUG) << "0x" << toHex(branch.address) << ": Block already parsed.\n";
 			continue;
@@ -722,9 +717,9 @@ void BytecodeParser::parseBytecode() {
 		for (auto& label:labels) {
 			if (label.offset == branch.address) {
 				label.pBlock = pBlock;
+				pBlock->labels.insert(label.index);
 			}
 		}
-
 		// Set instruction pointer
 		buf->setAddress(branch.address);
 
@@ -739,6 +734,7 @@ void BytecodeParser::parseBytecode() {
 			instAddress = buf->getAddress();
 			opcode = getChar();
 
+			// Handle instruction
 			Instruction* pInst = Instruction::newInst(this, opcode);
 			pBlock->pushInst(pInst);
 
@@ -753,23 +749,27 @@ void BytecodeParser::parseBytecode() {
 
 				InstJump* pJump = static_cast<InstJump*>(pInst);
 
-				pBlock = addBlock(pJump->jumpAddress);
+				pBlock =  addBlock(pBlock, pJump->jumpAddress);
 
 				// If target has been parsed, this branch is done
-				if (pBlock == nullptr)
+				if (pBlock == nullptr) {
 					break;
+				}
 				// otherwise resume at target
 				buf->setAddress(pJump->jumpAddress);
 			} else if (opcode == 0x11 || opcode == 0x12) {
 				InstJump* pJump = static_cast<InstJump*>(pInst);
 				toTraverse.push_back(ProgBranch(pJump->jumpAddress, stack));
+				toTraverse.back().prev = pBlock;
 
-				pBlock = addBlock(nextAddress);
 
+				pBlock =  addBlock(pBlock, nextAddress);
+					
 				// This might happen if the next instruction has a label
 				// that was jumped to earlier
-				if (pBlock == nullptr)
+				if (pBlock == nullptr) {
 					break;
+				}
 			}
 			// maybe do something about calls (in this file) and 0x13 instruction
 			// not necessary if there is no recursion though
@@ -785,7 +785,8 @@ void BytecodeParser::parseBytecode() {
 			if (!labelIndices.empty()) {
 				// Only create a new block if current block not empty
 				if (instAddress != pBlock->startAddress) {
-					pBlock = addBlock(instAddress);
+					pBlock =  addBlock(pBlock, instAddress);
+
 					if (pBlock == nullptr) {
 						Logger::Debug(instAddress) << "Block already parsed!\n";
 						break; 
@@ -794,6 +795,7 @@ void BytecodeParser::parseBytecode() {
 
 				for (const auto &index:labelIndices) {
 					labels.at(index).pBlock = pBlock;
+					pBlock->labels.insert(index);
 				}
 			}
 		}
@@ -802,6 +804,18 @@ void BytecodeParser::parseBytecode() {
 	// for each address in unread
 	// if address is one of the block starts, remove it
 	// otherwise read until the next exit (adding next instruction to unread)
+
+	// stupid temporary
+	for (auto &entrypoint:sceneInfo.markers) {
+		if (entrypoint.offset > 0) {
+			auto blockIt = std::find_if(blocks.begin(), blocks.end(), [entrypoint](BasicBlock* pb) {
+				return (pb->startAddress == entrypoint.offset);
+			});
+			if (blockIt != blocks.end()) {
+				(*blockIt)->entrypoints.insert(entrypoint.index);
+			}
+		}
+	}
 }
 
 
@@ -855,7 +869,19 @@ BasicBlock::~BasicBlock() {
 
 
 void BasicBlock::printInstructions(Parser* parser, std::ofstream &out) {
-	out << "L" << std::to_string(index) << ":\n";
+	if (!entrypoints.empty()) {
+		for (const auto& entr:entrypoints) {
+			out << "Entrypoint " << std::to_string(entr) << ":\n";
+		}
+	}
+	if (!labels.empty()) {
+		out << "Label";
+		for (const auto& label:labels) {
+			out << " " << std::to_string(label);
+		}
+		out << ":\n";
+	}
+	out << "L" << std::to_string(index) << " @0x" << toHex(startAddress) << ":\n";
 	for (const auto &inst:instructions) {
 		inst->print(parser, out);
 	}
@@ -931,10 +957,25 @@ bool BytecodeParser::isParsed(unsigned int address) {
 	//}));
 }
 
-BasicBlock* BytecodeParser::addBlock(unsigned int address) {
-	if (isParsed(address))
+// Returns nullptr if block already exists
+BasicBlock* BytecodeParser::addBlock(BasicBlock* pBlock, unsigned int address) {
+	BasicBlock* pNextBlock;
+	auto blockIt = std::find_if(blocks.begin(), blocks.end(), [address](BasicBlock* pb) {
+		return (pb->startAddress == address);
+	});
+	if (blockIt != blocks.end()) {
+		pNextBlock = *blockIt;
+		if (pBlock != nullptr) {
+			pNextBlock->prec.insert(pBlock);
+			pBlock->succ.insert(pNextBlock);
+		}
 		return nullptr;
-	BasicBlock* pBlock = new BasicBlock(address);
-	blocks.push_back(pBlock);
-	return pBlock;
+	}
+	pNextBlock = new BasicBlock(address);
+	blocks.push_back(pNextBlock);
+	if (pBlock != nullptr) {
+		pNextBlock->prec.insert(pBlock);
+		pBlock->succ.insert(pNextBlock);
+	}
+	return pNextBlock;
 }
