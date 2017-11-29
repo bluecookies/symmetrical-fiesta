@@ -99,6 +99,7 @@ class BytecodeBuffer {
 };
 
 typedef class BytecodeParser Parser;
+typedef class BasicBlock Block;
 class Instruction {
 	protected:
 		unsigned char opcode = 0;
@@ -112,6 +113,8 @@ class Instruction {
 		static bool expandStrings;
 
 		static Instruction* newInst(Parser *parser, unsigned char opcode); 
+
+		virtual void setTarget(Block*) { };
 
 		virtual ~Instruction() {};
 		static void setWidth(unsigned int maxAddress);
@@ -130,10 +133,11 @@ class BasicBlock {
 		static std::set<unsigned int> blockAddresses;
 
 		std::set<BasicBlock*> prec;
-		std::set<BasicBlock*> succ;		
+		std::set<BasicBlock*> succ;
 
 		std::set<unsigned int> labels;
-		std::set<unsigned int> entrypoints;
+
+		bool isFunction = false;
 
 		BasicBlock(unsigned int address) : startAddress(address) {
 			index = count;
@@ -211,6 +215,15 @@ struct SceneInfo {
 	std::vector<Label> labels, markers, functions;
 };
 
+class CallRet {
+	public:
+		unsigned int address;
+		BasicBlock* pBlock;
+		unsigned int stackPointer;
+		CallRet(unsigned int ret, BasicBlock* retBlock, unsigned int retSP) :
+			address(ret), pBlock(retBlock), stackPointer(retSP) {};
+};
+
 class BytecodeParser {
 	private:
 		BytecodeBuffer* buf;
@@ -222,6 +235,8 @@ class BytecodeParser {
 		unsigned int instAddress = 0;
 		SceneInfo sceneInfo;
 		ProgStack stack;
+
+		std::vector<CallRet> callStack;
 
 		unsigned int getInt() {
 			return buf->getInt();
@@ -239,6 +254,7 @@ class BytecodeParser {
 		void printInstructions(std::string filename, bool sorted = true);
 		void dumpCFG(std::string filename);
 
-		BasicBlock* addBlock(BasicBlock* pBlock, unsigned int address);
+		// wait fix this
+		BasicBlock* addBlock(BasicBlock* pBlock, unsigned int address, Instruction* inst = nullptr);
 };
 #endif
