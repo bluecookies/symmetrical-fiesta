@@ -27,9 +27,9 @@ namespace Logger {
 
 	extern int LogLevel;
 	
-	inline std::ostream& Log(int level, unsigned int address = 0, std::ostream& stream = std::cout) {
+	inline std::ostream& Log(int level, unsigned int address, std::ostream& stream = std::cout) {
 		if (level <= LogLevel) {
-			if (address > 0)
+			if (address != 0xFFFFFFFF)
 				return stream << "0x" << std::hex << address << ": ";
 			else
 				return stream;
@@ -39,24 +39,30 @@ namespace Logger {
 	}
 
 	// Maybe not functions, but just references that change statically
-	inline std::ostream& Error(unsigned int address = 0) {
+	inline std::ostream& Error(unsigned int address = 0xFFFFFFFF) {
 		return Log(LEVEL_ERROR, address) << ANSI_RED << "Error" << ANSI_RESET << ": ";
 	}
-	inline std::ostream& Warn(unsigned int address = 0) {
+	inline std::ostream& Warn(unsigned int address = 0xFFFFFFFF) {
 		return Log(LEVEL_WARN, address) << ANSI_YELLOW << "Warning" << ANSI_RESET << ": ";
 	}
-	inline std::ostream& Info(unsigned int address = 0) {
+	inline std::ostream& Error_(unsigned int address = 0xFFFFFFFF) {
+		return Log(LEVEL_ERROR, address);
+	}
+	inline std::ostream& Warn_(unsigned int address = 0xFFFFFFFF) {
+		return Log(LEVEL_WARN, address);
+	}
+	inline std::ostream& Info(unsigned int address = 0xFFFFFFFF) {
 		return Log(LEVEL_INFO, address);
 	}
-	inline std::ostream& Debug(unsigned int address = 0) {
+	inline std::ostream& Debug(unsigned int address = 0xFFFFFFFF) {
 		return Log(LEVEL_DEBUG, address);
 	}
 
-	inline std::ostream& VDebug(unsigned int address = 0) {
+	inline std::ostream& VDebug(unsigned int address = 0xFFFFFFFF) {
 		return Log(LEVEL_VERBOSE_DEBUG, address);
 	}
 
-	inline std::ostream& VVDebug(unsigned int address = 0) {
+	inline std::ostream& VVDebug(unsigned int address = 0xFFFFFFFF) {
 		return Log(LEVEL_VERBOSE_VERBOSE_DEBUG, address);
 	}
 

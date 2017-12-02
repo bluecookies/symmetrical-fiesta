@@ -68,8 +68,17 @@ IndexValueExpr::IndexValueExpr(std::shared_ptr<ValueExpr> e1, std::shared_ptr<Va
 		throw std::logic_error("Bad index");
 	}
 
+	e1->print(Logger::VVDebug());
+	Logger::VVDebug() << " is array of type " << VarType(e1->getType()) << "\n";
+
 	// Set type of value
-	type = ValueType::INT;
+	unsigned int arrType = e1->getType() - 3;
+	if (arrType == ValueType::INTLIST)
+		type = ValueType::INTREF;
+	else if (arrType == ValueType::STRLIST)
+		type = ValueType::STRREF;
+	else
+		type = ValueType::INTREF;
 }
 
 void IndexValueExpr::print(std::ostream &out) {
@@ -85,10 +94,12 @@ void NotExpr::print(std::ostream &out) {
 	out << ")";
 }
 
-
-// TODO: Add strings here
 void RawValueExpr::print(std::ostream &out) {
-	out << std::to_string(value);
+	if (!str.empty()) {
+		out << "\"" << str << "\"";
+	} else {
+		out << std::to_string(value);
+	}
 }
 
 bool RawValueExpr::isIndexer() {
@@ -96,6 +107,36 @@ bool RawValueExpr::isIndexer() {
 		return false;
 
 	return (value == 0xFFFFFFFF);
+}
+
+unsigned int RawValueExpr::getVarIndex() {
+	if (type != ValueType::INT)
+		return 0xFFFFFFFF;
+
+	if (value >> 24 == 0x7f)
+		return (value & 0x00FFFFFF);
+
+	return 0xFFFFFFFF;
+}
+
+bool RawValueExpr::isSpecialCall() {
+	if (type != ValueType::INT)
+		return false;
+
+	if (value == 0x12)
+		return true;
+
+	return false;
+}
+
+VarValueExpr::VarValueExpr(std::string name, unsigned int type, unsigned int length) : ValueExpr(type + 3), name(name), length(length) {
+	if (type == ValueType::INTLIST || type == ValueType::STRLIST) {
+		if (length == 0)
+			Logger::Error() << VarType(type) << " must have positive length.\n";
+	} else {
+		if (length > 0)
+			Logger::Error() << VarType(type) << " cannot have positive length.\n";
+	}
 }
 
 VarValueExpr* VarValueExpr::stackLoc(std::vector<unsigned int> stackHeights) {
@@ -123,27 +164,17 @@ void ErrValueExpr::print(std::ostream &out) {
 	out << "(ERROR)";
 }
 
-// TODO: handle fnCall
 CallExpr::CallExpr(ProgStack fnCall_, unsigned int option_, ProgStack args_, std::vector<unsigned int> extraList_, unsigned int returnType_) {
 	type = returnType_;
-	if (fnCall_.empty()) {
-		Logger::Error() << "Function call is empty!\n";
-	}
-	fnCall = fnCall_;
+	callFunc = FnCall(fnCall_);
 	fnOption = option_;
 	fnArgs = args_;
 	fnExtra = extraList_;
 }
 
 void CallExpr::print(std::ostream& out) {
-	if (fnCall.empty()) {
-		out << "(ERROR)";
-		return;
-	}
-
-	out << "FN_";
-	fnCall.back()->print(out);
-	 out <<"-" << std::to_string(fnOption) << "(";
+	callFunc.print(out);
+	out <<"-" << std::to_string(fnOption) << "(";
 	for (auto it = fnArgs.rbegin(); it != fnArgs.rend(); it++) {
 		if (it != fnArgs.rbegin())
 			out << ", ";
@@ -152,15 +183,70 @@ void CallExpr::print(std::ostream& out) {
 	}
 	out << ")";
 	if (!fnExtra.empty()) {
-		out << " {";
+		out << "_{";
 		for (auto it = fnExtra.rbegin(); it != fnExtra.rend(); it++) {
 			if (it != fnExtra.rbegin())
 				out << ", ";
 
 			out << std::to_string(*it);
 		}
-		out << "} ";
+		out << "}";
 	}
+	if (needExtra())
+		out << "<" << std::to_string(extraCallThing) << ">";
+}
+
+FnCall::FnCall(ProgStack vals) : tempList(vals) {
+	if (vals.empty()) {
+		Logger::Error() << "Function call is empty!\n";
+		return;
+	}
+}
+
+void FnCall::print(std::ostream& out) {
+	if (tempList.empty()) {
+		Logger::Error() << "Function call is empty!\n";
+		return;
+	}
+	for (auto it = tempList.rbegin(); it != tempList.rend(); it++) {
+		if (it != tempList.rbegin())
+			out << "_";;
+
+		(*it)->print(out);
+	}
+}
+
+bool FnCall::needExtra() {
+	if (tempList.size() != 1)
+		return false;
+	// Aaargh gross
+	return tempList.back()->isSpecialCall();
+}
+
+bool FnCall::pushRet() {
+	if (tempList.size() != 1)
+		return true;
+	return !tempList.back()->is0x54();
+}
+
+ShortCallExpr::ShortCallExpr(unsigned int index, ProgStack args) {
+	blockIndex = index;
+	fnArgs = args;
+
+	type = ValueType::INT;
+}
+
+
+void ShortCallExpr::print(std::ostream& out) {
+	out << "call@L" << std::to_string(blockIndex);
+	out << "(";
+	for (auto it = fnArgs.rbegin(); it != fnArgs.rend(); it++) {
+		if (it != fnArgs.rbegin())
+			out << ", ";
+
+		(*it)->print(out);
+	}
+	out << ")";
 }
 
 
@@ -170,16 +256,14 @@ AssignExpr::AssignExpr(std::shared_ptr<ValueExpr> lhs, std::shared_ptr<ValueExpr
 	}
 
 	if (!lhs->isLValue())
-		throw std::logic_error("LHS is not valid lvalue!");
+		throw std::logic_error("error: lvalue required as left operand of assignment");
 
 	if (rhs->getType() == ValueType::UNDEF)
-		throw std::logic_error("Rvalue type undefined");
+		throw std::logic_error("right operand type undefined");
 
 	if (lhs->getType() == ValueType::UNDEF) {
 		lhs->setType(rhs->getType());
-	} else if (lhs->getType() != rhs->getType()) {
-		throw std::logic_error("Type mismatch!");
-	}
+	} 
 }
 
 void AssignExpr::print(std::ostream& out) {
@@ -212,6 +296,18 @@ void RetExpr::print(std::ostream& out) {
 		}
 		out << ")";
 	}
+	out << "\n";
+}
+
+void AddTextExpr::print(std::ostream& out) {
+	out << "addtext " << std::to_string(index) << " ";
+	text->print(out);
+	out << "\n";
+}
+
+void SetNameExpr::print(std::ostream& out) {
+	out << "setname ";
+	name->print(out);
 	out << "\n";
 }
 
