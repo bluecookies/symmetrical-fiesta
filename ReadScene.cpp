@@ -23,6 +23,7 @@
 
 #include "Helper.h"
 #include "Structs.h"
+#include "Logger.h"
 
 void readScenePackHeader(std::ifstream &f, ScenePackHeader &header) {
 	f.read((char*) &header.headerSize, 4);
@@ -48,6 +49,7 @@ void readScenePackHeader(std::ifstream &f, ScenePackHeader &header) {
 	f.read((char*) &header.sourceHeaderLength, 4);	// Figure this out. It's at the end of the data, taunting me
 }
 
+int Logger::LogLevel = Logger::LEVEL_INFO;
 int main(int argc, char* argv[]) {
 	extern char *optarg;
 	extern int optind;
@@ -213,12 +215,12 @@ int main(int argc, char* argv[]) {
 		
 		// Dump decompressed
 		std::string outfile = outdir + "/" + sceneNames.at(i) + ".ss";
-		auto outFile = OPEN_OFSTREAM(outfile);
-		WRITE_FILE(outFile, decompressed, decompressedSize);
+		auto outFile = std::ofstream(outfile, std::ios::out | std::ios::binary);
+		outFile.write((char*) decompressed, decompressedSize);
 		
 		delete[] buffer;
 		delete[] decompressed;
-		CLOSE_OFSTREAM(outFile);
+		outFile.close();
 	}
 
 	// Dump rest

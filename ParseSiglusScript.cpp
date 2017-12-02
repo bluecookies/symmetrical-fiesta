@@ -15,8 +15,8 @@
 #include <unistd.h>
 #include <getopt.h>
 
-// maybe put logger by itself
 #include "Helper.h"
+#include "Logger.h"
 #include "Structs.h"
 #include "BytecodeParser.h"
 
@@ -36,20 +36,20 @@ void readScriptHeader(std::ifstream &f, ScriptHeader &header) {
 	readHeaderPair(f, header.stringData);
 	
 	readHeaderPair(f, header.labels);
-	readHeaderPair(f, header.markers);
+	readHeaderPair(f, header.entrypoints);
 	
 	readHeaderPair(f, header.localCommandIndex);    
 	readHeaderPair(f, header.unknown1);
 	readHeaderPair(f, header.staticVarIndex);    
-	readHeaderPair(f, header.staticVars);
+	readHeaderPair(f, header.staticVarNames);
 	
 	readHeaderPair(f, header.functions);
 	readHeaderPair(f, header.functionNameIndex);
-	readHeaderPair(f, header.functionName);
+	readHeaderPair(f, header.functionNames);
 	assert(header.functionNameIndex.count == header.functions.count);		// get rid of the asserts
 	
-	readHeaderPair(f, header.varStringIndex);
-	readHeaderPair(f, header.varStringData);
+	readHeaderPair(f, header.localVarIndex);
+	readHeaderPair(f, header.localVarNames);
 	
 	readHeaderPair(f, header.unknown6);
 	readHeaderPair(f, header.unknown7);
@@ -140,23 +140,23 @@ void readSceneInfo(SceneInfo &info, std::ifstream &stream, const ScriptHeader &h
 	readGlobalInfo(info, filename, fileIndex, header);
 	// Read markers
 	readLabels(stream, info.labels, header.labels);
-	readLabels(stream, info.markers, header.markers);
+	readLabels(stream, info.markers, header.entrypoints);
 	readLabels(stream, info.functions, header.functions);
 	Logger::Info() << "Read " << std::dec << header.functions.count << " functions.\n";
 
 	
 	// Read function names
 	StringList functionNames;
-	readStrings(stream, functionNames, header.functionNameIndex, header.functionName);
+	readStrings(stream, functionNames, header.functionNameIndex, header.functionNames);
 	for (auto it = info.functions.begin(); it != info.functions.end(); it++) {
 		it->name = functionNames.at(it - info.functions.begin());
 	}
 	
 	// Read static vars
 	// TODO: not just the names
-	if (header.staticVars.count > 0) {
+	if (header.staticVarNames.count > 0) {
 		StringList staticVarNames;
-		readStrings(stream, staticVarNames, header.staticVarIndex, header.staticVars);
+		readStrings(stream, staticVarNames, header.staticVarIndex, header.staticVarNames);
 		// TODO: try to get static var info
 		ProgStack staticVars;
 		for (auto varName : staticVarNames) {
@@ -164,7 +164,7 @@ void readSceneInfo(SceneInfo &info, std::ifstream &stream, const ScriptHeader &h
 			staticVars.back().name = varName;
 		}
 		info.globalVars.insert(info.globalVars.end(), staticVars.begin(), staticVars.end());
-		Logger::Info() << "Read " << std::to_string(header.staticVars.count) << " static variables.\n";
+		Logger::Info() << "Read " << std::to_string(header.staticVarNames.count) << " static variables.\n";
 	}
 	
 
@@ -187,7 +187,7 @@ void readSceneInfo(SceneInfo &info, std::ifstream &stream, const ScriptHeader &h
 				auto funcIt = std::find_if(info.functions.begin(), info.functions.end(), predAtOffset);
 				if (funcIt != info.functions.end()) {
 					command.name = funcIt->name;
-					Logger::Log(Logger::VERBOSE_DEBUG) << "Command " << command.name << " (" << std::hex << command.index << ") at " << command.offset << std::endl;
+					Logger::VDebug() << "Command " << command.name << " (" << std::hex << command.index << ") at " << command.offset << std::endl;
 				} else {
 					Logger::Warn(command.offset) << "Warning: Local command name " << std::hex << command.index << " not found.\n";
 				}
@@ -203,6 +203,7 @@ void readSceneInfo(SceneInfo &info, std::ifstream &stream, const ScriptHeader &h
 	Logger::Info() << "Read " << std::dec << header.localCommandIndex.count << " local commands.\n";
 }
 
+int Logger::LogLevel = Logger::LEVEL_INFO;
 int main(int argc, char* argv[]) {
 	extern char *optarg;
 	extern int optind;
@@ -261,11 +262,11 @@ int main(int argc, char* argv[]) {
 	
 	
 	readStrings(fileStream, sceneInfo.mainStrings, header.stringIndex, header.stringData, true);
-	readStrings(fileStream, sceneInfo.localVarNames, header.varStringIndex, header.varStringData);
+	readStrings(fileStream, sceneInfo.localVarNames, header.localVarIndex, header.localVarNames);
 	
 	
-	Logger::Log(Logger::VERBOSE_DEBUG) << sceneInfo.mainStrings;
-	Logger::Log(Logger::VERBOSE_DEBUG) << sceneInfo.localVarNames;
+	Logger::VDebug() << sceneInfo.mainStrings;
+	Logger::VDebug() << sceneInfo.localVarNames;
 	
 	BytecodeParser parser(fileStream, header.bytecode, sceneInfo);
 	fileStream.close();

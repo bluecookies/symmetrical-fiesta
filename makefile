@@ -3,8 +3,8 @@ CXX=g++
 WFLAGS= -pedantic -Wall -Wextra
 CXXFLAGS=-g -std=gnu++11 -c $(WFLAGS)
 LDFLAGS=-g
-TARGETS=readscene readgameexe parsess extractpck
-HEADERS=Structs.h Helper.h
+TARGETS=readscene readgameexe extractpck decompiless
+HEADERS=Structs.h Helper.h Logger.h
 
 ifeq ($(OS),Windows_NT)
 EXE = $(TARGETS:%=$(BINDIR)/%.exe)
@@ -25,7 +25,7 @@ all: $(EXE)
 $(BINDIR)/readscene $(BINDIR)/readscene.exe: ReadScene.o
 $(BINDIR)/readgameexe $(BINDIR)/readgameexe.exe: ReadGameExe.o
 $(BINDIR)/extractpck $(BINDIR)/extractpck.exe: ExtractPack.o
-$(BINDIR)/parsess $(BINDIR)/parsess.exe: ParseSiglusScript.o BytecodeParser.o
+$(BINDIR)/decompiless $(BINDIR)/decompiless.exe: DecompileScript.o Statements.o
 
 $(EXE): Helper.o | $(BINDIR)
 	$(CXX) $(LDFLAGS) -o $@ $^
@@ -33,7 +33,7 @@ $(EXE): Helper.o | $(BINDIR)
 %.o: %.cpp $(HEADERS)
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
-ParseSiglusScript.o BytecodeParser.o: BytecodeParser.h
+DecompileScript.o Statements.o: Statements.h
 
 $(BINDIR):
 	$(MKDIR_P) $@

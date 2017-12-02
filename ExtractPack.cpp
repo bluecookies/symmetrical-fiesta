@@ -7,6 +7,7 @@
 #include <cassert>
 
 #include "Helper.h"
+#include "Logger.h"
 #include "Structs.h"
 
 void readFileInfo(std::ifstream &stream, FileInfo &pair) {
@@ -14,6 +15,7 @@ void readFileInfo(std::ifstream &stream, FileInfo &pair) {
 	stream.read((char*) &pair.length, sizeof(uint64_t));
 }
 
+int Logger::LogLevel = Logger::LEVEL_INFO;
 int main(int argc, char* argv[]) {
 	static char usageString[] = "Usage: extractpck <input.pck> [outfile]";
 	if (argc < 2) {

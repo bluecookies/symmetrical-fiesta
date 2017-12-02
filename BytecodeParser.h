@@ -7,14 +7,6 @@
 
 #include "Helper.h"
 
-static inline std::string toHex(unsigned int c, unsigned char width = 0) {
-	std::stringstream ss;
-	if (width > 0)
-		ss << std::setfill('0') << std::setw(width);
-	ss << std::hex << c;
-	return ss.str();
-}
-
 std::string VarType(unsigned int type);
 
 struct ScriptCommand {
@@ -107,6 +99,7 @@ class Instruction {
 		Instruction(Parser *parser, unsigned char opcode);
 	public:	
 		unsigned int address = 0;
+		bool toPrint = true;
 
 		static bool expandGlobalVars;
 		static bool expandCommandNames;
@@ -128,6 +121,12 @@ class BasicBlock {
 
 		std::vector<Instruction*> instructions;
 	public:
+		enum Type {
+			ONEWAY, TWOWAY, SWITCH,
+			CALL, RET, FALL,
+			INVALID
+		};
+	public:
 		unsigned int startAddress = 0;
 		unsigned int index;
 		static std::set<unsigned int> blockAddresses;
@@ -137,6 +136,8 @@ class BasicBlock {
 
 		std::set<unsigned int> labels;
 
+		Type blockType = INVALID;
+
 		bool isFunction = false;
 
 		BasicBlock(unsigned int address) : startAddress(address) {
@@ -145,12 +146,16 @@ class BasicBlock {
 
 			blockAddresses.insert(address);
 			// could use return to see if succeeded instead of checking outside
+
+			Logger::VVDebug(address) << "Block created.\n";
 		};
 		~BasicBlock();
 
 		void pushInst(Instruction* pInst) {
 			instructions.push_back(pInst);
 		};
+
+		void simplifyInstructions(Parser* parser);
 
 		void printInstructions(Parser* parser, std::ofstream &out);
 
@@ -194,6 +199,7 @@ class ProgBranch {
 		unsigned int address = 0;
 		ProgStack stack;
 		BasicBlock* prev = nullptr;
+		Instruction* jump = nullptr;
 		ProgBranch(unsigned int address_) : address(address_) {};
 		ProgBranch(unsigned int address_, ProgStack stack_) : address(address_), stack(stack_) {};
 };
@@ -251,7 +257,7 @@ class BytecodeParser {
 
 	public:
 		void parseBytecode();
-		void printInstructions(std::string filename, bool sorted = true);
+		void printInstructions(std::string filename, bool sorted = false);
 		void dumpCFG(std::string filename);
 
 		// wait fix this

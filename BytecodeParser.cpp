@@ -17,6 +17,7 @@
 
 #include "Helper.h"
 #include "Structs.h"
+#include "Logger.h"
 
 #include "BytecodeParser.h"
 
@@ -37,24 +38,29 @@ std::string VarType(unsigned int type) {
 }
 
 
-void StackGetArg(ProgStack &stack, const unsigned int& type, unsigned int address) {
+StackValue StackGetArg(ProgStack &stack, const unsigned int& type, unsigned int address) {
+	StackValue arg;
 	if (stack.empty())
 		throw std::out_of_range("Popping arguments off an empty stack.");
 
 	if (type == 0xa) {
 		if (stack.back().type != 0xa) {
 			Logger::Error(address) << "Cannot get argument of type int with type " << VarType(stack.back().type) << std::endl;
-			return;
+			throw std::exception();
 		}
+		arg = stack.back();
 
 		stack.pop_back();
 	} else if (type == 0x14) {
 		if (stack.back().type != 0x14) {
 			Logger::Error(address) << "Cannot get argument of type str with type " << VarType(stack.back().type) << std::endl;
-			return;
+			throw std::exception();
 		}
+		arg = stack.back();
+
 		stack.pop_back();
 	}
+	return arg;
 }
 
 StackValue StackGetRef(ProgStack &stack, unsigned int address, ProgStack &vars) {
@@ -213,8 +219,9 @@ class InstPush: public Instruction {
 			} else if (type == 0x14) {
 				if (expandStrings) {
 					try {
-						name = parser->sceneInfo.mainStrings.at(value);
+						name = "\"" + parser->sceneInfo.mainStrings.at(value) + "\"";
 					} catch (std::out_of_range &e) {
+						Logger::Error(address) << "String index 0x" << toHex(value) << " out of range.\n";
 						name = "string" + std::to_string(value);
 					}
 				} else {
@@ -243,7 +250,7 @@ class InstPush: public Instruction {
 				}
 			} else if (type == 0x14) {
 				if (expandStrings) {
-					stream << toHex(address, width) << "\tpush \"" << name << "\"\n";
+					stream << toHex(address, width) << "\tpush " << name << "\n";
 				} else {
 					stream << toHex(address, width) << "\tpush [" << name << "]:str\n";
 				}
@@ -343,11 +350,11 @@ class InstSentinel: public Instruction {
 		}
 };
 class InstJump: public Instruction {
-	bool conditional = false;
 	bool jumpIfZero = false;
 	unsigned int labelIndex = 0;
 	BasicBlock* pBlock = nullptr;
 	public:
+		bool conditional = false;
 		unsigned int jumpAddress = 0;
 		InstJump(Parser* parser, unsigned char opcode) : Instruction(parser, opcode) {
 			if (opcode == 0x10) {
@@ -597,6 +604,7 @@ class InstCall: public Instruction {
 
 	unsigned int fnOption;
 	std::vector<unsigned int> paramTypes, extraTypes;
+	ProgStack args;
 	unsigned int returnType;
 	public:
 		InstCall(Parser *parser, unsigned char opcode) : Instruction(parser, opcode) {
@@ -609,7 +617,7 @@ class InstCall: public Instruction {
 
 			// Read args off stack
 			for (const auto &type:paramTypes) {
-				StackGetArg(parser->stack, type, address);
+				args.push_back(StackGetArg(parser->stack, type, address));
 			}
 
 			// Read function to call (temp) TODO
@@ -634,13 +642,15 @@ class InstCall: public Instruction {
 			if (fnCall != 0x54) {
 				parser->stack.push_back(StackValue(returnType, std::string("function(") + "args go here" + ")"));
 			}
+
+			Logger::VVDebug(address) << "Calling function 0x" << toHex(fnCall) << std::endl;
 		}
 		void print(Parser*, std::ofstream &stream) const {
 			stream << toHex(address, width) << "\tcall 0x" << toHex(fnCall) << " " << std::to_string(fnOption) << " (";
-			for (auto it = paramTypes.rbegin(); it != paramTypes.rend(); it++) {
-				if (it != paramTypes.rbegin())
+			for (auto it = args.rbegin(); it != args.rend(); it++) {
+				if (it != args.rbegin())
 					stream << ", ";
-				stream << VarType(*it);
+				stream << it->name << ":" << VarType(it->type);
 			}
 			if (!extraTypes.empty()) {
 				stream << ") ((";
@@ -753,12 +763,15 @@ void BytecodeParser::parseBytecode() {
 		
 		// Create block if not existing
 		BasicBlock* pBlock = addBlock(branch.prev, branch.address);
+		if (branch.jump != nullptr)
+			branch.jump->setTarget(pBlock);
+
 		if (pBlock == nullptr) {
-			Logger::Log(Logger::VERBOSE_DEBUG) << "0x" << toHex(branch.address) << ": Block already parsed.\n";
+			Logger::VDebug() << "0x" << toHex(branch.address) << ": Block already parsed.\n";
 			continue;
 		}
 		// New block
-		Logger::Log(Logger::VERBOSE_DEBUG) << "0x" << toHex(branch.address) << ": Parsing new branch.\n";
+		Logger::VDebug() << "0x" << toHex(branch.address) << ": Parsing new branch.\n";
 
 		// Make labels point to this block
 		for (auto& label:labels) {
@@ -788,22 +801,19 @@ void BytecodeParser::parseBytecode() {
 			nextAddress = buf->getAddress();
 
 			if (opcode == 0x13) {
+				pBlock->blockType = Block::CALL;
 				InstShortcall* pCall = static_cast<InstShortcall*>(pInst);
 
 				callStack.push_back(CallRet(nextAddress, pBlock, stack.size()));
 
 				BasicBlock* pCallBlock = addBlock(pBlock, pCall->fnAddress, pCall);
-				// It must return to this block
-				// This might bite back
-				pBlock->prec.insert(pCallBlock);
-				pCallBlock->succ.insert(pBlock);
-
 				pCallBlock->isFunction = true;
 
 				pBlock = pCallBlock;
 				buf->setAddress(pCall->fnAddress);
 
 			} else if (opcode == 0x15) {
+				pBlock->blockType = Block::RET;
 				// add adddress to dead code
 				if (callStack.empty()) {
 					// We are done with this branch.
@@ -816,38 +826,39 @@ void BytecodeParser::parseBytecode() {
 
 					stack.push_back(StackValue(0xDEADBEEF, STACK_NUM));
 					buf->setAddress(ret.address);
-					pBlock = ret.pBlock;
+					pBlock = addBlock(ret.pBlock, ret.address);
 
 					callStack.pop_back();
 				}
 			} else if (opcode == 0x16) {
+				pBlock->blockType = Block::RET;
 				//if (!buf->done) {
 				//	add address
 				//}
 				break;
-			} else if (opcode == 0x10) {
-				// add next address to unread list
-
+			} else if (opcode >= 0x10 && opcode <= 0x12) {
 				InstJump* pJump = static_cast<InstJump*>(pInst);
+				if (pJump->conditional) {
+					pBlock->blockType = Block::TWOWAY;
 
-				pBlock = addBlock(pBlock, pJump->jumpAddress, pJump);
+					ProgBranch branch(pJump->jumpAddress, stack);
+					std::vector<ProgBranch> a;
+					a.push_back(branch);
+					toTraverse.push_back(branch);
+					toTraverse.back().prev = pBlock;
+					toTraverse.back().jump = pJump;
+
+					pBlock = addBlock(pBlock, nextAddress);
+				} else {
+					pBlock->blockType = Block::ONEWAY;
+
+					// add next address to unread list
+					pBlock = addBlock(pBlock, pJump->jumpAddress, pJump);
+
+					buf->setAddress(pJump->jumpAddress);
+				}
 
 				// If target has been parsed, this branch is done
-				if (pBlock == nullptr) {
-					break;
-				}
-				// otherwise resume at target
-				buf->setAddress(pJump->jumpAddress);
-			} else if (opcode == 0x11 || opcode == 0x12) {
-				InstJump* pJump = static_cast<InstJump*>(pInst);
-				toTraverse.push_back(ProgBranch(pJump->jumpAddress, stack));
-				toTraverse.back().prev = pBlock;
-
-
-				pBlock =  addBlock(pBlock, nextAddress, pJump);
-					
-				// This might happen if the next instruction has a label
-				// that was jumped to earlier
 				if (pBlock == nullptr) {
 					break;
 				}
@@ -869,8 +880,8 @@ void BytecodeParser::parseBytecode() {
 					pBlock =  addBlock(pBlock, instAddress);
 
 					if (pBlock == nullptr) {
-						Logger::Debug(instAddress) << "Block already parsed!\n";
-						break; 
+						pBlock->blockType = Block::FALL;
+						break;
 					}
 				}
 
@@ -916,8 +927,12 @@ void BytecodeParser::dumpCFG(std::string filename) {
 	out << "strict digraph " << "CFG" << " {\n";
 	out << "\tnode [shape=box]\n";
 	for (const auto &block:blocks) {
-		if (block->isFunction)
-			out << "\tBlock" << std::to_string(block->index) << " [color=red]\n";
+		switch (block->blockType) {
+			case Block::CALL: out << "\tBlock" << std::to_string(block->index) << " [color=red]\n"; break;
+			case Block::RET: out << "\tBlock" << std::to_string(block->index) << " [color=blue]\n"; break;
+			default: break;
+		}
+
 		out << "\tBlock" << std::to_string(block->index) << " -> {";
 		for (auto p = block->succ.begin(); p != block->succ.end(); p++) {
 			if (p != block->succ.begin())
@@ -959,6 +974,10 @@ BasicBlock::~BasicBlock() {
 	}
 }
 
+void BasicBlock::simplifyInstructions(Parser* parser) {
+
+}
+
 
 void BasicBlock::printInstructions(Parser* parser, std::ofstream &out) {
 	// All entrypoints must be starts of blocks
@@ -976,7 +995,8 @@ void BasicBlock::printInstructions(Parser* parser, std::ofstream &out) {
 	}*/
 	out << "L" << std::to_string(index) << " @0x" << toHex(startAddress) << ":\n";
 	for (const auto &inst:instructions) {
-		inst->print(parser, out);
+		if (inst->toPrint)
+			inst->print(parser, out);
 	}
 	out << std::endl;
 }
@@ -1051,6 +1071,7 @@ bool BytecodeParser::isParsed(unsigned int address) {
 }
 
 // Returns nullptr if block already exists
+// maybe undo the set target thing, find a way to handle that later
 BasicBlock* BytecodeParser::addBlock(BasicBlock* pBlock, unsigned int address, Instruction* inst) {
 	BasicBlock* pNextBlock;
 	auto blockIt = std::find_if(blocks.begin(), blocks.end(), [address](BasicBlock* pb) {
