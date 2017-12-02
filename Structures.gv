@@ -1,8 +1,0 @@
-digraph {
-	StackValue -> ProgStack -> BytecodeParser -> ScriptInfo
-	BasicBlock -> {Label; CallRet; ProgBranch; BytecodeParser}
-	Label -> ScriptInfo
-	ProgBranch -> BytecodeParser
-	CallRet -> BytecodeParser
-	BytecodeBuffer -> BytecodeParser
-}

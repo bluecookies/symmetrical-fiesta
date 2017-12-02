@@ -98,25 +98,29 @@ bool RawValueExpr::isIndexer() {
 	return (value == 0xFFFFFFFF);
 }
 
-LValueExpr* LValueExpr::stackLoc(std::vector<unsigned int> stackHeights) {
+VarValueExpr* VarValueExpr::stackLoc(std::vector<unsigned int> stackHeights) {
 	unsigned int height = stackHeights.back();
 	unsigned int depth =  stackHeights.size() - 1;
 
-	LValueExpr* pLValue = new LValueExpr();
+	VarValueExpr* pValue = new VarValueExpr();
 
 	if (depth > 0)
-		pLValue->name = "stack_" + std::to_string(depth) + "_" + std::to_string(height);
+		pValue->name = "stack_" + std::to_string(depth) + "_" + std::to_string(height);
 	else
-		pLValue->name = "stack" + std::to_string(height);
+		pValue->name = "stack" + std::to_string(height);
 
-	return pLValue;
+	return pValue;
 }
 
-void LValueExpr::print(std::ostream &out) {
+void VarValueExpr::print(std::ostream &out) {
 	if (!name.empty())
 		out << name;
 	else
 		ValueExpr::print(out);
+}
+
+void ErrValueExpr::print(std::ostream &out) {
+	out << "(ERROR)";
 }
 
 // TODO: handle fnCall
@@ -160,10 +164,13 @@ void CallExpr::print(std::ostream& out) {
 }
 
 
-AssignExpr::AssignExpr(std::shared_ptr<LValueExpr> lhs, std::shared_ptr<ValueExpr> rhs):lhs(lhs), rhs(rhs) {
+AssignExpr::AssignExpr(std::shared_ptr<ValueExpr> lhs, std::shared_ptr<ValueExpr> rhs):lhs(lhs), rhs(rhs) {
 	if (lhs == nullptr || rhs == nullptr) {
 		throw std::logic_error("Assigning null pointers.");
 	}
+
+	if (!lhs->isLValue())
+		throw std::logic_error("LHS is not valid lvalue!");
 
 	if (rhs->getType() == ValueType::UNDEF)
 		throw std::logic_error("Rvalue type undefined");

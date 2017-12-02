@@ -477,7 +477,7 @@ void BytecodeParser::parse(ScriptInfo& info) {
 					unsigned int value = getInt();
 					std::shared_ptr<ValueExpr> rhs = std::make_shared<RawValueExpr>(type, value);
 
-					std::shared_ptr<LValueExpr> lhs(LValueExpr::stackLoc(stackHeights));
+					std::shared_ptr<VarValueExpr> lhs(VarValueExpr::stackLoc(stackHeights));
 					pExpr = new AssignExpr(lhs, rhs);
 					stackPush(rhs);
 				} break;
@@ -496,7 +496,7 @@ void BytecodeParser::parse(ScriptInfo& info) {
 						break;
 					}
 
-					std::shared_ptr<LValueExpr> lhs(LValueExpr::stackLoc(stackHeights));
+					std::shared_ptr<VarValueExpr> lhs(VarValueExpr::stackLoc(stackHeights));
 					pExpr = new AssignExpr(lhs, rhs);
 					stackPush(rhs);
 				} break;
@@ -528,7 +528,7 @@ void BytecodeParser::parse(ScriptInfo& info) {
 					if (stackHeights.empty())
 						throw std::logic_error("No frames to close.");
 
-					std::shared_ptr<LValueExpr> lhs(LValueExpr::stackLoc(stackHeights));
+					std::shared_ptr<VarValueExpr> lhs(VarValueExpr::stackLoc(stackHeights));
 					pExpr = new AssignExpr(lhs, pCurr);
 					stackPush(pCurr);
 				} break;
@@ -608,7 +608,7 @@ void BytecodeParser::parse(ScriptInfo& info) {
 						break;
 					}
 
-					std::shared_ptr<LValueExpr> resultLoc(LValueExpr::stackLoc(stackHeights));
+					std::shared_ptr<VarValueExpr> resultLoc(VarValueExpr::stackLoc(stackHeights));
 					std::shared_ptr<ValueExpr> result = std::make_shared<BinaryValueExpr>(lhs, rhs, op);
 
 					pExpr = new AssignExpr(resultLoc, result);
@@ -648,7 +648,7 @@ void BytecodeParser::parse(ScriptInfo& info) {
 
 					std::shared_ptr<ValueExpr> pCall = std::make_shared<CallExpr>(fnCall, option, args, extraList, returnType);
 
-					std::shared_ptr<LValueExpr> lhs(LValueExpr::stackLoc(stackHeights));
+					std::shared_ptr<VarValueExpr> lhs(VarValueExpr::stackLoc(stackHeights));
 					pExpr = new AssignExpr(lhs, pCall);
 					stackPush(pCall);
 

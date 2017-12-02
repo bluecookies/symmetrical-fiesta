@@ -51,7 +51,6 @@ class LineExpr: public Expression {
 class ValueExpr: public Expression {
 	protected:
 		unsigned int type = ValueType::UNDEF;
-		std::string name;
 		ValueExpr(unsigned int type) : type(type) {}
 		ValueExpr() {}
 	public:
@@ -61,6 +60,8 @@ class ValueExpr: public Expression {
 		void setType(unsigned int type_) {
 			type = type_;
 		}
+
+		virtual bool isLValue() { return false; }
 
 		virtual bool isIndexer() { return false; }
 };
@@ -86,6 +87,8 @@ class IndexValueExpr: public BinaryValueExpr {
 		//virtual Expression* clone() override  { return new IndexValueExpr(*this); }
 
 		void print(std::ostream &out) override;
+
+		virtual bool isLValue() override { return true; }
 };
 
 // Can't think of any more unary expressions
@@ -108,17 +111,21 @@ class RawValueExpr: public ValueExpr {
 		void print(std::ostream &out) override;
 };
 
-class LValueExpr: public ValueExpr {
-	LValueExpr() {}
+class VarValueExpr: public ValueExpr {
+	std::string name;
+	VarValueExpr() {}
 	public:
-		static LValueExpr* stackLoc(std::vector<unsigned int> stackHeights);
+		static VarValueExpr* stackLoc(std::vector<unsigned int> stackHeights);
 		//virtual Expression* clone() override  { return new LValueExpr(*this); }
 
 		void print(std::ostream &out) override;
+
+		virtual bool isLValue() override { return true; }
 };
 
 class ErrValueExpr: public ValueExpr {
-
+	public:
+		void print(std::ostream &out) override;
 };
 
 class CallExpr: public ValueExpr {
@@ -132,10 +139,10 @@ class CallExpr: public ValueExpr {
 };
 
 class AssignExpr: public Expression {
-	std::shared_ptr<LValueExpr> lhs = nullptr;
+	std::shared_ptr<ValueExpr> lhs = nullptr;
 	std::shared_ptr<ValueExpr> rhs = nullptr;
 	public:
-		AssignExpr(std::shared_ptr<LValueExpr> lhs, std::shared_ptr<ValueExpr> rhs);
+		AssignExpr(std::shared_ptr<ValueExpr> lhs, std::shared_ptr<ValueExpr> rhs);
 		//virtual Expression* clone() override  { return new AssignExpr(*this); }
 
 		void print(std::ostream &out) override;
