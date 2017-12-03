@@ -18,6 +18,9 @@
 
 #include "Statements.h"
 
+// TODO: unique ptrs + copy/cloning for tree perhaps
+// doesn't make much sense right now
+
 // todo: make progstack an actual struct that contains a vector and the frames
 
 typedef struct BasicBlock {
@@ -128,7 +131,10 @@ class BytecodeParser {
 			return buf->getChar();
 		};
 		std::shared_ptr<ValueExpr> getArg(unsigned int type);
+		std::shared_ptr<ValueExpr> getArray(std::shared_ptr<ValueExpr> first);
 		std::shared_ptr<ValueExpr> getLValue(const ScriptInfo &info);
+
+		Function getCallFunction(const ScriptInfo& info);
 	public:
 		BytecodeParser(std::ifstream &f, HeaderPair index);
 		~BytecodeParser();
@@ -159,6 +165,7 @@ class ScriptInfo {
 
 		StringList stringData;
 		ProgStack globalVars;
+		std::vector<Function> globalCommands;
 
 	public:
 		ScriptInfo(std::ifstream &f, const ScriptHeader& header, int fileIndex);
@@ -166,6 +173,7 @@ class ScriptInfo {
 
 		std::string getString(unsigned int index);
 		std::shared_ptr<ValueExpr> getGlobalVar (unsigned int index) const;
+		Function getCommand (unsigned int index) const;
 
 		Block* getBlock(unsigned int address);
 		Block* getBlockAtLabel(unsigned int labelIndex);
@@ -240,7 +248,18 @@ std::shared_ptr<ValueExpr> ScriptInfo::getGlobalVar(unsigned int index) const {
 		return nullptr;
 
 	return globalVars[index];
+}
 
+Function ScriptInfo::getCommand(unsigned int index) const {
+	if (index & 0xFF000000)
+		return Function("ERROR");
+
+	if (index >= globalCommands.size()) {
+		Logger::Error() << "Command index " << std::to_string(index) << " is out of range.\n";
+		return Function("ERROR");
+	}
+
+	return globalCommands[index];
 }
 
 
@@ -320,6 +339,24 @@ void ScriptInfo::readGlobalInfo(std::string filename) {
 		globalVars.push_back(std::make_shared<VarValueExpr>(name, type, length));
 	}
 	Logger::Info() << "Read " << std::to_string(count) << " global variables.\n";
+
+	// Global commands
+	globalInfoFile.read((char*) &count, 4);
+	globalCommands.reserve(count);
+	unsigned int address, fileIndex;
+	for (unsigned int i = 0; i < count; i++) {
+		globalInfoFile.read((char*) &address, 4);
+		globalInfoFile.read((char*) &fileIndex, 4); // careful about signedness here - should be fine mostly
+		if (fileIndex >= sceneNames.size()) {
+			Logger::Error() << "Command " << std::to_string(i) << " referencing non-existent file index " << std::to_string(fileIndex) << std::endl;
+			throw std::exception();
+		}
+		std::getline(globalInfoFile, name, '\0');
+		
+		globalCommands.push_back(Function(name, address, fileIndex));
+	}
+	Logger::Info() << "Read " << std::to_string(count) << " global commands.\n";
+
 	globalInfoFile.close();
 }
 
@@ -370,9 +407,10 @@ void ScriptInfo::dumpCFG(std::string filename) {
 			props += "penwidth=2,";
 		if (block->isFunction)
 			props += "color=red,";
+		props += "height=" + std::to_string(block->statements.size()*0.05);
+		props += ",fontsize=10, labelloc=\"t\"";
 
-		if (!props.empty())
-			out << "\tBlock" << std::to_string(block->index) << " [" << props << "]\n";
+		out << "\tBlock" << std::to_string(block->index) << " [" << props << "]\n";
 
 		// Successors
 		if (block->succ.empty()) {
@@ -399,7 +437,7 @@ void ScriptInfo::dumpCFG(std::string filename) {
 		}
 	}
 
-	out << "Exit [penwidth=2]\n";
+	out << "\tExit [penwidth=2]\n";
 
 	out << "}\n";
 
@@ -536,6 +574,9 @@ std::shared_ptr<ValueExpr> BytecodeParser::stackPop() {
 	if (stack.empty())
 		throw std::out_of_range("Popping empty stack.");
 
+	if (stackHeights.back() == 0)
+		throw std::logic_error("Popping empty frame.");
+
 	std::shared_ptr<ValueExpr> pExpr = stack.back();
 	stack.pop_back();
 	stackHeights.back()--;
@@ -552,20 +593,55 @@ std::shared_ptr<ValueExpr> BytecodeParser::getArg(unsigned int type) {
 		throw std::out_of_range("Popping arguments off an empty stack.");
 
 	unsigned int actualType = stack.back()->getType();
-	if (type == ValueType::INT) {
-		if (actualType != ValueType::INT) {
-			Logger::Error(instAddress) << "Cannot get argument of type int with type " << VarType(actualType) << std::endl;
-		}
-
-		return stackPop();
-	} else if (type == ValueType::STR) {
-		if (actualType != ValueType::STR) {
-			Logger::Error(instAddress) << "Cannot get argument of type str with type " << VarType(actualType) << std::endl;
-		}
-
+	if (type == actualType) {
 		return stackPop();
 	}
 
+	if (type == ValueType::INT) {
+		Logger::Error(instAddress) << "Cannot get argument of type int with type " << VarType(actualType) << std::endl;
+		return stackPop();
+	} else if (type == ValueType::STR) {
+		Logger::Error(instAddress) << "Cannot get argument of type str with type " << VarType(actualType) << std::endl;
+		return stackPop();
+	} else if (type == ValueType::OBJ_STR) {
+		std::shared_ptr<ValueExpr> pIndex = stackPop();
+		if (!stackPop()->isIndexer()) {
+			Logger::Error(instAddress) << "Unexpected item.\n";
+			return std::make_shared<ErrValueExpr>();
+		}
+		std::shared_ptr<ValueExpr> pArray = getArray(stackPop());
+		stackHeights.pop_back();
+		return std::make_shared<IndexValueExpr>(pArray, pIndex);
+	}
+
+	return std::make_shared<ErrValueExpr>();
+}
+
+std::shared_ptr<ValueExpr> BytecodeParser::getArray(std::shared_ptr<ValueExpr> first) {
+	unsigned int val = first->getValue();
+	if (val == 0xFFFFFFFF)
+		return std::make_shared<ErrValueExpr>();
+
+	if (stackHeights.back() == 0) {
+		return std::make_shared<VarValueExpr>("DATA_0x" + toHex(val), ValueType::INTLIST, 1);
+	} else {
+
+		if (val == 0x00 || val ==  0x01) {
+			unsigned int next = stackPop()->getValue();
+			std::string name = "0x" + toHex(next) + "_0x" + toHex(val);
+			if (next != 0x53)
+				Logger::Error(instAddress) << name << "\n";
+
+			return std::make_shared<VarValueExpr>("DATA_" + name, val ? ValueType::STRLIST : ValueType::INTLIST, 1);
+		} else if (val == 0x02) {
+			unsigned int next = stackPop()->getValue();
+			std::string name = "0x" + toHex(next) + "_0x" + toHex(val);
+			if (next != 0x25 && next != 0x26)
+				Logger::Error(instAddress) << name << "\n";
+
+			return std::make_shared<VarValueExpr>("DATA_" + name, ValueType::OBJ_STR, 1);
+		}
+	}
 	return std::make_shared<ErrValueExpr>();
 }
 
@@ -578,10 +654,11 @@ std::shared_ptr<ValueExpr> BytecodeParser::getLValue(const ScriptInfo &info) {
 		if (pIndex != nullptr) {
 			std::shared_ptr<ValueExpr> pVar = info.getGlobalVar(pCurr->getVarIndex());
 			
-			if (pVar)
+			if (pVar) {
 				pCurr = std::make_shared<IndexValueExpr>(pVar, pIndex);
-			else // not quite right yet, transform this into a proper intlist/strlist first
-				pCurr = std::make_shared<IndexValueExpr>(pCurr, pIndex);
+			} else {
+				pCurr = std::make_shared<IndexValueExpr>(getArray(pCurr), pIndex);
+			}
 
 			pIndex = nullptr;
 		} else if (pCurr->isIndexer()) {
@@ -596,13 +673,10 @@ std::shared_ptr<ValueExpr> BytecodeParser::getLValue(const ScriptInfo &info) {
 				pCurr = pVar;
 			}
 		} else {
-			Logger::Error(instAddress) << "Don't know what to do with ";
-			pCurr->print(Logger::Error_());
-			Logger::Error_() << " (" << VarType(pCurr->getType()) << ")\n";
+			Logger::Error(instAddress) << "Don't know what to do with " << pCurr->print() << " (" << VarType(pCurr->getType()) << ")\n";
 		}
 		pLast = pCurr;
 	}
-
 
 	if (!pCurr->isLValue())
 		Logger::Error(instAddress) << "Could not get lvalue!\n";
@@ -610,6 +684,47 @@ std::shared_ptr<ValueExpr> BytecodeParser::getLValue(const ScriptInfo &info) {
 	// Close the 0x08
 	stackHeights.pop_back();
 	return pCurr;
+}
+
+Function BytecodeParser::getCallFunction(const ScriptInfo& info) {
+	ProgStack fnCall;
+	while (stackHeights.back() > 0) {
+		fnCall.push_back(stackPop());
+	}
+	if (fnCall.empty()) {
+		Logger::Error(instAddress) << "Function call empty!\n";
+	}
+	stackHeights.pop_back();
+
+	if (fnCall.size() == 1) {
+		std::shared_ptr<ValueExpr> pCall = fnCall.back();
+
+		unsigned int commandIndex = pCall->getCommandIndex();
+		if (!(commandIndex & 0xFF000000)) {	
+			Function scriptCommand = info.getCommand(commandIndex);
+
+			return scriptCommand;
+		} // else
+
+		unsigned int val = pCall->getValue();
+		Function fn("FN_0x" + toHex(val));
+
+		if (val == 0x12)
+			fn.hasExtra = true;
+		else if (val == 0x54)
+			fn.pushRet = false;
+
+		return fn;
+	}
+	std::string name = "FN";
+	for (auto it = fnCall.rbegin(); it != fnCall.rend(); it++) {
+		unsigned int temp = (*it)->getValue();
+		if (temp == 0xFFFFFFFF)
+			name += "_{" + (*it)->print() + "}";
+		else
+			name += "_0x" + toHex(temp);
+	}
+	return Function(name);
 }
 
 
@@ -687,6 +802,13 @@ void BytecodeParser::parse(ScriptInfo& info) {
 					std::shared_ptr<VarValueExpr> lhs(VarValueExpr::stackLoc(stackHeights));
 					pExpr = new AssignExpr(lhs, rhs);
 					stackPush(rhs);
+				} break;
+				case 0x06: {
+					unsigned int count = stackHeights.back();
+					stackHeights.push_back(0);
+					for (unsigned int i = 0; i < count; i++) {
+						stackPush(stack.at(stack.size() - count));
+					}
 				} break;
 				case 0x08: {
 					stackHeights.push_back(0);
@@ -769,8 +891,7 @@ void BytecodeParser::parse(ScriptInfo& info) {
 					if (stack.size() != branch.stack.size()) {
 						Logger::Error(instAddress) << "Stack height changed from " << std::to_string(branch.stack.size()) << " to " << std::to_string(stack.size()) << std::endl;
 						for (auto &value:stack) {
-							value->print(Logger::Debug());
-							Logger::Debug() << "\n";
+							Logger::Debug() << value->print() << "\n";
 						}
 					}
 
@@ -845,24 +966,17 @@ void BytecodeParser::parse(ScriptInfo& info) {
 					}
 
 					// Reversed though
-					ProgStack fnCall;
-					while (stackHeights.back() > 0) {
-						fnCall.push_back(stackPop());
-					}
-					if (fnCall.empty()) {
-						Logger::Error(instAddress) << "Function call empty!\n";
-					}
-					stackHeights.pop_back();
+					Function fn = getCallFunction(info);
 
-					std::shared_ptr<CallExpr> pCall = std::make_shared<CallExpr>(fnCall, option, args, extraList, returnType);
+					std::shared_ptr<CallExpr> pCall = std::make_shared<CallExpr>(fn, option, args, extraList, returnType);
 
-					if (pCall->needExtra())
-						pCall->extraThing(getInt());
+					if (fn.hasExtra)
+						fn.extraThing(getInt());
 
 					std::shared_ptr<VarValueExpr> lhs(VarValueExpr::stackLoc(stackHeights));
 					pExpr = new AssignExpr(lhs, pCall);
 					
-					if (pCall->pushRet())
+					if (fn.pushRet)
 						stackPush(pCall);
 
 				} break;
@@ -870,16 +984,14 @@ void BytecodeParser::parse(ScriptInfo& info) {
 					unsigned int id = getInt();
 					std::shared_ptr<ValueExpr> pText = stackPop();
 					if (pText->getType() != ValueType::STR) {
-						pText->print(Logger::Error(instAddress));
-						Logger::Error_() << "(" << VarType(pText->getType()) << ") cannot be used to add text.\n";
+						Logger::Error(instAddress) << pText->print() << "(" << VarType(pText->getType()) << ") cannot be used to add text.\n";
 					}
 					pExpr = new AddTextExpr(pText, id);
 				} break;
 				case 0x32: {
 					std::shared_ptr<ValueExpr> pName = stackPop();
 					if (pName->getType() != ValueType::STR) {
-						pName->print(Logger::Error(instAddress));
-						Logger::Error_() << "(" << VarType(pName->getType()) << ") cannot be used to set name.\n";
+						Logger::Error(instAddress) << pName->print() << "(" << VarType(pName->getType()) << ") cannot be used to set name.\n";
 					}
 					pExpr = new SetNameExpr(pName);
 				} break;

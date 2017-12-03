@@ -11,7 +11,7 @@ namespace ValueType {
 	const unsigned int STR      = 0x14;
 	const unsigned int STRLIST  = 0x15;
 	const unsigned int STRREF   = 0x17;
-	const unsigned int OBJECT   = 0x51e;
+	const unsigned int OBJ_STR  = 0x51e;
 };
 
 inline std::string VarType(unsigned int type) {
@@ -23,7 +23,7 @@ inline std::string VarType(unsigned int type) {
 		case ValueType::STR: return std::string("str");
 		case ValueType::STRLIST: return std::string("strlist");
 		case ValueType::STRREF: return std::string("strref");
-		case ValueType::OBJECT: return std::string("obj");	//unsure
+		case ValueType::OBJ_STR: return std::string("obj");	//unsure
 		default:
 			return "<0x" + toHex(type) + ">";
 	}
@@ -34,7 +34,7 @@ class Expression {
 		//virtual Expression* clone() { return new Expression(*this); }
 
 		virtual ~Expression() {}
-		virtual void print(std::ostream& out);
+		virtual std::string print();
 
 		
 };
@@ -45,7 +45,7 @@ class LineExpr: public Expression {
 		LineExpr(unsigned int line) : lineNum(line) {}
 		//virtual Expression* clone() override  { return new LineExpr(*this); }
 
-		void print(std::ostream &out) override;
+		std::string print() override;
 };
 
 class ValueExpr: public Expression {
@@ -67,10 +67,8 @@ class ValueExpr: public Expression {
 
 		virtual bool isIndexer() { return false; }
 		virtual unsigned int getVarIndex() { return 0xFFFFFFFF; }
-
-		// to exterminate
-		virtual bool isSpecialCall() { return false; }
-		virtual bool is0x54() { return false; }
+		virtual unsigned int getCommandIndex() { return 0xFFFFFFFF; }
+		virtual unsigned int getValue() { return 0xFFFFFFFF; }
 };
 
 typedef std::vector<std::shared_ptr<ValueExpr>> ProgStack;
@@ -85,7 +83,7 @@ class BinaryValueExpr: public ValueExpr {
 		BinaryValueExpr(std::shared_ptr<ValueExpr> e1, std::shared_ptr<ValueExpr> e2, unsigned int op_);
 		virtual std::shared_ptr<ValueExpr> clone() override  { return std::make_shared<BinaryValueExpr>(*this); }
 
-		void print(std::ostream &out) override;
+		std::string print() override;
 };
 
 class IndexValueExpr: public BinaryValueExpr {
@@ -93,7 +91,7 @@ class IndexValueExpr: public BinaryValueExpr {
 		IndexValueExpr(std::shared_ptr<ValueExpr> e1, std::shared_ptr<ValueExpr> e2);
 		virtual std::shared_ptr<ValueExpr> clone() override  { return std::make_shared<IndexValueExpr>(*this); }
 
-		void print(std::ostream &out) override;
+		std::string print() override;
 
 		virtual bool isLValue() override { return true; }
 };
@@ -104,7 +102,7 @@ class NotExpr: public ValueExpr {
 	public:
 		NotExpr(std::shared_ptr<ValueExpr> cond) : cond(cond) {}
 
-		void print(std::ostream &out) override;
+		std::string print() override;
 };
 
 class RawValueExpr: public ValueExpr {
@@ -118,12 +116,10 @@ class RawValueExpr: public ValueExpr {
 
 		bool isIndexer() override;
 		unsigned int getVarIndex() override;
+		unsigned int getCommandIndex() override;
+		unsigned int getValue() override { return value; };
 
-		bool isSpecialCall() override;
-		bool is0x54() override { return value == 0x54; }
-
-
-		void print(std::ostream &out) override;
+		std::string print() override;
 };
 
 class VarValueExpr: public ValueExpr {
@@ -136,46 +132,49 @@ class VarValueExpr: public ValueExpr {
 
 		virtual std::shared_ptr<ValueExpr> clone() override  { return std::make_shared<VarValueExpr>(*this); }
 
-		void print(std::ostream &out) override;
+		std::string print() override;
 
 		virtual bool isLValue() override { return true; }
 };
 
 class ErrValueExpr: public ValueExpr {
 	public:
-		void print(std::ostream &out) override;
+		std::string print() override;
 };
 
 // Represents the target of the call (loosely)
-class FnCall {
-	ProgStack tempList;
+class Function {
+	std::string name;
+	// if it is a script command
+	int fileIndex = -1;
+	unsigned int address = 0;
 	public:
-		FnCall() {}
-		FnCall(ProgStack vals);
-		bool needExtra();
-		bool pushRet();
+		Function(std::string name) : name(name) {}
+		Function(std::string name, int index, unsigned int address) : name(name), fileIndex(index), address(address) {}
 
-		void print(std::ostream &out);
+		void extraThing(unsigned int extra) { extraCall = extra; }
+
+		std::string print();
+
+		// if it is special
+		bool hasExtra = false;
+		unsigned int extraCall = 0;
+		bool pushRet = true;
 };
 
 
 // Far absolute call/system call
 class CallExpr: public ValueExpr {
-	FnCall callFunc;
-	unsigned int extraCallThing = 0;
+	Function callFunc;
 	unsigned int fnOption = 0;
 	std::vector<unsigned int> fnExtra;
 	protected:
 		ProgStack fnArgs;
-		CallExpr() {}
+		CallExpr() : callFunc("undefined") {}
 	public:
-		CallExpr(ProgStack fnCall, unsigned int option, ProgStack args, std::vector<unsigned int> extraList, unsigned int returnType);
+		CallExpr(Function callFunc, unsigned int option, ProgStack args, std::vector<unsigned int> extraList, unsigned int returnType);
 
-		bool needExtra() { return callFunc.needExtra(); }
-		bool pushRet() { return callFunc.pushRet(); }
-		void extraThing(unsigned int extra) { extraCallThing = extra; }
-
-		void print(std::ostream &out) override;
+		std::string print() override;
 };
 
 // Near absolute call
@@ -184,7 +183,7 @@ class ShortCallExpr: public CallExpr {
 	public:
 		ShortCallExpr(unsigned int blockIndex, ProgStack args);
 
-		void print(std::ostream &out) override;
+		std::string print() override;
 };
 
 class AssignExpr: public Expression {
@@ -194,7 +193,7 @@ class AssignExpr: public Expression {
 		AssignExpr(std::shared_ptr<ValueExpr> lhs, std::shared_ptr<ValueExpr> rhs);
 		//virtual Expression* clone() override  { return new AssignExpr(*this); }
 
-		void print(std::ostream &out) override;
+		std::string print() override;
 };
 
 
@@ -204,7 +203,7 @@ class JumpExpr: public Expression {
 	public:
 		JumpExpr(unsigned int blockIndex, unsigned int elseIndex = 0, std::shared_ptr<ValueExpr> cond = nullptr) : blockIndex(blockIndex), elseIndex(elseIndex), cond(cond) {}
 
-		void print(std::ostream &out) override;
+		std::string print() override;
 };
 
 class RetExpr: public Expression {
@@ -212,7 +211,7 @@ class RetExpr: public Expression {
 	public:
 		RetExpr(ProgStack ret) : values(ret) {}
 
-		void print(std::ostream &out) override;
+		std::string print() override;
 };
 
 class AddTextExpr: public Expression {
@@ -221,7 +220,7 @@ class AddTextExpr: public Expression {
 	public:
 		AddTextExpr(std::shared_ptr<ValueExpr> text, unsigned int index) : text(text), index(index) {}
 
-		void print(std::ostream &out) override;
+		std::string print() override;
 };
 
 class SetNameExpr: public Expression {
@@ -229,7 +228,7 @@ class SetNameExpr: public Expression {
 	public:
 		SetNameExpr(std::shared_ptr<ValueExpr> name) : name(name) {}
 
-		void print(std::ostream &out) override;
+		std::string print() override;
 };
 
 /* class CallExpr: public ValueExpr {

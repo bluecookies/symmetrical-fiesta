@@ -8,12 +8,12 @@
 
 // Expressions
 
-void Expression::print(std::ostream& out) {
-	out << "Expression here\n";
+std::string Expression::print() {
+	return std::string("Expression here\n");
 }
 
-void LineExpr::print(std::ostream &out) {
-	out << "line " << std::to_string(lineNum) << std::endl; 
+std::string LineExpr::print() {
+	return "line " + std::to_string(lineNum);
 }
 
 BinaryValueExpr::BinaryValueExpr(std::shared_ptr<ValueExpr> e1, std::shared_ptr<ValueExpr> e2, unsigned int op_) {
@@ -41,7 +41,7 @@ BinaryValueExpr::BinaryValueExpr(std::shared_ptr<ValueExpr> e1, std::shared_ptr<
 	}
 }
 
-void BinaryValueExpr::print(std::ostream &out) {
+std::string BinaryValueExpr::print() {
 	std::string opRep;
 	switch (op) {
 		case 0x01: opRep = " + "; break;
@@ -57,9 +57,7 @@ void BinaryValueExpr::print(std::ostream &out) {
 		default: opRep = " <op" + std::to_string(op) + "> "; break;
 	}
 
-	expr1->print(out);
-	out << opRep;
-	expr2->print(out);
+	return expr1->print() + opRep + expr2->print();
 }
 
 IndexValueExpr::IndexValueExpr(std::shared_ptr<ValueExpr> e1, std::shared_ptr<ValueExpr> e2) : BinaryValueExpr(e1, e2, 0xFFFFFFFF) {
@@ -68,8 +66,7 @@ IndexValueExpr::IndexValueExpr(std::shared_ptr<ValueExpr> e1, std::shared_ptr<Va
 		throw std::logic_error("Bad index");
 	}
 
-	e1->print(Logger::VVDebug());
-	Logger::VVDebug() << " is array of type " << VarType(e1->getType()) << "\n";
+	Logger::VVDebug() << e1->print() << " is array of type " << VarType(e1->getType()) << "\n";
 
 	// Set type of value
 	unsigned int arrType = e1->getType() - 3;
@@ -77,28 +74,25 @@ IndexValueExpr::IndexValueExpr(std::shared_ptr<ValueExpr> e1, std::shared_ptr<Va
 		type = ValueType::INTREF;
 	else if (arrType == ValueType::STRLIST)
 		type = ValueType::STRREF;
+	else if (arrType == ValueType::OBJ_STR - 3)
+		type = ValueType::OBJ_STR;
 	else
 		type = ValueType::INTREF;
 }
 
-void IndexValueExpr::print(std::ostream &out) {
-	expr1->print(out);
-	out << "[";
-		expr2->print(out);
-	out << "]";
+std::string IndexValueExpr::print() {
+	return expr1->print() + "[" + expr2->print() + "]";
 }
 
-void NotExpr::print(std::ostream &out) {
-	out << "!(";
-	cond->print(out);
-	out << ")";
+std::string NotExpr::print() {
+	return "!(" + cond->print() + ")";
 }
 
-void RawValueExpr::print(std::ostream &out) {
+std::string RawValueExpr::print() {
 	if (!str.empty()) {
-		out << "\"" << str << "\"";
+		return "\"" + str + "\"";
 	} else {
-		out << std::to_string(value);
+		return std::to_string(value);
 	}
 }
 
@@ -119,21 +113,21 @@ unsigned int RawValueExpr::getVarIndex() {
 	return 0xFFFFFFFF;
 }
 
-bool RawValueExpr::isSpecialCall() {
+unsigned int RawValueExpr::getCommandIndex() {
 	if (type != ValueType::INT)
-		return false;
+		return 0xFFFFFFFF;
 
-	if (value == 0x12)
-		return true;
+	if (value >> 24 == 0x7e)
+		return (value & 0x00FFFFFF);
 
-	return false;
+	return 0xFFFFFFFF;
 }
 
 VarValueExpr::VarValueExpr(std::string name, unsigned int type, unsigned int length) : ValueExpr(type + 3), name(name), length(length) {
 	if (type == ValueType::INTLIST || type == ValueType::STRLIST) {
 		if (length == 0)
 			Logger::Error() << VarType(type) << " must have positive length.\n";
-	} else {
+	} else if (type == ValueType::INT || type == ValueType::STR) {
 		if (length > 0)
 			Logger::Error() << VarType(type) << " cannot have positive length.\n";
 	}
@@ -153,80 +147,52 @@ VarValueExpr* VarValueExpr::stackLoc(std::vector<unsigned int> stackHeights) {
 	return pValue;
 }
 
-void VarValueExpr::print(std::ostream &out) {
+std::string VarValueExpr::print() {
 	if (!name.empty())
-		out << name;
+		return name;
 	else
-		ValueExpr::print(out);
+		return ValueExpr::print();
 }
 
-void ErrValueExpr::print(std::ostream &out) {
-	out << "(ERROR)";
+std::string ErrValueExpr::print() {
+	return std::string("(ERROR)");
 }
 
-CallExpr::CallExpr(ProgStack fnCall_, unsigned int option_, ProgStack args_, std::vector<unsigned int> extraList_, unsigned int returnType_) {
+CallExpr::CallExpr(Function fnCall_, unsigned int option_, ProgStack args_, std::vector<unsigned int> extraList_, unsigned int returnType_) : callFunc(fnCall_) {
 	type = returnType_;
-	callFunc = FnCall(fnCall_);
 	fnOption = option_;
 	fnArgs = args_;
 	fnExtra = extraList_;
 }
 
-void CallExpr::print(std::ostream& out) {
-	callFunc.print(out);
-	out <<"-" << std::to_string(fnOption) << "(";
+std::string CallExpr::print() {
+	std::string str = callFunc.print();
+	str += "-" + std::to_string(fnOption) + "(";
 	for (auto it = fnArgs.rbegin(); it != fnArgs.rend(); it++) {
 		if (it != fnArgs.rbegin())
-			out << ", ";
+			str += ", ";
 
-		(*it)->print(out);
+		str += (*it)->print();
 	}
-	out << ")";
+	str += ")";
 	if (!fnExtra.empty()) {
-		out << "_{";
+		str += "_{";
 		for (auto it = fnExtra.rbegin(); it != fnExtra.rend(); it++) {
 			if (it != fnExtra.rbegin())
-				out << ", ";
+				str += ", ";
 
-			out << std::to_string(*it);
+			str += std::to_string(*it);
 		}
-		out << "}";
+		str += "}";
 	}
-	if (needExtra())
-		out << "<" << std::to_string(extraCallThing) << ">";
+	if (callFunc.hasExtra)
+		str += "<" + std::to_string(callFunc.extraCall) + ">";
+
+	return str;
 }
 
-FnCall::FnCall(ProgStack vals) : tempList(vals) {
-	if (vals.empty()) {
-		Logger::Error() << "Function call is empty!\n";
-		return;
-	}
-}
-
-void FnCall::print(std::ostream& out) {
-	if (tempList.empty()) {
-		Logger::Error() << "Function call is empty!\n";
-		return;
-	}
-	for (auto it = tempList.rbegin(); it != tempList.rend(); it++) {
-		if (it != tempList.rbegin())
-			out << "_";;
-
-		(*it)->print(out);
-	}
-}
-
-bool FnCall::needExtra() {
-	if (tempList.size() != 1)
-		return false;
-	// Aaargh gross
-	return tempList.back()->isSpecialCall();
-}
-
-bool FnCall::pushRet() {
-	if (tempList.size() != 1)
-		return true;
-	return !tempList.back()->is0x54();
+std::string Function::print() {
+	return name;
 }
 
 ShortCallExpr::ShortCallExpr(unsigned int index, ProgStack args) {
@@ -237,16 +203,16 @@ ShortCallExpr::ShortCallExpr(unsigned int index, ProgStack args) {
 }
 
 
-void ShortCallExpr::print(std::ostream& out) {
-	out << "call@L" << std::to_string(blockIndex);
-	out << "(";
+std::string ShortCallExpr::print() {
+	std::string str = "call@L" + std::to_string(blockIndex) + "(";
 	for (auto it = fnArgs.rbegin(); it != fnArgs.rend(); it++) {
 		if (it != fnArgs.rbegin())
-			out << ", ";
+			str += ", ";
 
-		(*it)->print(out);
+		str += (*it)->print();
 	}
-	out << ")";
+	str += ")";
+	return str;
 }
 
 
@@ -266,49 +232,40 @@ AssignExpr::AssignExpr(std::shared_ptr<ValueExpr> lhs, std::shared_ptr<ValueExpr
 	} 
 }
 
-void AssignExpr::print(std::ostream& out) {
-	lhs->print(out);
-	out << " = ";
-	rhs->print(out);
-	out << "\t(" << VarType(lhs->getType()) << ")\n";
+std::string AssignExpr::print() {
+	return lhs->print() + " = " + rhs->print() + "\t(" + VarType(lhs->getType()) + ")";
 }
 
-void JumpExpr::print(std::ostream& out) {
+std::string JumpExpr::print() {
 	if (cond != nullptr) {
-		out << "if (";
-		cond->print(out);
-		out << ")  jump L" << std::to_string(blockIndex) << " else L" << std::to_string(elseIndex) << "\n";
+		return "if (" + cond->print() +")  jump L" + std::to_string(blockIndex) + " else L" + std::to_string(elseIndex);
 	} else {
-		out << "jump L" << std::to_string(blockIndex) << "\n";
+		return "jump L" + std::to_string(blockIndex);
 	}
 }
 
 
-void RetExpr::print(std::ostream& out) {
-	out << "return";
+std::string RetExpr::print() {
+	std::string str("return");
 	if (!values.empty()) {
-		out << " (";
+		str += " (";
 		for (auto it = values.rbegin(); it != values.rend(); it++) {
 			if (it != values.rbegin())
-				out << ", ";
+				str += ", ";
 
-			(*it)->print(out);
+			str += (*it)->print();
 		}
-		out << ")";
+		str += ")";
 	}
-	out << "\n";
+	return str;
 }
 
-void AddTextExpr::print(std::ostream& out) {
-	out << "addtext " << std::to_string(index) << " ";
-	text->print(out);
-	out << "\n";
+std::string AddTextExpr::print() {
+	return "addtext " + std::to_string(index) + " " + text->print();
 }
 
-void SetNameExpr::print(std::ostream& out) {
-	out << "setname ";
-	name->print(out);
-	out << "\n";
+std::string SetNameExpr::print() {
+	return "setname " +	name->print();
 }
 
 
@@ -329,7 +286,7 @@ void Statement::print(std::ostream &out) {
 	if (lineNum != 0)
 		out << std::to_string(lineNum) << ": ";
 
-	expr->print(out);
+	out << expr->print() << "\n";
 }
 
 
