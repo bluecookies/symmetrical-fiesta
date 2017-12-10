@@ -8,32 +8,46 @@
 
 // Expressions
 
-std::string Expression::print() {
+std::string Expression::print(bool) {
 	return std::string("Expression here\n");
 }
 
-std::string LineExpr::print() {
-	return "line " + std::to_string(lineNum);
+std::string LineExpr::print(bool hex) {
+	if (hex)
+		return "line 0x" + toHex(lineNum);
+	else
+		return "line " + std::to_string(lineNum);
 }
 
-BinaryValueExpr::BinaryValueExpr(std::shared_ptr<ValueExpr> e1, std::shared_ptr<ValueExpr> e2, unsigned int op_) {
+ValueExpr* ValueExpr::toRValue() {
+	if (type == ValueType::INTREF)
+		type = ValueType::INT;
+	else if (type == ValueType::STRREF)
+		type = ValueType::STR;
+
+	return this;
+}
+
+
+BinaryValueExpr::BinaryValueExpr(Value e1, Value e2, unsigned int op_) {
 	if (e1 == nullptr || e2 == nullptr) {
 		throw std::logic_error("Assigning null pointers.");
 	}
 
-	expr1 = e1;
-	expr2 = e2;
+	// Take ownership (if I had rewritten this instead of trying to edit it, I wouldn't have tried to use e1 and e2 again later)
+	expr1 = std::move(e1);
+	expr2 = std::move(e2);
 	op = op_;
 
 	if (op == 0xFFFFFFFF)
 		return;
 
-	if (e1->getType() != e2->getType())
+	if (expr1->getType() != expr2->getType())
 		Logger::Warn() << "Comparing different types: " << VarType(expr1->getType()) << ", " << VarType(expr2->getType()) << std::endl;
 
-	if (e1->getType() == ValueType::INT)
+	if (expr1->getType() == ValueType::INT)
 		type = ValueType::INT;
-	else if (e1->getType() == ValueType::STR && e2->getType() == ValueType::STR) {
+	else if (expr1->getType() == ValueType::STR && expr2->getType() == ValueType::STR) {
 		if (op == 1)
 			type = ValueType::STR;
 		else
@@ -41,7 +55,7 @@ BinaryValueExpr::BinaryValueExpr(std::shared_ptr<ValueExpr> e1, std::shared_ptr<
 	}
 }
 
-std::string BinaryValueExpr::print() {
+std::string BinaryValueExpr::print(bool hex) {
 	std::string opRep;
 	switch (op) {
 		case 0x01: opRep = " + "; break;
@@ -54,22 +68,25 @@ std::string BinaryValueExpr::print() {
 		case 0x13: opRep = " > "; break;
 		case 0x14: opRep = " >= "; break;
 		case 0x20: opRep = " && "; break;
-		default: opRep = " <op" + std::to_string(op) + "> "; break;
+		default: 
+			opRep = " <op" + (hex ? ("0x" + toHex(op)) : std::to_string(op)) + "> ";
+			break;
 	}
 
-	return expr1->print() + opRep + expr2->print();
+	return expr1->print(hex) + opRep + expr2->print(hex);
 }
 
-IndexValueExpr::IndexValueExpr(std::shared_ptr<ValueExpr> e1, std::shared_ptr<ValueExpr> e2) : BinaryValueExpr(e1, e2, 0xFFFFFFFF) {
-	if (e2->getType() != ValueType::INT) {
+// this looks weird, check the expiration date
+IndexValueExpr::IndexValueExpr(Value e1, Value e2) : BinaryValueExpr(std::move(e1), std::move(e2), 0xFFFFFFFF) {
+	if (expr2->getType() != ValueType::INT) {
 		Logger::Error() << "Indexing with non-int value.\n";
 		throw std::logic_error("Bad index");
 	}
 
-	Logger::VVDebug() << e1->print() << " is array of type " << VarType(e1->getType()) << "\n";
+	Logger::VVDebug() << expr1->print() << " is array of type " << VarType(expr1->getType()) << "\n";
 
 	// Set type of value
-	unsigned int arrType = e1->getType() - 3;
+	unsigned int arrType = expr1->getType() - 3;
 	if (arrType == ValueType::INTLIST)
 		type = ValueType::INTREF;
 	else if (arrType == ValueType::STRLIST)
@@ -80,49 +97,57 @@ IndexValueExpr::IndexValueExpr(std::shared_ptr<ValueExpr> e1, std::shared_ptr<Va
 		type = ValueType::INTREF;
 }
 
-std::string IndexValueExpr::print() {
-	return expr1->print() + "[" + expr2->print() + "]";
+std::string IndexValueExpr::print(bool hex) {
+	return expr1->print(hex) + "[" + expr2->print(hex) + "]";
 }
 
-std::string NotExpr::print() {
-	return "!(" + cond->print() + ")";
+// when fixing, make sure type is integer and integer bool, and cond is also integer and integer bool
+NotExpr::NotExpr(Value cond) : ValueExpr(ValueType::INT), condition(std::move(cond)) {
+	if (condition->getType() != ValueType::INT) {
+		Logger::Error() << "Not cannot be applied to value of type " << VarType(condition->getType()) << std::endl;
+	}
 }
 
-std::string RawValueExpr::print() {
-	if (!str.empty()) {
+
+std::string NotExpr::print(bool hex) {
+	return "!(" + condition->print(hex) + ")";
+}
+
+std::string RawValueExpr::print(bool hex) {
+	if (type == ValueType::STR) {
 		return "\"" + str + "\"";
+	} else if (hex) {
+		return "0x" + toHex(value);
 	} else {
 		return std::to_string(value);
 	}
 }
 
-bool RawValueExpr::isIndexer() {
+IntType RawValueExpr::getIntType() {
 	if (type != ValueType::INT)
-		return false;
+		return IntegerInvalid;
 
-	return (value == 0xFFFFFFFF);
+	if (value == 0xFFFFFFFF)
+		return IntegerIndexer;
+
+	unsigned char intType = value >> 24;
+	switch (intType) {
+		case 0x00:
+			if (value == 0x53 || value == 0x25 || value == 0x26)
+				return IntegerLocalRef;
+			else
+				return IntegerSimple;
+		case 0x7d:	return IntegerLocalVar;
+		case 0x7e:	return IntegerFunction;
+		case 0x7f:	return IntegerGlobalVar;
+		default:
+			return IntegerInvalid;
+	}
 }
 
-unsigned int RawValueExpr::getVarIndex() {
-	if (type != ValueType::INT)
-		return 0xFFFFFFFF;
 
-	if (value >> 24 == 0x7f)
-		return (value & 0x00FFFFFF);
-
-	return 0xFFFFFFFF;
-}
-
-unsigned int RawValueExpr::getCommandIndex() {
-	if (type != ValueType::INT)
-		return 0xFFFFFFFF;
-
-	if (value >> 24 == 0x7e)
-		return (value & 0x00FFFFFF);
-
-	return 0xFFFFFFFF;
-}
-
+// fix
+unsigned int VarValueExpr::varCount = 0;
 VarValueExpr::VarValueExpr(std::string name, unsigned int type, unsigned int length) : ValueExpr(type + 3), name(name), length(length) {
 	if (type == ValueType::INTLIST || type == ValueType::STRLIST) {
 		if (length == 0)
@@ -133,46 +158,44 @@ VarValueExpr::VarValueExpr(std::string name, unsigned int type, unsigned int len
 	}
 }
 
-VarValueExpr* VarValueExpr::stackLoc(std::vector<unsigned int> stackHeights) {
-	unsigned int height = stackHeights.back();
-	unsigned int depth =  stackHeights.size() - 1;
-
-	VarValueExpr* pValue = new VarValueExpr();
-
-	if (depth > 0)
-		pValue->name = "stack_" + std::to_string(depth) + "_" + std::to_string(height);
-	else
-		pValue->name = "stack" + std::to_string(height);
-
-	return pValue;
+VarValueExpr::VarValueExpr(unsigned int type) : ValueExpr(type) {
+	name = "var" + std::to_string(varCount++);
 }
 
-std::string VarValueExpr::print() {
+
+std::string VarValueExpr::print(bool hex) {
 	if (!name.empty())
 		return name;
 	else
-		return ValueExpr::print();
+		return ValueExpr::print(hex);
 }
 
-std::string ErrValueExpr::print() {
+std::string ErrValueExpr::print(bool) {
 	return std::string("(ERROR)");
 }
 
-CallExpr::CallExpr(Function fnCall_, unsigned int option_, ProgStack args_, std::vector<unsigned int> extraList_, unsigned int returnType_) : callFunc(fnCall_) {
+CallExpr::CallExpr(Function fnCall_, unsigned int option_, std::vector<Value> args_, std::vector<unsigned int> extraList_, unsigned int returnType_) : callFunc(fnCall_) {
 	type = returnType_;
 	fnOption = option_;
-	fnArgs = args_;
+	fnArgs = std::move(args_);
 	fnExtra = extraList_;
 }
 
-std::string CallExpr::print() {
+CallExpr::CallExpr(const CallExpr& copy) : ValueExpr(copy), callFunc(copy.callFunc), fnOption(copy.fnOption), fnExtra(copy.fnExtra) {
+	for (const auto& arg:copy.fnArgs) {
+		fnArgs.emplace_back(arg->clone());
+	}
+}
+
+
+std::string CallExpr::print(bool hex) {
 	std::string str = callFunc.print();
 	str += "-" + std::to_string(fnOption) + "(";
 	for (auto it = fnArgs.rbegin(); it != fnArgs.rend(); it++) {
 		if (it != fnArgs.rbegin())
 			str += ", ";
 
-		str += (*it)->print();
+		str += (*it)->print(hex);
 	}
 	str += ")";
 	if (!fnExtra.empty()) {
@@ -195,31 +218,34 @@ std::string Function::print() {
 	return name;
 }
 
-ShortCallExpr::ShortCallExpr(unsigned int index, ProgStack args) {
+ShortCallExpr::ShortCallExpr(unsigned int index, std::vector<Value> args) {
 	blockIndex = index;
-	fnArgs = args;
+	fnArgs = std::move(args);
 
 	type = ValueType::INT;
 }
 
 
-std::string ShortCallExpr::print() {
+std::string ShortCallExpr::print(bool hex) {
 	std::string str = "call@L" + std::to_string(blockIndex) + "(";
 	for (auto it = fnArgs.rbegin(); it != fnArgs.rend(); it++) {
 		if (it != fnArgs.rbegin())
 			str += ", ";
 
-		str += (*it)->print();
+		str += (*it)->print(hex);
 	}
 	str += ")";
 	return str;
 }
 
 
-AssignExpr::AssignExpr(std::shared_ptr<ValueExpr> lhs, std::shared_ptr<ValueExpr> rhs):lhs(lhs), rhs(rhs) {
-	if (lhs == nullptr || rhs == nullptr) {
+AssignExpr::AssignExpr(Value lhs_, Value rhs_) {
+	if (lhs_ == nullptr || rhs_ == nullptr) {
 		throw std::logic_error("Assigning null pointers.");
 	}
+	
+	lhs = std::move(lhs_);
+	rhs = std::move(rhs_);
 
 	if (!lhs->isLValue())
 		throw std::logic_error("error: lvalue required as left operand of assignment");
@@ -232,20 +258,25 @@ AssignExpr::AssignExpr(std::shared_ptr<ValueExpr> lhs, std::shared_ptr<ValueExpr
 	} 
 }
 
-std::string AssignExpr::print() {
-	return lhs->print() + " = " + rhs->print() + "\t(" + VarType(lhs->getType()) + ")";
+std::string AssignExpr::print(bool hex) {
+	return lhs->print(hex) + " = " + rhs->print(hex) + "\t(" + VarType(lhs->getType()) + ")";
 }
 
-std::string JumpExpr::print() {
-	if (cond != nullptr) {
-		return "if (" + cond->print() +")  jump L" + std::to_string(blockIndex) + " else L" + std::to_string(elseIndex);
+JumpExpr::JumpExpr(unsigned int blockIndex, unsigned int elseIndex, Value cond) : blockIndex(blockIndex), elseIndex(elseIndex), condition(std::move(cond)) {
+
+}
+
+
+std::string JumpExpr::print(bool hex) {
+	if (condition != nullptr) {
+		return "if (" + condition->print(hex) +")  jump L" + std::to_string(blockIndex) + " else L" + std::to_string(elseIndex);
 	} else {
 		return "jump L" + std::to_string(blockIndex);
 	}
 }
 
 
-std::string RetExpr::print() {
+std::string RetExpr::print(bool hex) {
 	std::string str("return");
 	if (!values.empty()) {
 		str += " (";
@@ -253,19 +284,19 @@ std::string RetExpr::print() {
 			if (it != values.rbegin())
 				str += ", ";
 
-			str += (*it)->print();
+			str += (*it)->print(hex);
 		}
 		str += ")";
 	}
 	return str;
 }
 
-std::string AddTextExpr::print() {
-	return "addtext " + std::to_string(index) + " " + text->print();
+std::string AddTextExpr::print(bool hex) {
+	return "addtext " + (hex ? ("0x" + toHex(index)) : std::to_string(index)) + " " + text->print(hex);
 }
 
-std::string SetNameExpr::print() {
-	return "setname " +	name->print();
+std::string SetNameExpr::print(bool hex) {
+	return "setname " +	name->print(hex);
 }
 
 

@@ -29,14 +29,26 @@ inline std::string VarType(unsigned int type) {
 	}
 }
 
+// For ValueExpr of type INT
+enum IntType {
+	IntegerInvalid,
+	IntegerSimple,
+	IntegerLocalVar,
+	IntegerFunction,
+	IntegerGlobalVar,
+	IntegerIndexer,
+	IntegerBool,
+	IntegerLocalRef,
+};
+
 class Expression {
 	public:
 		//virtual Expression* clone() { return new Expression(*this); }
 
 		virtual ~Expression() {}
-		virtual std::string print();
+		virtual std::string print(bool hex=false);
 
-		
+		virtual bool hasSideEffect() { return false; }
 };
 
 class LineExpr: public Expression {
@@ -45,7 +57,7 @@ class LineExpr: public Expression {
 		LineExpr(unsigned int line) : lineNum(line) {}
 		//virtual Expression* clone() override  { return new LineExpr(*this); }
 
-		std::string print() override;
+		std::string print(bool hex=false) override;
 };
 
 class ValueExpr: public Expression {
@@ -54,55 +66,60 @@ class ValueExpr: public Expression {
 		ValueExpr(unsigned int type) : type(type) {}
 		ValueExpr() {}
 	public:
-		virtual std::shared_ptr<ValueExpr> clone()  { return std::make_shared<ValueExpr>(*this); }
+		virtual ValueExpr* clone() const = 0;
 
-		unsigned int getType() { return type; }
+		unsigned int getType() const { return type; }
 		void setType(unsigned int type_) {
 			type = type_;
 		}
 
+
 		// This is some fake misleading naming here
 		// Not real lvalues and rvalues, more like just "assignable"
 		virtual bool isLValue() { return false; }
+		ValueExpr* toRValue();
 
-		virtual bool isIndexer() { return false; }
-		virtual unsigned int getVarIndex() { return 0xFFFFFFFF; }
-		virtual unsigned int getCommandIndex() { return 0xFFFFFFFF; }
-		virtual unsigned int getValue() { return 0xFFFFFFFF; }
+		virtual IntType getIntType() { return IntegerInvalid; }
+		virtual unsigned int getIndex() { return 0xFF000000; }
 };
 
-typedef std::vector<std::shared_ptr<ValueExpr>> ProgStack;
-
+typedef std::unique_ptr<ValueExpr> Value;
 
 class BinaryValueExpr: public ValueExpr {
 	protected:
-		std::shared_ptr<ValueExpr> expr1 = nullptr;
-		std::shared_ptr<ValueExpr> expr2 = nullptr;
+		Value expr1 = nullptr;
+		Value expr2 = nullptr;
 		unsigned int op = 0;
 	public:
-		BinaryValueExpr(std::shared_ptr<ValueExpr> e1, std::shared_ptr<ValueExpr> e2, unsigned int op_);
-		virtual std::shared_ptr<ValueExpr> clone() override  { return std::make_shared<BinaryValueExpr>(*this); }
+		BinaryValueExpr(Value e1, Value e2, unsigned int op_);
+		BinaryValueExpr(const BinaryValueExpr& copy) : ValueExpr(copy), expr1(copy.expr1->clone()), expr2(copy.expr2->clone()), op(copy.op) {}
+		virtual BinaryValueExpr* clone() const override { return new BinaryValueExpr(*this); }
 
-		std::string print() override;
+		std::string print(bool hex=false) override;
+		bool hasSideEffect() override { return expr1->hasSideEffect() || expr2->hasSideEffect(); }
+		IntType getIntType() override { return (type == ValueType::INT) ? IntegerSimple : IntegerInvalid; }
 };
 
 class IndexValueExpr: public BinaryValueExpr {
 	public:
-		IndexValueExpr(std::shared_ptr<ValueExpr> e1, std::shared_ptr<ValueExpr> e2);
-		virtual std::shared_ptr<ValueExpr> clone() override  { return std::make_shared<IndexValueExpr>(*this); }
+		IndexValueExpr(Value e1, Value e2);
+		virtual IndexValueExpr* clone() const override { return new IndexValueExpr(*this); }
 
-		std::string print() override;
+		std::string print(bool hex=false) override;
 
-		virtual bool isLValue() override { return true; }
+		virtual bool isLValue() override { return (type == ValueType::INTREF || type == ValueType::STRREF); }
 };
 
 // Can't think of any more unary expressions
 class NotExpr: public ValueExpr {
-	std::shared_ptr<ValueExpr> cond;
+	Value condition;
 	public:
-		NotExpr(std::shared_ptr<ValueExpr> cond) : cond(cond) {}
+		NotExpr(Value cond);
+		NotExpr(const NotExpr& copy) : ValueExpr(copy), condition(copy.condition->clone()) {}
+		virtual NotExpr* clone() const override { return new NotExpr(*this); }
 
-		std::string print() override;
+		std::string print(bool hex=false) override;
+		IntType getIntType() override { return IntegerBool; }
 };
 
 class RawValueExpr: public ValueExpr {
@@ -112,34 +129,40 @@ class RawValueExpr: public ValueExpr {
 		RawValueExpr(unsigned int type, unsigned int value) : ValueExpr(type), value(value) {}
 		RawValueExpr(std::string str, unsigned int value) : ValueExpr(ValueType::STR), value(value), str(str) {}
 
-		virtual std::shared_ptr<ValueExpr> clone() override  { return std::make_shared<RawValueExpr>(*this); }
+		virtual RawValueExpr* clone() const override { return new RawValueExpr(*this); }
 
-		bool isIndexer() override;
-		unsigned int getVarIndex() override;
-		unsigned int getCommandIndex() override;
-		unsigned int getValue() override { return value; };
-
-		std::string print() override;
+		std::string print(bool hex=false) override;
+		IntType getIntType() override;
+		unsigned int getIndex() override { return (value & 0x00FFFFFF); };
 };
 
 class VarValueExpr: public ValueExpr {
-	std::string name;
-	unsigned int length = 0;
-	VarValueExpr() {}
+	private:
+		static unsigned int varCount;
+
+		std::string name;
+		unsigned int length = 0;
+		VarValueExpr() {}
 	public:
 		VarValueExpr(std::string name, unsigned int type, unsigned int length);
-		static VarValueExpr* stackLoc(std::vector<unsigned int> stackHeights);
+		VarValueExpr(unsigned int type);
 
-		virtual std::shared_ptr<ValueExpr> clone() override  { return std::make_shared<VarValueExpr>(*this); }
+		virtual VarValueExpr* clone() const override { return new VarValueExpr(*this); }
 
-		std::string print() override;
+		std::string print(bool hex=false) override;
+		bool hasSideEffect() override { return false; }
+		IntType getIntType() override { return (type == ValueType::INT) ? IntegerSimple : IntegerInvalid; }
 
-		virtual bool isLValue() override { return true; }
+		virtual bool isLValue() override { return (type == ValueType::INTREF || type == ValueType::STRREF); }
 };
 
 class ErrValueExpr: public ValueExpr {
 	public:
-		std::string print() override;
+		std::string print(bool hex=false) override;
+		IntType getIntType() override { return IntegerInvalid; }
+
+		virtual ErrValueExpr* clone() const override { return new ErrValueExpr(); }
+
 };
 
 // Represents the target of the call (loosely)
@@ -169,66 +192,70 @@ class CallExpr: public ValueExpr {
 	unsigned int fnOption = 0;
 	std::vector<unsigned int> fnExtra;
 	protected:
-		ProgStack fnArgs;
+		std::vector<Value> fnArgs;
 		CallExpr() : callFunc("undefined") {}
 	public:
-		CallExpr(Function callFunc, unsigned int option, ProgStack args, std::vector<unsigned int> extraList, unsigned int returnType);
+		CallExpr(Function callFunc, unsigned int option, std::vector<Value> args, std::vector<unsigned int> extraList, unsigned int returnType);
+		CallExpr(const CallExpr& copy);
+		virtual CallExpr* clone() const override { return new CallExpr(*this); }
 
-		std::string print() override;
+		std::string print(bool hex=false) override;
+		bool hasSideEffect() override { return true; }
+
 };
 
 // Near absolute call
 class ShortCallExpr: public CallExpr {
 	unsigned int blockIndex = 0;
 	public:
-		ShortCallExpr(unsigned int blockIndex, ProgStack args);
+		ShortCallExpr(unsigned int blockIndex, std::vector<Value> args);
+		virtual ShortCallExpr* clone() const override { return new ShortCallExpr(*this); }
 
-		std::string print() override;
+		std::string print(bool hex=false) override;
 };
 
 class AssignExpr: public Expression {
-	std::shared_ptr<ValueExpr> lhs = nullptr;
-	std::shared_ptr<ValueExpr> rhs = nullptr;
+	Value lhs = nullptr;
+	Value rhs = nullptr;
 	public:
-		AssignExpr(std::shared_ptr<ValueExpr> lhs, std::shared_ptr<ValueExpr> rhs);
-		//virtual Expression* clone() override  { return new AssignExpr(*this); }
+		AssignExpr(Value lhs, Value rhs);
 
-		std::string print() override;
+		std::string print(bool hex=false) override;
 };
 
 
 class JumpExpr: public Expression {
 	unsigned int blockIndex, elseIndex;
-	std::shared_ptr<ValueExpr> cond;
+	Value condition;
 	public:
-		JumpExpr(unsigned int blockIndex, unsigned int elseIndex = 0, std::shared_ptr<ValueExpr> cond = nullptr) : blockIndex(blockIndex), elseIndex(elseIndex), cond(cond) {}
+		JumpExpr(unsigned int blockIndex, unsigned int elseIndex = 0, Value cond = nullptr);
 
-		std::string print() override;
+		std::string print(bool hex=false) override;
 };
 
 class RetExpr: public Expression {
-	ProgStack values;
+	std::vector<Value> values;
 	public:
-		RetExpr(ProgStack ret) : values(ret) {}
+		RetExpr(std::vector<Value> ret) : values(std::move(ret)) {}
 
-		std::string print() override;
+		std::string print(bool hex=false) override;
 };
 
 class AddTextExpr: public Expression {
-	std::shared_ptr<ValueExpr> text;
+	Value text;
 	unsigned int index = 0;
 	public:
-		AddTextExpr(std::shared_ptr<ValueExpr> text, unsigned int index) : text(text), index(index) {}
+		AddTextExpr(Value text, unsigned int index) : text(std::move(text)), index(index) {}
 
-		std::string print() override;
+		std::string print(bool hex=false) override;
 };
 
 class SetNameExpr: public Expression {
-	std::shared_ptr<ValueExpr> name;
+	Value name;
 	public:
-		SetNameExpr(std::shared_ptr<ValueExpr> name) : name(name) {}
+		SetNameExpr(Value name) : name(std::move(name)) {}
 
-		std::string print() override;
+		std::string print(bool hex=false) override;
 };
 
 /* class CallExpr: public ValueExpr {
