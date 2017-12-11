@@ -41,23 +41,26 @@ enum IntType {
 	IntegerLocalRef,
 };
 
+class ValueExpr;
+class Statement;
+typedef std::unique_ptr<ValueExpr> Value;
+typedef std::vector<Statement*> StatementBlock;
+
 class Expression {
+	private:
+		int lineNum = -1;
 	public:
 		//virtual Expression* clone() { return new Expression(*this); }
 
 		virtual ~Expression() {}
-		virtual std::string print(bool hex=false);
 
-		virtual bool hasSideEffect() { return false; }
-};
+		int getLineNum() { return lineNum; }
+		void setLineNum(int lineNum_) { lineNum = lineNum_; }
 
-class LineExpr: public Expression {
-	unsigned int lineNum = 0;
-	public:
-		LineExpr(unsigned int line) : lineNum(line) {}
-		//virtual Expression* clone() override  { return new LineExpr(*this); }
+		virtual std::string print(bool hex=false) const;
 
-		std::string print(bool hex=false) override;
+
+		virtual Value* getChild() { return nullptr; }
 };
 
 class ValueExpr: public Expression {
@@ -79,11 +82,14 @@ class ValueExpr: public Expression {
 		virtual bool isLValue() { return false; }
 		ValueExpr* toRValue();
 
+		virtual bool hasSideEffect() { return false; }
+
 		virtual IntType getIntType() { return IntegerInvalid; }
 		virtual unsigned int getIndex() { return 0xFF000000; }
-};
 
-typedef std::unique_ptr<ValueExpr> Value;
+		virtual void negateBool() { Logger::Warn() << "Negating non condition.\n"; }
+		virtual bool isBinaryExpression() { return false; }
+};
 
 class BinaryValueExpr: public ValueExpr {
 	protected:
@@ -95,9 +101,17 @@ class BinaryValueExpr: public ValueExpr {
 		BinaryValueExpr(const BinaryValueExpr& copy) : ValueExpr(copy), expr1(copy.expr1->clone()), expr2(copy.expr2->clone()), op(copy.op) {}
 		virtual BinaryValueExpr* clone() const override { return new BinaryValueExpr(*this); }
 
-		std::string print(bool hex=false) override;
+		std::string print(bool hex=false) const override;
 		bool hasSideEffect() override { return expr1->hasSideEffect() || expr2->hasSideEffect(); }
 		IntType getIntType() override { return (type == ValueType::INT) ? IntegerSimple : IntegerInvalid; }
+
+		void negateBool() override;
+
+		Value& getExpression1() { return expr1; }
+		Value& getExpression2() { return expr2; }
+		unsigned int getOp() { return op; }
+
+		virtual bool isBinaryExpression() override { return true; }
 };
 
 class IndexValueExpr: public BinaryValueExpr {
@@ -105,21 +119,9 @@ class IndexValueExpr: public BinaryValueExpr {
 		IndexValueExpr(Value e1, Value e2);
 		virtual IndexValueExpr* clone() const override { return new IndexValueExpr(*this); }
 
-		std::string print(bool hex=false) override;
+		std::string print(bool hex=false) const override;
 
 		virtual bool isLValue() override { return (type == ValueType::INTREF || type == ValueType::STRREF); }
-};
-
-// Can't think of any more unary expressions
-class NotExpr: public ValueExpr {
-	Value condition;
-	public:
-		NotExpr(Value cond);
-		NotExpr(const NotExpr& copy) : ValueExpr(copy), condition(copy.condition->clone()) {}
-		virtual NotExpr* clone() const override { return new NotExpr(*this); }
-
-		std::string print(bool hex=false) override;
-		IntType getIntType() override { return IntegerBool; }
 };
 
 class RawValueExpr: public ValueExpr {
@@ -131,7 +133,7 @@ class RawValueExpr: public ValueExpr {
 
 		virtual RawValueExpr* clone() const override { return new RawValueExpr(*this); }
 
-		std::string print(bool hex=false) override;
+		std::string print(bool hex=false) const override;
 		IntType getIntType() override;
 		unsigned int getIndex() override { return (value & 0x00FFFFFF); };
 };
@@ -149,7 +151,7 @@ class VarValueExpr: public ValueExpr {
 
 		virtual VarValueExpr* clone() const override { return new VarValueExpr(*this); }
 
-		std::string print(bool hex=false) override;
+		std::string print(bool hex=false) const override;
 		bool hasSideEffect() override { return false; }
 		IntType getIntType() override { return (type == ValueType::INT) ? IntegerSimple : IntegerInvalid; }
 
@@ -158,7 +160,7 @@ class VarValueExpr: public ValueExpr {
 
 class ErrValueExpr: public ValueExpr {
 	public:
-		std::string print(bool hex=false) override;
+		std::string print(bool hex=false) const override;
 		IntType getIntType() override { return IntegerInvalid; }
 
 		virtual ErrValueExpr* clone() const override { return new ErrValueExpr(); }
@@ -177,7 +179,7 @@ class Function {
 
 		void extraThing(unsigned int extra) { extraCall = extra; }
 
-		std::string print();
+		std::string print() const;
 
 		// if it is special
 		bool hasExtra = false;
@@ -199,7 +201,7 @@ class CallExpr: public ValueExpr {
 		CallExpr(const CallExpr& copy);
 		virtual CallExpr* clone() const override { return new CallExpr(*this); }
 
-		std::string print(bool hex=false) override;
+		std::string print(bool hex=false) const override;
 		bool hasSideEffect() override { return true; }
 
 };
@@ -211,7 +213,7 @@ class ShortCallExpr: public CallExpr {
 		ShortCallExpr(unsigned int blockIndex, std::vector<Value> args);
 		virtual ShortCallExpr* clone() const override { return new ShortCallExpr(*this); }
 
-		std::string print(bool hex=false) override;
+		std::string print(bool hex=false) const override;
 };
 
 class AssignExpr: public Expression {
@@ -220,7 +222,7 @@ class AssignExpr: public Expression {
 	public:
 		AssignExpr(Value lhs, Value rhs);
 
-		std::string print(bool hex=false) override;
+		std::string print(bool hex=false) const override;
 };
 
 
@@ -230,7 +232,8 @@ class JumpExpr: public Expression {
 	public:
 		JumpExpr(unsigned int blockIndex, unsigned int elseIndex = 0, Value cond = nullptr);
 
-		std::string print(bool hex=false) override;
+		std::string print(bool hex=false) const override;
+		virtual Value* getChild() override { if (condition) return &condition; else return nullptr; }
 };
 
 class RetExpr: public Expression {
@@ -238,7 +241,7 @@ class RetExpr: public Expression {
 	public:
 		RetExpr(std::vector<Value> ret) : values(std::move(ret)) {}
 
-		std::string print(bool hex=false) override;
+		std::string print(bool hex=false) const override;
 };
 
 class AddTextExpr: public Expression {
@@ -247,7 +250,7 @@ class AddTextExpr: public Expression {
 	public:
 		AddTextExpr(Value text, unsigned int index) : text(std::move(text)), index(index) {}
 
-		std::string print(bool hex=false) override;
+		std::string print(bool hex=false) const override;
 };
 
 class SetNameExpr: public Expression {
@@ -255,25 +258,63 @@ class SetNameExpr: public Expression {
 	public:
 		SetNameExpr(Value name) : name(std::move(name)) {}
 
-		std::string print(bool hex=false) override;
+		std::string print(bool hex=false) const override;
 };
 
 /* class CallExpr: public ValueExpr {
 	
 }; */
 
+class Statement;
+class IfStatement;
+
 class Statement {
-	unsigned int lineNum = 0;
 	Expression* expr = nullptr;
+	protected:
+		int lineNum = -1;
+		Statement() {}
 	public:
 		Statement(Expression* expr);
 		virtual ~Statement();
 
-		virtual void print(std::ostream &out);
+		virtual void print(std::ostream &out, int indentation = 0) const;
+
+		virtual Value* getChild() {
+			if (expr)
+				return expr->getChild();
+			else
+				return nullptr;
+		}
+
+		virtual IfStatement* makeIf(Value cond, StatementBlock block);
+};
+
+struct IfBranch {
+	Value condition;
+	StatementBlock block;
+	int lineNum = -1;
+
+	IfBranch(Value cond_, StatementBlock block_, int lineNum_ = -1) : condition(std::move(cond_)), block(block_), lineNum(lineNum_) {}
+
+	std::string lineComment() const { return (lineNum >= 0) ? ("\t// line " + std::to_string(lineNum)) : ""; }
+};
+
+class IfStatement: public Statement {
+	// Branches in reverse order
+	std::vector<IfBranch> branches;
+	public:
+		IfStatement(Value cond_, StatementBlock trueBlock_, StatementBlock falseBlock_);
+		~IfStatement();
+
+		void print(std::ostream &out, int indentation = 0) const override;
+
+		virtual IfStatement* makeIf(Value cond, StatementBlock block) override;
 };
 
 
+class SwitchStatement: public Statement {
 
+};
 
 
 

@@ -109,7 +109,7 @@ int main(int argc, char* argv[]) {
 	}
 	
 	unsigned char *decompressed = new unsigned char[decompressedSize];
-	decompressData(buffer + 8, decompressed, decompressedSize);
+	decompressLZSS(buffer + 8, decompressed, decompressedSize);
 	
 	std::wstring_convert<std::codecvt_utf8<char16_t>, char16_t> ucs2conv;
 	std::u16string gameExe16((char16_t*) decompressed, decompressedSize >> 1);

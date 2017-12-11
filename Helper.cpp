@@ -133,7 +133,8 @@ void decodeData(unsigned char* debuf, unsigned int desize) {
 	}
 }
 
-void decompressData(unsigned char* compData, unsigned char* decompBegin, unsigned int decompSize) {
+// LZSS variant - similar to Nintendo's Yaz0 format
+void decompressLZSS(unsigned char* compData, unsigned char* decompBegin, unsigned int decompSize) {
 	unsigned char* from = compData;
 	unsigned char* to = decompBegin;
 	unsigned char* decompEnd = decompBegin + decompSize;

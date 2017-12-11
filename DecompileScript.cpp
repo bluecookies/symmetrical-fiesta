@@ -36,14 +36,14 @@ typedef struct BasicBlock {
 	unsigned int nextAddress;
 
 	std::vector<Expression*> expressions;
-	std::vector<Statement*> statements;
+	StatementBlock statements;
 
 	std::vector<BasicBlock*> pred, succ, calls;
 
 	BasicBlock(unsigned int address) : index(count++), startAddress(address){}
 	~BasicBlock();
 
-
+	void addSuccessor(BasicBlock*);
 } Block;
 int Block::count;
 
@@ -51,6 +51,12 @@ BasicBlock::~BasicBlock() {
 	for (auto s:statements)
 		delete s;
 }
+
+void BasicBlock::addSuccessor(BasicBlock* pSucc) {
+	succ.push_back(pSucc);
+	pSucc->pred.push_back(this);
+}
+
 
 struct Label {
 	unsigned int address;
@@ -209,10 +215,13 @@ class ScriptInfo {
 		void readGlobalInfo(std::string filename);
 
 		void initEntrypoints(Parser& parser);
+		void structureStatements();
 		void generateStatements();
 
 		void printBlocks(std::string filename);
 		void dumpCFG(std::string filename);
+
+		bool StructureIf(Block* pBlock);
 };
 
 	
@@ -407,17 +416,156 @@ void ScriptInfo::initEntrypoints(Parser &parser) {
 	}
 }
 
+bool ScriptInfo::StructureIf(Block* pBlock) {
+	if (pBlock->blockType != Block::TWOWAY) {
+		return false;
+	}
+	Logger::VVDebug() << std::to_string(pBlock->index) << " has succ size " << std::to_string(pBlock->succ.size()) << std::endl;
+	if (pBlock->succ.size() != 2)
+		throw std::logic_error("Fake TWOWAY");
+
+	Block* trueBlock = pBlock->succ.at(0);
+	Block* falseBlock = pBlock->succ.at(1);
+	if (trueBlock->pred.size() != 1 || falseBlock->pred.size() != 1) {
+		return false;
+	}
+	if (trueBlock->succ.size() != 1 || falseBlock->succ.size() != 1) {
+		return false;
+	}
+	if (trueBlock->succ.at(0) != falseBlock->succ.at(0)) {
+		return false;
+	}
+	Block* final = trueBlock->succ.at(0);
+
+	// watch out for this, things might change
+	Value* ppCond = pBlock->statements.back()->getChild();
+	if (ppCond == nullptr) {
+		Logger::Error() << "If-else condition is null.\n";
+		return false;
+	}
+
+	// Remove the last (jump) statements
+	delete trueBlock->statements.back();
+	trueBlock->statements.pop_back();
+	// Move one to the block to save
+	Statement* jumpPointer = falseBlock->statements.back();
+	falseBlock->statements.pop_back();
+
+	IfStatement* pIf;
+	// If false block only has one statement (not including the jump)
+	if (falseBlock->statements.size() == 1) {
+		pIf = falseBlock->statements.back()->makeIf(std::move(*ppCond), trueBlock->statements);
+		trueBlock->statements.clear();
+		falseBlock->statements.pop_back();
+	} else {
+		pIf = new IfStatement(std::move(*ppCond), trueBlock->statements, falseBlock->statements);
+		trueBlock->statements.clear();
+		falseBlock->statements.clear();
+	}
+	/* Ahem
+	 The last statement (which should contain the last expression which is a conditional jump) is destroyed,
+	 destroying the jump expression, which by now has its condition moved out into the if statement.
+	 This condition will be destroyed by the if statement which is destroyed when the vector is cleared. */
+
+	// Remove the if-goto
+	delete pBlock->statements.back();	// careful careful
+	pBlock->statements.pop_back();
+	// Push the if statement
+	pBlock->statements.push_back(pIf);
+	/* Every statement in both blocks have been moved out, and they are not referenced anywhere else 
+	   except maybe as a subroutine, so should probably watch out for that. */
+	
+	// Replace successor with single target
+	pBlock->succ.pop_back();
+	pBlock->succ.pop_back();
+	pBlock->addSuccessor(final);
+
+	// Remove true/false blocks from control flow
+	trueBlock->succ.pop_back();
+	falseBlock->succ.pop_back();
+	final->pred.erase(std::remove(final->pred.begin(), final->pred.end(), trueBlock), final->pred.end()); 
+	final->pred.erase(std::remove(final->pred.begin(), final->pred.end(), falseBlock), final->pred.end());
+
+	// Transfer calls
+	pBlock->calls.insert(pBlock->calls.end(), trueBlock->calls.begin(), trueBlock->calls.end());
+	pBlock->calls.insert(pBlock->calls.end(), falseBlock->calls.begin(), falseBlock->calls.end());
+	trueBlock->calls.clear();
+	falseBlock->calls.clear();
+
+	// Add jump instruction to target
+	pBlock->statements.push_back(jumpPointer);
+
+	// Change the type of block (not a two way anymore)
+	pBlock->blockType = Block::ONEWAY;
+
+	// delete true and false blocks
+	// but not yet
+	trueBlock->pred.pop_back();
+	falseBlock->pred.pop_back();
+	return true;
+}
+
+void ScriptInfo::structureStatements() {
+	Logger::Info() << "Structuring if else statements.\n";
+	// Structure ifs
+	bool changed = true;
+	while (changed) {
+		changed = false;
+		for (auto &pBlock:blocks) {
+			if (StructureIf(pBlock)) {
+				changed = true;
+				break;
+			}
+		}
+	}
+
+	// Turn ifs into switches
+	//for (auto &pBlock:blocks) {
+	//	if (!pBlock->statements.empty()) {
+	//		pBlock->statements.back()->foldSwitch();
+	//	}
+	//}
+
+	// Simplify blocks
+	for (auto &pBlock:blocks) {
+		if (pBlock->succ.size() == 1) {
+			Block* pSucc = pBlock->succ[0];
+			if (pSucc->pred.size() == 1) {
+				// Delete jump statement
+				delete pBlock->statements.back();
+				pBlock->statements.pop_back();
+				// Update successors
+				pBlock->blockType = pSucc->blockType;
+				pBlock->succ.pop_back();
+				pSucc->pred.pop_back();
+
+				pBlock->succ.insert(pBlock->succ.end(), pSucc->succ.begin(), pSucc->succ.end());
+				pSucc->succ.clear();
+				// Move statements
+				pBlock->statements.reserve(pBlock->statements.size() + pSucc->statements.size());
+				pBlock->statements.insert(pBlock->statements.end(), pSucc->statements.begin(), pSucc->statements.end());
+				pSucc->statements.clear();
+			}
+		}
+	}
+}
+
 void ScriptInfo::generateStatements() {
 	for (auto &pBlock:blocks) {
 		for (auto &pExpr:pBlock->expressions){
 			pBlock->statements.push_back(new Statement(pExpr));
 		}
 	}
+
+	structureStatements();
 }
 
 void ScriptInfo::printBlocks(std::string filename) {
 	std::ofstream out(filename);
 	for (auto &pBlock:blocks) {
+		if (pBlock->statements.size() == 0)
+			continue;
+
 		out << "\nL" << std::to_string(pBlock->index) << "@0x" << toHex(pBlock->startAddress) << "\n";
 		out << "==========================================================================\n";
 		for (auto &pStatement:pBlock->statements){
@@ -432,15 +580,17 @@ void ScriptInfo::dumpCFG(std::string filename) {
 	std::ofstream out(filename);
 	// should be same - check
 	out << "strict digraph " << "CFG" << " {\n";
-	out << "\tnode [shape=box]\n";
+	out << "\tnode [shape=box, fixedsize=true, fontsize=8, labelloc=\"t\"]\n";
 	for (const auto &block:blocks) {
+		if (block->statements.size() == 0)
+			continue;
+
 		std::string props;
 		if (block->isEntrypoint)
 			props += "penwidth=2,";
 		if (block->isFunction)
 			props += "color=red,";
 		props += "height=" + std::to_string(block->statements.size()*0.05);
-		props += ",fontsize=10, labelloc=\"t\"";
 
 		out << "\tBlock" << std::to_string(block->index) << " [" << props << "]\n";
 
@@ -649,7 +799,7 @@ ValueExpr* BytecodeParser::getLValue(const ScriptInfo &info) {
 		switch(pCurr->getIntType()) {
 			case IntegerLocalRef:
 				localVar = true;
-				localString = "loc_" + pCurr->print(true);
+				localString = "loc_" + pCurr->print(true) + "_";
 			break;
 			case IntegerSimple: {
 				if (indexing) {
@@ -715,6 +865,7 @@ Function BytecodeParser::getCallFunction(const ScriptInfo& info) {
 		// else
 		Function fn("FN_" + pCall->print(true));
 
+		// Play voice
 		if (pCall->getIndex() == 0x12)
 			fn.hasExtra = true;
 		else if (pCall->getIndex() == 0x54)
@@ -749,13 +900,19 @@ void BytecodeParser::parse(ScriptInfo& info) {
 		unsigned char opcode;
 		Expression* pExpr;
 		bool newBlock = false;
+
+		int lineNum = -1;
+		bool attachLineNum = false;
 		while (!buf->done()) {
 			instAddress = buf->getAddress();
 			opcode = getChar();
 
 			pExpr = nullptr;
 			switch (opcode) {
-				case 0x01: pExpr = new LineExpr(getInt()); break;
+				case 0x01: {
+					lineNum = getInt();
+					attachLineNum = true;
+				} break;
 				case 0x02: {
 					unsigned int type = getInt();
 					unsigned int value = getInt();
@@ -815,6 +972,7 @@ void BytecodeParser::parse(ScriptInfo& info) {
 
 					pBlock->nextAddress = buf->getAddress();
 					buf->setAddress(pJumpBlock->startAddress);
+					pBlock->blockType = Block::ONEWAY;
 					newBlock = true;
 				} break; 
 				case 0x11: 
@@ -828,17 +986,18 @@ void BytecodeParser::parse(ScriptInfo& info) {
 					// Store stack after condition has been popped
 					addBranch(pJumpBlock, &stack);
 
-					pBlock->succ.push_back(pJumpBlock);
-					pJumpBlock->pred.push_back(pBlock);
+					pBlock->addSuccessor(pJumpBlock);
 
 
 					Block* pNextBlock = info.getBlock(buf->getAddress());
-					if (opcode == 0x11)
-						pExpr = new JumpExpr(pJumpBlock->index, pNextBlock->index, make_unique<NotExpr>(std::move(condition)));
-					else
-						pExpr = new JumpExpr(pJumpBlock->index, pNextBlock->index, std::move(condition));
+					if (opcode == 0x11) {
+						condition->negateBool();
+					}
+					
+					pExpr = new JumpExpr(pJumpBlock->index, pNextBlock->index, std::move(condition));
 
 					pBlock->nextAddress = buf->getAddress();
+					pBlock->blockType = Block::TWOWAY;
 					newBlock = true;
 				} break;
 				case 0x13: {
@@ -880,6 +1039,7 @@ void BytecodeParser::parse(ScriptInfo& info) {
 					pExpr = new RetExpr(std::move(ret));
 
 					pBlock->nextAddress = buf->getAddress();
+					pBlock->blockType = Block::RET;
 					newBlock = true;
 
 					if (!stack.empty()) {
@@ -890,6 +1050,7 @@ void BytecodeParser::parse(ScriptInfo& info) {
 					}
 
 				} break; 
+				// case 0x16:
 				case 0x20: {
 					unsigned int lType = getInt();
 					unsigned int rType = getInt();
@@ -988,8 +1149,14 @@ void BytecodeParser::parse(ScriptInfo& info) {
 				}
 			}
 
-			if (pExpr != nullptr)
+			if (pExpr != nullptr) {
 				pBlock->expressions.push_back(pExpr);
+				if (attachLineNum) {
+					pBlock->expressions.back()->setLineNum(lineNum);
+					attachLineNum = false;
+				}
+			}
+
 
 			if (newBlock || info.checkBlock(buf->getAddress())) {
 				// if i get the block here, I can dump dead code
@@ -1004,8 +1171,12 @@ void BytecodeParser::parse(ScriptInfo& info) {
 				Block* pNextBlock = info.getBlock(buf->getAddress());
 
 				// Add successor/predecessor no matter what
-				pBlock->succ.push_back(pNextBlock);
-				pNextBlock->pred.push_back(pBlock);
+				pBlock->addSuccessor(pNextBlock);
+
+				if (!newBlock) {
+					pBlock->blockType = Block::FALL;
+					pBlock->expressions.push_back(new JumpExpr(pNextBlock->index));
+				}
 
 				// Exit this branch if target is parsed
 				if (pNextBlock->parsed)

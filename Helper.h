@@ -57,6 +57,6 @@ StringList readFilenames(std::ifstream &f, unsigned int numFiles);
 
 void decodeExtra(unsigned char* debuf, unsigned int desize, unsigned char* key);
 void decodeData(unsigned char* debuf, unsigned int desize);
-void decompressData(unsigned char* compData, unsigned char* decompBegin, unsigned int decompSize);
+void decompressLZSS(unsigned char* compData, unsigned char* decompBegin, unsigned int decompSize);
 
 #endif

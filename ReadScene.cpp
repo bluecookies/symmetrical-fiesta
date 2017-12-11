@@ -211,7 +211,7 @@ int main(int argc, char* argv[]) {
 		}
 		unsigned char* decompressed = new unsigned char[decompressedSize];
 		
-		decompressData(buffer + 8, decompressed, decompressedSize);
+		decompressLZSS(buffer + 8, decompressed, decompressedSize);
 		
 		// Dump decompressed
 		std::string outfile = outdir + "/" + sceneNames.at(i) + ".ss";

@@ -8,15 +8,8 @@
 
 // Expressions
 
-std::string Expression::print(bool) {
+std::string Expression::print(bool) const {
 	return std::string("Expression here\n");
-}
-
-std::string LineExpr::print(bool hex) {
-	if (hex)
-		return "line 0x" + toHex(lineNum);
-	else
-		return "line " + std::to_string(lineNum);
 }
 
 ValueExpr* ValueExpr::toRValue() {
@@ -55,7 +48,7 @@ BinaryValueExpr::BinaryValueExpr(Value e1, Value e2, unsigned int op_) {
 	}
 }
 
-std::string BinaryValueExpr::print(bool hex) {
+std::string BinaryValueExpr::print(bool hex) const {
 	std::string opRep;
 	switch (op) {
 		case 0x01: opRep = " + "; break;
@@ -63,17 +56,42 @@ std::string BinaryValueExpr::print(bool hex) {
 		case 0x03: opRep = " / "; break;
 		case 0x04: opRep = " * "; break;
 		case 0x10: opRep = " != "; break;
-		case 0x11: opRep = " < "; break;
+		case 0x11: opRep = " == "; break;
 		case 0x12: opRep = " <= "; break;
-		case 0x13: opRep = " > "; break;
+		case 0x13: opRep = " < (maybe, check) "; break;
 		case 0x14: opRep = " >= "; break;
+		case 0x15: opRep = " > (check this) "; break;
 		case 0x20: opRep = " && "; break;
+		case 0x21: opRep = " || (check this) "; break;
 		default: 
 			opRep = " <op" + (hex ? ("0x" + toHex(op)) : std::to_string(op)) + "> ";
 			break;
 	}
 
 	return expr1->print(hex) + opRep + expr2->print(hex);
+}
+
+void BinaryValueExpr::negateBool() {
+	switch (op) {
+		case 0x10: op = 0x11; break;
+		case 0x11: op = 0x10; break;
+		case 0x12: op = 0x15; break;
+		case 0x13: op = 0x14; break;
+		case 0x14: op = 0x13; break;
+		case 0x15: op = 0x12; break;
+
+		// DeMorgan's laws
+		case 0x20:
+			op = 0x21;
+			expr1->negateBool();
+			expr2->negateBool();
+		break;
+		case 0x21:
+			op = 0x20;
+			expr1->negateBool();
+			expr2->negateBool();
+		break;
+	}
 }
 
 // this looks weird, check the expiration date
@@ -97,23 +115,11 @@ IndexValueExpr::IndexValueExpr(Value e1, Value e2) : BinaryValueExpr(std::move(e
 		type = ValueType::INTREF;
 }
 
-std::string IndexValueExpr::print(bool hex) {
+std::string IndexValueExpr::print(bool hex) const {
 	return expr1->print(hex) + "[" + expr2->print(hex) + "]";
 }
 
-// when fixing, make sure type is integer and integer bool, and cond is also integer and integer bool
-NotExpr::NotExpr(Value cond) : ValueExpr(ValueType::INT), condition(std::move(cond)) {
-	if (condition->getType() != ValueType::INT) {
-		Logger::Error() << "Not cannot be applied to value of type " << VarType(condition->getType()) << std::endl;
-	}
-}
-
-
-std::string NotExpr::print(bool hex) {
-	return "!(" + condition->print(hex) + ")";
-}
-
-std::string RawValueExpr::print(bool hex) {
+std::string RawValueExpr::print(bool hex) const {
 	if (type == ValueType::STR) {
 		return "\"" + str + "\"";
 	} else if (hex) {
@@ -163,14 +169,14 @@ VarValueExpr::VarValueExpr(unsigned int type) : ValueExpr(type) {
 }
 
 
-std::string VarValueExpr::print(bool hex) {
+std::string VarValueExpr::print(bool hex) const {
 	if (!name.empty())
 		return name;
 	else
 		return ValueExpr::print(hex);
 }
 
-std::string ErrValueExpr::print(bool) {
+std::string ErrValueExpr::print(bool) const {
 	return std::string("(ERROR)");
 }
 
@@ -188,7 +194,7 @@ CallExpr::CallExpr(const CallExpr& copy) : ValueExpr(copy), callFunc(copy.callFu
 }
 
 
-std::string CallExpr::print(bool hex) {
+std::string CallExpr::print(bool hex) const {
 	std::string str = callFunc.print();
 	str += "-" + std::to_string(fnOption) + "(";
 	for (auto it = fnArgs.rbegin(); it != fnArgs.rend(); it++) {
@@ -214,7 +220,7 @@ std::string CallExpr::print(bool hex) {
 	return str;
 }
 
-std::string Function::print() {
+std::string Function::print() const {
 	return name;
 }
 
@@ -226,7 +232,7 @@ ShortCallExpr::ShortCallExpr(unsigned int index, std::vector<Value> args) {
 }
 
 
-std::string ShortCallExpr::print(bool hex) {
+std::string ShortCallExpr::print(bool hex) const {
 	std::string str = "call@L" + std::to_string(blockIndex) + "(";
 	for (auto it = fnArgs.rbegin(); it != fnArgs.rend(); it++) {
 		if (it != fnArgs.rbegin())
@@ -258,7 +264,7 @@ AssignExpr::AssignExpr(Value lhs_, Value rhs_) {
 	} 
 }
 
-std::string AssignExpr::print(bool hex) {
+std::string AssignExpr::print(bool hex) const {
 	return lhs->print(hex) + " = " + rhs->print(hex) + "\t(" + VarType(lhs->getType()) + ")";
 }
 
@@ -267,7 +273,7 @@ JumpExpr::JumpExpr(unsigned int blockIndex, unsigned int elseIndex, Value cond) 
 }
 
 
-std::string JumpExpr::print(bool hex) {
+std::string JumpExpr::print(bool hex) const {
 	if (condition != nullptr) {
 		return "if (" + condition->print(hex) +")  jump L" + std::to_string(blockIndex) + " else L" + std::to_string(elseIndex);
 	} else {
@@ -276,7 +282,7 @@ std::string JumpExpr::print(bool hex) {
 }
 
 
-std::string RetExpr::print(bool hex) {
+std::string RetExpr::print(bool hex) const {
 	std::string str("return");
 	if (!values.empty()) {
 		str += " (";
@@ -291,11 +297,11 @@ std::string RetExpr::print(bool hex) {
 	return str;
 }
 
-std::string AddTextExpr::print(bool hex) {
+std::string AddTextExpr::print(bool hex) const {
 	return "addtext " + (hex ? ("0x" + toHex(index)) : std::to_string(index)) + " " + text->print(hex);
 }
 
-std::string SetNameExpr::print(bool hex) {
+std::string SetNameExpr::print(bool hex) const {
 	return "setname " +	name->print(hex);
 }
 
@@ -307,26 +313,118 @@ Statement::Statement(Expression* expr_) {
 		throw std::logic_error("Null pointer passed into statement.");
 
 	expr = expr_;
+	if (expr->getLineNum() >= 0)
+		lineNum = expr->getLineNum();
 }
 
 Statement::~Statement() {
 	delete expr;
 };
 
-void Statement::print(std::ostream &out) {
-	if (lineNum != 0)
-		out << std::to_string(lineNum) << ": ";
+void Statement::print(std::ostream &out, int indentation) const {
+	out << std::string(indentation, '\t');
+	out << expr->print();
+	if (lineNum >= 0)
+		out << ";\t// line " << std::to_string(lineNum) << "\n";
+	else
+		out << ";\n";
+}
 
-	out << expr->print() << "\n";
+// Puts this statement into the else block
+IfStatement* Statement::makeIf(Value cond, StatementBlock block) {
+	return new IfStatement(std::move(cond), block, {this});
 }
 
 
 
-/* class CallStatement:Statement {
-	ValueExpr* function = nullptr;
-	std::vector<ValueExpr*> params;
-}; */
+IfStatement::IfStatement(Value cond, StatementBlock trueBlock_, StatementBlock falseBlock_) {
+	int lineNum = cond->getLineNum();
+	branches.push_back(IfBranch(nullptr, falseBlock_));
+	branches.push_back(IfBranch(std::move(cond), trueBlock_, lineNum));
+}
 
-/*class AssignStatement:Statement {
-	AssignExpr* expr;
-};*/
+IfStatement::~IfStatement() {
+	for (const auto& branch:branches) {
+		for (const auto& statement:branch.block) {
+			delete statement;
+		}
+		// destroy condition
+	}
+}
+
+void IfStatement::print(std::ostream &out, int indentation) const {
+	auto pBranch = branches.rbegin();
+	if (pBranch == branches.rend())
+		return;
+
+	out << std::string(indentation, '\t') << "if (" << pBranch->condition->print() << ") {" << pBranch->lineComment() << "\n";
+	for (const auto& statement:pBranch->block) {
+		statement->print(out, indentation + 1);
+	}
+	out << std::string(indentation, '\t') << "}";
+	pBranch++;
+	while (pBranch != branches.rend()) {
+		if (pBranch->condition) {
+			out << std::string(indentation, '\t') << " else if (" << pBranch->condition->print() << ") {" << pBranch->lineComment() << "\n";
+		} else {
+			out << std::string(indentation, '\t') << " else {" << pBranch->lineComment() << "\n";
+			if (pBranch + 1 != branches.rend())
+				Logger::Error() << "More conditions after else block.\n";
+		}
+
+		for (const auto& statement:pBranch->block) {
+			statement->print(out, indentation + 1);
+		}
+		pBranch++;
+		out << std::string(indentation, '\t') << "}";
+	}
+	out << "\n";
+}
+
+IfStatement* IfStatement::makeIf(Value cond, StatementBlock block) {
+	int lineNum = cond->getLineNum();
+	branches.push_back(IfBranch(std::move(cond), block, lineNum));
+	return this;
+}
+
+
+/*
+Statement* IfStatement::foldSwitch() {
+	if (!condition->isBinaryExpression())
+		return nullptr;
+
+
+	BinaryValueExpr* comp = static_cast<BinaryValueExpr*>(condition.get());
+	std::string hopefullyTemp = comp->getExpression1()->print();
+
+	if (comp->getOp() != 0x11)
+		return nullptr;
+
+	unsigned int value = comp->getExpression2()->getIndex();
+	if (value & 0xFF000000)
+		return nullptr;
+
+	if (falseBlock.size() > 1)
+		return nullptr;
+	else if (falseBlock.empty())
+
+	//falseBlock.back
+		return nullptr;
+
+	return nullptr;
+} */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
