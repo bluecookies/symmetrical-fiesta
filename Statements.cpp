@@ -51,7 +51,8 @@ IfStatement* Statement::makeIf(Value cond, StatementBlock block) {
 
 IfStatement::IfStatement(Value cond, StatementBlock trueBlock_, StatementBlock falseBlock_) {
 	int lineNum = cond->getLineNum();
-	branches.push_back(IfBranch(nullptr, falseBlock_));
+	if (!falseBlock_.empty())
+		branches.push_back(IfBranch(nullptr, falseBlock_));
 	branches.push_back(IfBranch(std::move(cond), trueBlock_, lineNum));
 }
 

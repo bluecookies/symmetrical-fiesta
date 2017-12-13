@@ -15,8 +15,11 @@ BasicBlock::~BasicBlock() {
 }
 
 void BasicBlock::addSuccessor(BasicBlock* pSucc) {
-	succ.push_back(pSucc);
-	pSucc->pred.push_back(this);
+	auto pExist = std::find(succ.begin(), succ.end(), pSucc);
+	if (pExist == succ.end()) {
+		succ.push_back(pSucc);
+		pSucc->pred.push_back(this);
+	}
 }
 
 void BasicBlock::removeSuccessor(BasicBlock* pSucc) {
@@ -258,6 +261,7 @@ ControlFlowGraph::~ControlFlowGraph() {
 	}
 }
 
+// see if i can't fix this up a bit
 bool ControlFlowGraph::StructureIf(Block* pBlock) {
 	if (pBlock->getBlockType() != Block::TWOWAY) {
 		return false;
@@ -267,33 +271,58 @@ bool ControlFlowGraph::StructureIf(Block* pBlock) {
 	// Might be a little confusing - jump location was added first when hitting a conditional jump
 	Block* trueBlock = pBlock->succ.at(0);
 	Block* falseBlock = pBlock->succ.at(1);
-	if (trueBlock->pred.size() != 1 || falseBlock->pred.size() != 1) {
-		return false;
+	Block* finalBlock;
+	if (trueBlock->pred.size() != 1 || trueBlock->succ.size() != 1) {
+		if (falseBlock->pred.size() != 1 || falseBlock->succ.size() != 1) {
+			return false;
+		}
+		if (falseBlock->succ.at(0) == trueBlock) {
+			finalBlock = trueBlock;
+			trueBlock = nullptr;
+		} else {
+			return false;
+		}
+	} else {
+		finalBlock = trueBlock->succ.at(0);
+		if (falseBlock == finalBlock) {
+			falseBlock = nullptr;
+		} else if (falseBlock->pred.size() == 1 && falseBlock->succ.size() == 1) {
+			if (falseBlock->succ.at(0) != finalBlock)
+				return false;
+		} else {
+			return false;
+		}
 	}
-	if (trueBlock->succ.size() != 1 || falseBlock->succ.size() != 1) {
-		return false;
-	}
-	if (trueBlock->succ.at(0) != falseBlock->succ.at(0)) {
-		return false;
-	}
-	Block* finalBlock = trueBlock->succ.at(0);
-
-	// Remove the last (jump) statements
-	trueBlock->pop();
-	falseBlock->pop();
 
 	BranchStatement* pBranch = static_cast<BranchStatement*>(pBlock->statements.back());
 
+	Value& cond = pBranch->getCondition();
+	if (trueBlock == nullptr) {
+		cond->negateBool();
+		trueBlock = falseBlock;
+		falseBlock = nullptr;
+	}
+
+	// Remove the last (jump) statements
+	trueBlock->pop();
+	if (falseBlock)
+		falseBlock->pop();
+
 	IfStatement* pIf;
-	// If false block only has one statement (not including the jump)
-	if (falseBlock->statements.size() == 1) {
-		pIf = falseBlock->statements.back()->makeIf(std::move(pBranch->getCondition()), trueBlock->statements);
-		trueBlock->statements.clear();
-		falseBlock->statements.pop_back();
+	if (falseBlock) {
+		// If false block only has one statement (not including the jump)
+		if (falseBlock->statements.size() == 1) {
+			pIf = falseBlock->statements.back()->makeIf(std::move(cond), trueBlock->statements);
+			trueBlock->statements.clear();
+			falseBlock->statements.pop_back();
+		} else {
+			pIf = new IfStatement(std::move(cond), trueBlock->statements, falseBlock->statements);
+			trueBlock->statements.clear();
+			falseBlock->statements.clear();
+		}
 	} else {
-		pIf = new IfStatement(std::move(pBranch->getCondition()), trueBlock->statements, falseBlock->statements);
+		pIf = new IfStatement(std::move(cond), trueBlock->statements, StatementBlock());
 		trueBlock->statements.clear();
-		falseBlock->statements.clear();
 	}
 	/* Ahem
 	 The last statement (which should contain the last expression which is a conditional jump) is destroyed,
@@ -309,9 +338,11 @@ bool ControlFlowGraph::StructureIf(Block* pBlock) {
 
 	// Transfer calls
 	pBlock->calls.insert(pBlock->calls.end(), trueBlock->calls.begin(), trueBlock->calls.end());
-	pBlock->calls.insert(pBlock->calls.end(), falseBlock->calls.begin(), falseBlock->calls.end());
 	trueBlock->calls.clear();
-	falseBlock->calls.clear();
+	if (falseBlock) {
+		pBlock->calls.insert(pBlock->calls.end(), falseBlock->calls.begin(), falseBlock->calls.end());
+		falseBlock->calls.clear();
+	}
 
 	// Remove true/false blocks from control flow
 	removeBlock(trueBlock);
