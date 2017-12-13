@@ -77,11 +77,11 @@ void IfStatement::print(std::ostream &out, int indentation) const {
 	pBranch++;
 	while (pBranch != branches.rend()) {
 		if (pBranch->condition) {
-			out << std::string(indentation, '\t') << " else if (" << pBranch->condition->print() << ") {" << pBranch->lineComment() << "\n";
+			out << " else if (" << pBranch->condition->print() << ") {" << pBranch->lineComment() << "\n";
 		} else {
 			if (pBranch->block.empty())
 				break;
-			out << std::string(indentation, '\t') << " else {" << pBranch->lineComment() << "\n";
+			out << " else {" << pBranch->lineComment() << "\n";
 			if (pBranch + 1 != branches.rend())
 				Logger::Error() << "More conditions after else block.\n";
 		}
@@ -287,6 +287,11 @@ int WhileStatement::getSize() const {
 	}
 	return size;
 }
+
+void Op21Statement::print(std::ostream &out, int indentation) const {
+	out << std::string(indentation, '\t') << " op21 " << std::to_string(u1) << " " << std::to_string(u2) << printLineNum();
+}
+
 
 /*
 Statement* IfStatement::foldSwitch() {

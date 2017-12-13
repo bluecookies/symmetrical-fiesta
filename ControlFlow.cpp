@@ -42,8 +42,11 @@ Block::Type BasicBlock::getBlockType() {
 			return RET;
 		case Statement::GOTO:
 			return ONEWAY;
-		case Statement::JUMP_IF:
+		case Statement::JUMP_IF:{
+			if (succ.size() != 2)
+				throw std::logic_error("Corrupt block.");
 			return TWOWAY;
+		}
 		default: {
 			Logger::Debug() << "Invalid block type.\n";
 			return INVALID;
@@ -112,6 +115,9 @@ bool NaturalLoop::contains(Block* pBlock) {
 // Strict weak ordering
 // A < B iff A does not contain B
 bool NaturalLoop::operator <(const NaturalLoop& other) const {
+	// Eithre comparing with self or somehow have same header (didn't combine)
+	if (header == other.header)
+		return false;
 	return (std::find(blocks.begin(), blocks.end(), other.header) != blocks.end());
 }
 
@@ -333,55 +339,53 @@ void ControlFlowGraph::StructureLoops() {
 	for (auto& loop:loops) {
 		if (loop.tails.size() != 1)
 			continue;	// Deal with this if turns out to be needed
-		if (loop.header->getBlockType() == Block::TWOWAY) {
-			if (loop.header->statements.size() != 1)
-				continue;
+		if (loop.header->getBlockType() != Block::TWOWAY)
+			continue;
+		if (loop.header->statements.size() != 1)
+			continue;
+		if (loop.tails[0]->getBlockType() != Block::ONEWAY)
+			continue;
 
-			if (loop.tails[0]->getBlockType() != Block::ONEWAY)
-				continue;
+		Block* breakNode;
+		Block* loopStart;
+		if (!loop.contains(loop.header->succ[0])) {
+			breakNode = loop.header->succ[0];
+			loopStart = loop.header->succ[1];
+		} else {
+			loopStart = loop.header->succ[0];
+			breakNode = loop.header->succ[1];
+			if (loop.contains(breakNode))
+				continue;	// Maybe deal with this;
+		}
 
-			Block* breakNode;
-			Block* loopStart;
-			if (!loop.contains(loop.header->succ[0])) {
-				breakNode = loop.header->succ[0];
-				loopStart = loop.header->succ[1];
-			} else {
-				loopStart = loop.header->succ[0];
-				if (loop.contains(loop.header->succ[1]))
-					continue;	// Maybe deal with this;
+		BranchStatement* pBranch = static_cast<BranchStatement*>(loop.header->statements.back());
+		Value& cond = pBranch->getCondition();
+		// Check which branch leads into the loop
+		// if (condition) jump breaknode => while (!condition)
+		// if (condition) jump loopnode => while (condition)
+		if (loop.header->succ[0] == breakNode)
+			cond->negateBool();
 
-				breakNode = loop.header->succ[1];
-			}
-
-			BranchStatement* pBranch = static_cast<BranchStatement*>(loop.header->statements.back());
-			Value& cond = pBranch->getCondition();
-			// Check which branch leads into the loop
-			// if (condition) jump breaknode => while (!condition)
-			// if (condition) jump loopnode => while (condition)
-			if (loop.header->succ[0] == breakNode)
-				cond->negateBool();
-
-			// Remove header - only the while statement in it
-			// not in general - restructure
-			loop.blocks.erase(std::remove(loop.blocks.begin(), loop.blocks.end(), loop.header), loop.blocks.end());
-			WhileStatement* pWhile = new WhileStatement(std::move(cond), loop.blocks, loopStart);	// check condition
-			
-			loop.header->pop();
-			loop.header->statements.push_back(pWhile);
-			loop.header->statements.push_back(new GotoStatement(breakNode->index));
+		// Remove header - only the while statement in it
+		// not in general - restructure
+		loop.blocks.erase(std::remove(loop.blocks.begin(), loop.blocks.end(), loop.header), loop.blocks.end());
+		WhileStatement* pWhile = new WhileStatement(std::move(cond), loop.blocks, loopStart);	// check condition
+	
+		loop.header->pop();
+		loop.header->statements.push_back(pWhile);
+		loop.header->statements.push_back(new GotoStatement(breakNode->index));
 
 
-			loop.header->removeSuccessor(loopStart);
+		loop.header->removeSuccessor(loopStart);
 
-			// Remove the link from tail to head
-			loop.tails[0]->removeSuccessor(loop.header);
-			loop.tails[0]->pop();
-			loop.tails[0]->statements.push_back(new ContinueStatement());
+		// Remove the link from tail to head
+		loop.tails[0]->removeSuccessor(loop.header);
+		loop.tails[0]->pop();
+		loop.tails[0]->statements.push_back(new ContinueStatement());
 
-			// Transfer calls
-			for (const auto& block:loop.blocks) {
-				loop.header->calls.insert(loop.header->calls.end(), block->calls.begin(), block->calls.end());
-			}
+		// Transfer calls
+		for (const auto& block:loop.blocks) {
+			loop.header->calls.insert(loop.header->calls.end(), block->calls.begin(), block->calls.end());
 		}
 	}
 }
@@ -451,9 +455,11 @@ void ControlFlowGraph::printBlocks(std::string filename) {
 			}
 		}
 
-		out << "\nL" << std::to_string(pBlock->index) << "@0x" << toHex(pBlock->startAddress) << ":\n";
-		for (auto &pStatement:pBlock->statements) {
-			pStatement->print(out);
+		if (pBlock->index > 0) {
+			out << "\nL" << std::to_string(pBlock->index) << "@0x" << toHex(pBlock->startAddress) << ":\n";
+			for (auto &pStatement:pBlock->statements) {
+				pStatement->print(out);
+			}
 		}
 
 		printed.push_back(pBlock);

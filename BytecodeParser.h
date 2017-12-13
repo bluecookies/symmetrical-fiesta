@@ -57,7 +57,7 @@ class BytecodeParser {
 
 		unsigned int getInt();
 		unsigned char getChar();
-		Value getArg(unsigned int type);
+		Value getArg(unsigned int type, const ScriptInfo& info);
 		ValueExpr* getLValue(const ScriptInfo &info);
 
 		Function getCallFunction(const ScriptInfo& info);

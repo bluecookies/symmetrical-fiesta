@@ -388,6 +388,15 @@ class SetNameStatement: public Statement {
 		virtual void print(std::ostream &out, int indentation = 0) const override;
 };
 
+class Op21Statement: public Statement {
+	unsigned int u1;
+	unsigned char u2;
+	public:
+		Op21Statement(unsigned int u1, unsigned char u2) : u1(u1), u2(u2) {}
+		virtual void print(std::ostream &out, int indentation = 0) const override;
+
+};
+
 #endif
 
 

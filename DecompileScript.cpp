@@ -256,7 +256,7 @@ bool ScriptInfo::isLabelled(unsigned int address) {
 	auto pLabel = std::find_if(labels.begin(), labels.end(), [address](Label label) {
 		return label.address == address;
 	});
-	
+
 	return (pLabel != labels.end());
 }
 
@@ -392,7 +392,7 @@ void BytecodeParser::addBranch(Block* pBlock, Stack* saveStack) {
 	}
 }
 
-Value BytecodeParser::getArg(unsigned int type) {
+Value BytecodeParser::getArg(unsigned int type, const ScriptInfo &info) {
 	if (stack.empty())
 		throw std::out_of_range("Popping arguments off an empty stack.");
 
@@ -408,14 +408,7 @@ Value BytecodeParser::getArg(unsigned int type) {
 		Logger::Error(instAddress) << "Cannot get argument of type str with type " << VarType(actualType) << std::endl;
 		return stack.pop();
 	} else if (type == ValueType::OBJ_STR) {
-		//Value pIndex = stack.pop();
-		//if (!stack.pop()->isIndexer()) {
-		Logger::Error(instAddress) << "Unexpected item.\n";
-		//	return std::make_shared<ErrValueExpr>();
-		//}
-		//std::shared_ptr<ValueExpr> pArray = getArray(stack.pop());
-		//stackHeights.pop_back();
-		//return std::make_shared<IndexValueExpr>(pArray, pIndex);
+		return Value(getLValue(info));
 	}
 
 	return make_unique<ErrValueExpr>();
@@ -532,6 +525,10 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 		toTraverse.pop_back();
 
 		Block* pBlock = branch.pBlock;
+		if (pBlock->parsed)
+			continue;
+
+
 		buf->setAddress(pBlock->startAddress);
 		stack = std::move(branch.stack);
 		pBlock->parsed = true;
@@ -654,7 +651,7 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 
 					std::vector<Value> args;
 					for (auto &type:argTypes) {
-						args.push_back(getArg(type));
+						args.push_back(getArg(type, info));
 					}
 
 					addBranch(pCallBlock, &stack);
@@ -670,7 +667,7 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 
 					std::vector<Value> ret;
 					for (auto &type:retTypes) {
-						ret.push_back(getArg(type));
+						ret.push_back(getArg(type, info));
 					}
 
 					pStatement = new ReturnStatement(std::move(ret));
@@ -712,6 +709,11 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 
 					pStatement = new AssignStatement(std::move(lhs), std::move(rhs));
 				} break;
+				case 0x21: {
+					unsigned int u1 = getInt();
+					unsigned char u2 = getChar();
+					pStatement = new Op21Statement(u1, u2);
+				} break;
 				case 0x22: {
 					unsigned int lhsType = getInt();
 					unsigned int rhsType = getInt();
@@ -749,7 +751,7 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 
 					std::vector<Value> args;
 					for (auto &type:argTypes) {
-						args.push_back(getArg(type));
+						args.push_back(getArg(type, info));
 					}
 
 					// Reversed though

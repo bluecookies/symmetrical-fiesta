@@ -60,7 +60,7 @@ std::string BinaryValueExpr::print(bool hex) const {
 		case 0x10: opRep = " != "; break;
 		case 0x11: opRep = " == "; break;
 		case 0x12: opRep = " <= "; break;
-		case 0x13: opRep = " < (maybe, check) "; break;
+		case 0x13: opRep = " < "; break;
 		case 0x14: opRep = " >= "; break;
 		case 0x15: opRep = " > (check this) "; break;
 		case 0x20: opRep = " & "; break;
@@ -198,7 +198,9 @@ CallExpr::CallExpr(const CallExpr& copy) : ValueExpr(copy), callFunc(copy.callFu
 
 std::string CallExpr::print(bool hex) const {
 	std::string str = callFunc.print();
-	str += "-" + std::to_string(fnOption) + "(";
+	if (fnOption != 0)
+		str += "-" + std::to_string(fnOption);
+	str += "(";
 	for (auto it = fnArgs.rbegin(); it != fnArgs.rend(); it++) {
 		if (it != fnArgs.rbegin())
 			str += ", ";
