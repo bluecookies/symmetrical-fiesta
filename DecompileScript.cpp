@@ -6,6 +6,7 @@
 #include <vector>
 #include <algorithm>
 #include <memory>
+#include <bitset>
 
 #include <cassert>
 #include <unistd.h>
@@ -15,54 +16,9 @@
 #include "Logger.h"
 #include "Structs.h"
 
-
+#include "BytecodeParser.h"
 #include "Statements.h"
-
-typedef struct BasicBlock {
-	static int count;
-	int index = 0;
-	enum Type {
-		ONEWAY, TWOWAY, SWITCH,
-		CALL, RET, FALL,
-		INVALID
-	};
-
-	Type blockType = INVALID;
-	bool parsed = false;
-	bool isFunction = false;
-	bool isEntrypoint = false;
-
-	unsigned int startAddress;
-	unsigned int nextAddress;
-
-	std::vector<Expression*> expressions;
-	StatementBlock statements;
-
-	std::vector<BasicBlock*> pred, succ, calls;
-
-	BasicBlock(unsigned int address) : index(count++), startAddress(address){}
-	~BasicBlock();
-
-	void addSuccessor(BasicBlock*);
-} Block;
-int Block::count;
-
-BasicBlock::~BasicBlock() {
-	for (auto s:statements)
-		delete s;
-}
-
-void BasicBlock::addSuccessor(BasicBlock* pSucc) {
-	succ.push_back(pSucc);
-	pSucc->pred.push_back(this);
-}
-
-
-struct Label {
-	unsigned int address;
-	Block* pBlock = nullptr;
-	Label(unsigned int offset) : address(offset) {}
-};
+#include "ControlFlow.h"
 
 class BytecodeBuffer {
 	private:
@@ -86,29 +42,6 @@ class BytecodeBuffer {
 
 		BytecodeBuffer(std::ifstream& f, unsigned int length);
 		~BytecodeBuffer();
-};
-
-struct Stack {
-	std::vector<Value> values;
-	std::vector<unsigned int> stackHeights;
-	Stack() : stackHeights({0}) {}
-
-	unsigned int size() { return values.size(); }
-	bool empty() { return size() == 0; }
-
-	// Caller needs to check for emptiness
-	Value& back() { return values.back(); }
-
-	unsigned int& height() { return stackHeights.back(); }
-	void openFrame() { stackHeights.push_back(0); }
-	void closeFrame() { 
-		values.erase(values.end() - height(), values.end());
-		stackHeights.pop_back();
-	}
-
-
-	Value pop();
-	void push(ValueExpr* pValue);
 };
 
 Value Stack::pop() {
@@ -136,61 +69,10 @@ void Stack::push(ValueExpr* pValue) {
 	}
 }
 
-struct ProgBranch {
-	Block* pBlock;
-	Stack stack;
-	ProgBranch(Block* pBlock) : pBlock(pBlock) {}
-};
-
-typedef class BytecodeParser Parser;
-class ScriptInfo;
-
-class BytecodeParser {
-	private:
-		BytecodeBuffer* buf;
-
-	public:
-		std::vector<ProgBranch> toTraverse;
-		unsigned int instAddress = 0;
-		// operand stack
-		Stack stack;
-
-		//std::vector<CallRet> callStack;
-
-		unsigned int getInt() {
-			return buf->getInt();
-		};
-		unsigned char getChar() {
-			return buf->getChar();
-		};
-		Value getArg(unsigned int type);
-		//std::shared_ptr<ValueExpr> getArray(std::shared_ptr<ValueExpr> first);
-		ValueExpr* getLValue(const ScriptInfo &info);
-
-		Function getCallFunction(const ScriptInfo& info);
-	public:
-		BytecodeParser(std::ifstream &f, HeaderPair index);
-		~BytecodeParser();
-
-		void addBranch(Block* pBlock, Stack* saveStack = nullptr);
-		void parse(ScriptInfo& info);
-};
-
 class ScriptInfo {
 	private:
 		std::vector<Label> labels, entrypoints, functions;
-		std::vector<Block*> blocks;
 
-		std::vector<Block*> entryBlocks;
-
-		struct checkAddress {
-			unsigned int address;
-		    checkAddress(int address) : address(address) {}
-
-		    bool operator ()(Block* const& pBlock) const {
-		    	return pBlock->startAddress == address;
-		   	}
-		};
 	private:
 		int fileIndex;
 		StringList sceneNames;
@@ -201,32 +83,19 @@ class ScriptInfo {
 
 	public:
 		ScriptInfo(std::ifstream &f, const ScriptHeader& header, int fileIndex);
-		~ScriptInfo();
 
 		std::string getString(unsigned int index);
-		Value getGlobalVar (unsigned int index) const;
-		Function getCommand (unsigned int index) const;
-
-		Block* getBlock(unsigned int address);
-		Block* getBlockAtLabel(unsigned int labelIndex);
-
-		bool checkBlock(unsigned int address);
+		Value getGlobalVar(unsigned int index) const;
+		Function getCommand(unsigned int index) const;
 
 		void readGlobalInfo(std::string filename);
 
-		void initEntrypoints(Parser& parser);
-		void structureStatements();
-		void generateStatements();
-
-		void printBlocks(std::string filename);
-		void dumpCFG(std::string filename);
-
-		bool StructureIf(Block* pBlock);
+		std::vector<unsigned int> getEntrypoints();
+		unsigned int getLabelAddress(unsigned int labelIndex);
+		bool isLabelled(unsigned int address);
 };
 
 	
-
-
 
 void readScriptHeader(std::ifstream &f, ScriptHeader &header) {
 	f.read((char*) &header.headerSize, 4);
@@ -303,45 +172,12 @@ Function ScriptInfo::getCommand(unsigned int index) const {
 	return globalCommands[index];
 }
 
-
-// Guarantee this will be the only way new blocks are made
-Block* ScriptInfo::getBlock(unsigned int address) {
-	auto pBlockIt = std::find_if(blocks.begin(), blocks.end(), checkAddress(address));
-	if (pBlockIt != blocks.end())
-		return (*pBlockIt);
-
-	Block* pBlock = new Block(address);
-	blocks.push_back(pBlock);
-	return pBlock;
-}
-
-Block* ScriptInfo::getBlockAtLabel(unsigned int labelIndex) {
-	if (labelIndex >= labels.size()) {
-		throw std::out_of_range("Label index out of range.");
-	}
-	if (labels[labelIndex].pBlock == nullptr)
-		labels[labelIndex].pBlock = getBlock(labels[labelIndex].address);
-
-	return labels[labelIndex].pBlock;
-}
-
-bool ScriptInfo::checkBlock(unsigned int address) {
-	auto pBlockIt = std::find_if(blocks.begin(), blocks.end(), checkAddress(address));
-	return (pBlockIt != blocks.end());
-}
-
 ScriptInfo::ScriptInfo(std::ifstream &stream, const ScriptHeader &header, int index) : fileIndex(index) {
 	readLabels(stream, labels, header.labels);
 	readLabels(stream, entrypoints, header.entrypoints);
 	readLabels(stream, functions, header.functions);
 
 	readStrings(stream, stringData, header.stringIndex, header.stringData, true);
-}
-
-ScriptInfo::~ScriptInfo() {
-	for (auto &pBlock:blocks) {
-		delete pBlock;
-	}
 }
 
 void ScriptInfo::readGlobalInfo(std::string filename) {
@@ -401,230 +237,29 @@ void ScriptInfo::readGlobalInfo(std::string filename) {
 	globalInfoFile.close();
 }
 
+std::vector<unsigned int> ScriptInfo::getEntrypoints() {
+	std::vector<unsigned int> addresses;
+	for (const auto& ep:entrypoints)
+		addresses.push_back(ep.address);
 
-void ScriptInfo::initEntrypoints(Parser &parser) {
-	Block* pBlock;
-	for (const auto& entrypoint:entrypoints) {
-		if (entrypoint.address == 0x0)
-			continue;
-		Logger::VDebug() << "Entrypoint added at 0x" << toHex(entrypoint.address) << std::endl;
-		pBlock = getBlock(entrypoint.address);
-		pBlock->isEntrypoint = true;
-		parser.addBranch(pBlock);
-
-		entryBlocks.push_back(pBlock);
-	}
+	return addresses;
 }
 
-bool ScriptInfo::StructureIf(Block* pBlock) {
-	if (pBlock->blockType != Block::TWOWAY) {
-		return false;
+unsigned int ScriptInfo::getLabelAddress(unsigned int labelIndex) {
+	if (labelIndex >= labels.size()) {
+		throw std::out_of_range("Label index out of range.");
 	}
-	Logger::VVDebug() << std::to_string(pBlock->index) << " has succ size " << std::to_string(pBlock->succ.size()) << std::endl;
-	if (pBlock->succ.size() != 2)
-		throw std::logic_error("Fake TWOWAY");
+	return labels[labelIndex].address;
+}
 
-	Block* trueBlock = pBlock->succ.at(0);
-	Block* falseBlock = pBlock->succ.at(1);
-	if (trueBlock->pred.size() != 1 || falseBlock->pred.size() != 1) {
-		return false;
-	}
-	if (trueBlock->succ.size() != 1 || falseBlock->succ.size() != 1) {
-		return false;
-	}
-	if (trueBlock->succ.at(0) != falseBlock->succ.at(0)) {
-		return false;
-	}
-	Block* final = trueBlock->succ.at(0);
-
-	// watch out for this, things might change
-	Value* ppCond = pBlock->statements.back()->getChild();
-	if (ppCond == nullptr) {
-		Logger::Error() << "If-else condition is null.\n";
-		return false;
-	}
-
-	// Remove the last (jump) statements
-	delete trueBlock->statements.back();
-	trueBlock->statements.pop_back();
-	// Move one to the block to save
-	Statement* jumpPointer = falseBlock->statements.back();
-	falseBlock->statements.pop_back();
-
-	IfStatement* pIf;
-	// If false block only has one statement (not including the jump)
-	if (falseBlock->statements.size() == 1) {
-		pIf = falseBlock->statements.back()->makeIf(std::move(*ppCond), trueBlock->statements);
-		trueBlock->statements.clear();
-		falseBlock->statements.pop_back();
-	} else {
-		pIf = new IfStatement(std::move(*ppCond), trueBlock->statements, falseBlock->statements);
-		trueBlock->statements.clear();
-		falseBlock->statements.clear();
-	}
-	/* Ahem
-	 The last statement (which should contain the last expression which is a conditional jump) is destroyed,
-	 destroying the jump expression, which by now has its condition moved out into the if statement.
-	 This condition will be destroyed by the if statement which is destroyed when the vector is cleared. */
-
-	// Remove the if-goto
-	delete pBlock->statements.back();	// careful careful
-	pBlock->statements.pop_back();
-	// Push the if statement
-	pBlock->statements.push_back(pIf);
-	/* Every statement in both blocks have been moved out, and they are not referenced anywhere else 
-	   except maybe as a subroutine, so should probably watch out for that. */
+bool ScriptInfo::isLabelled(unsigned int address) {
+	auto pLabel = std::find_if(labels.begin(), labels.end(), [address](Label label) {
+		return label.address == address;
+	});
 	
-	// Replace successor with single target
-	pBlock->succ.pop_back();
-	pBlock->succ.pop_back();
-	pBlock->addSuccessor(final);
-
-	// Remove true/false blocks from control flow
-	trueBlock->succ.pop_back();
-	falseBlock->succ.pop_back();
-	final->pred.erase(std::remove(final->pred.begin(), final->pred.end(), trueBlock), final->pred.end()); 
-	final->pred.erase(std::remove(final->pred.begin(), final->pred.end(), falseBlock), final->pred.end());
-
-	// Transfer calls
-	pBlock->calls.insert(pBlock->calls.end(), trueBlock->calls.begin(), trueBlock->calls.end());
-	pBlock->calls.insert(pBlock->calls.end(), falseBlock->calls.begin(), falseBlock->calls.end());
-	trueBlock->calls.clear();
-	falseBlock->calls.clear();
-
-	// Add jump instruction to target
-	pBlock->statements.push_back(jumpPointer);
-
-	// Change the type of block (not a two way anymore)
-	pBlock->blockType = Block::ONEWAY;
-
-	// delete true and false blocks
-	// but not yet
-	trueBlock->pred.pop_back();
-	falseBlock->pred.pop_back();
-	return true;
+	return (pLabel != labels.end());
 }
 
-void ScriptInfo::structureStatements() {
-	Logger::Info() << "Structuring if else statements.\n";
-	// Structure ifs
-	bool changed = true;
-	while (changed) {
-		changed = false;
-		for (auto &pBlock:blocks) {
-			if (StructureIf(pBlock)) {
-				changed = true;
-				break;
-			}
-		}
-	}
-
-	// Turn ifs into switches
-	//for (auto &pBlock:blocks) {
-	//	if (!pBlock->statements.empty()) {
-	//		pBlock->statements.back()->foldSwitch();
-	//	}
-	//}
-
-	// Simplify blocks
-	for (auto &pBlock:blocks) {
-		if (pBlock->succ.size() == 1) {
-			Block* pSucc = pBlock->succ[0];
-			if (pSucc->pred.size() == 1) {
-				// Delete jump statement
-				delete pBlock->statements.back();
-				pBlock->statements.pop_back();
-				// Update successors
-				pBlock->blockType = pSucc->blockType;
-				pBlock->succ.pop_back();
-				pSucc->pred.pop_back();
-
-				pBlock->succ.insert(pBlock->succ.end(), pSucc->succ.begin(), pSucc->succ.end());
-				pSucc->succ.clear();
-				// Move statements
-				pBlock->statements.reserve(pBlock->statements.size() + pSucc->statements.size());
-				pBlock->statements.insert(pBlock->statements.end(), pSucc->statements.begin(), pSucc->statements.end());
-				pSucc->statements.clear();
-			}
-		}
-	}
-}
-
-void ScriptInfo::generateStatements() {
-	for (auto &pBlock:blocks) {
-		for (auto &pExpr:pBlock->expressions){
-			pBlock->statements.push_back(new Statement(pExpr));
-		}
-	}
-
-	structureStatements();
-}
-
-void ScriptInfo::printBlocks(std::string filename) {
-	std::ofstream out(filename);
-	for (auto &pBlock:blocks) {
-		if (pBlock->statements.size() == 0)
-			continue;
-
-		out << "\nL" << std::to_string(pBlock->index) << "@0x" << toHex(pBlock->startAddress) << "\n";
-		out << "==========================================================================\n";
-		for (auto &pStatement:pBlock->statements){
-			pStatement->print(out);
-		}
-		out << "\n==========================================================================\n";
-	}
-	out.close();
-}
-
-void ScriptInfo::dumpCFG(std::string filename) {
-	std::ofstream out(filename);
-	// should be same - check
-	out << "strict digraph " << "CFG" << " {\n";
-	out << "\tnode [shape=box, fixedsize=true, fontsize=8, labelloc=\"t\"]\n";
-	for (const auto &block:blocks) {
-		if (block->statements.size() == 0)
-			continue;
-
-		std::string props;
-		if (block->isEntrypoint)
-			props += "penwidth=2,";
-		if (block->isFunction)
-			props += "color=red,";
-		props += "height=" + std::to_string(block->statements.size()*0.05);
-
-		out << "\tBlock" << std::to_string(block->index) << " [" << props << "]\n";
-
-		// Successors
-		if (block->succ.empty()) {
-			if (!block->isFunction)
-				out << "\tBlock" << std::to_string(block->index) << " -> Exit\n";
-		} else {
-			out << "\tBlock" << std::to_string(block->index) << " -> {";
-			for (auto p = block->succ.begin(); p != block->succ.end(); p++) {
-				if (p != block->succ.begin())
-					out << "; ";
-				out << "Block" << std::to_string((*p)->index);
-			}
-			out << "}\n";
-		}
-
-		if (!block->calls.empty()) {
-			out << "\tBlock" << std::to_string(block->index) << " -> {";
-			for (auto p = block->calls.begin(); p != block->calls.end(); p++) {
-				if (p != block->calls.begin())
-					out << "; ";
-				out << "Block" << std::to_string((*p)->index);
-			}
-			out << "} [color=red]\n";
-		}
-	}
-
-	out << "\tExit [penwidth=2]\n";
-
-	out << "}\n";
-
-	out.close();
-}
 
 
 int Logger::LogLevel = Logger::LEVEL_INFO;
@@ -684,19 +319,19 @@ int main(int argc, char* argv[]) {
 
 	info.readGlobalInfo(filename);
 
-	info.initEntrypoints(parser);
+	ControlFlowGraph cfg(parser, info.getEntrypoints());
 	
 	try {
-		parser.parse(info);
+		parser.parse(info, cfg);
 	} catch(std::logic_error &e) {
 		std::cerr << "Error: 0x" << toHex(parser.instAddress) << " " << e.what() << std::endl;
 	}
 
-	info.generateStatements();
+	cfg.structureStatements();
 
-	info.printBlocks(outFilename);
+	cfg.printBlocks(outFilename);
 
-	info.dumpCFG(filename + ".gv");
+	cfg.dumpGraph(filename + ".gv");
 		
 	// TODO: handle these
 	if (header.unknown1.count != 0) {
@@ -727,6 +362,12 @@ BytecodeParser::BytecodeParser(std::ifstream &f, HeaderPair index) {
 BytecodeParser::~BytecodeParser() {
 	delete buf;
 }
+
+struct ProgBranch {
+	Block* pBlock;
+	Stack stack;
+	ProgBranch(Block* pBlock) : pBlock(pBlock) {}
+};
 
 
 void BytecodeParser::addBranch(Block* pBlock, Stack* saveStack) {
@@ -769,7 +410,7 @@ Value BytecodeParser::getArg(unsigned int type) {
 	} else if (type == ValueType::OBJ_STR) {
 		//Value pIndex = stack.pop();
 		//if (!stack.pop()->isIndexer()) {
-		//	Logger::Error(instAddress) << "Unexpected item.\n";
+		Logger::Error(instAddress) << "Unexpected item.\n";
 		//	return std::make_shared<ErrValueExpr>();
 		//}
 		//std::shared_ptr<ValueExpr> pArray = getArray(stack.pop());
@@ -885,7 +526,7 @@ Function BytecodeParser::getCallFunction(const ScriptInfo& info) {
 	return Function(name);
 }
 
-void BytecodeParser::parse(ScriptInfo& info) {
+void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 	while (!toTraverse.empty()) {
 		ProgBranch branch = std::move(toTraverse.back());
 		toTraverse.pop_back();
@@ -898,20 +539,17 @@ void BytecodeParser::parse(ScriptInfo& info) {
 		Logger::Debug(instAddress) << "Parsing new branch - starting at block " << std::to_string(pBlock->index) << std::endl;
 
 		unsigned char opcode;
-		Expression* pExpr;
+		Statement* pStatement;
 		bool newBlock = false;
 
-		int lineNum = -1;
-		bool attachLineNum = false;
 		while (!buf->done()) {
 			instAddress = buf->getAddress();
 			opcode = getChar();
 
-			pExpr = nullptr;
+			pStatement = nullptr;
 			switch (opcode) {
 				case 0x01: {
-					lineNum = getInt();
-					attachLineNum = true;
+					pStatement = new LineNumStatement(getInt());
 				} break;
 				case 0x02: {
 					unsigned int type = getInt();
@@ -929,6 +567,10 @@ void BytecodeParser::parse(ScriptInfo& info) {
 					if (back->getType() != type) {
 						Logger::Error(instAddress) << "Expected type " << VarType(type) << ", got type " << VarType(back->getType()) << std::endl;
 					}
+					// Turn into a statement if it has side effects
+					if (back->hasSideEffect()) {
+						pStatement = new ExpressionStatement(back.release());
+					}
 				} break;
 				case 0x04: {
 					unsigned int type = getInt();
@@ -945,8 +587,8 @@ void BytecodeParser::parse(ScriptInfo& info) {
 					// Move the value into a variable if it has side effects
 					if (pValue->hasSideEffect()) {
 						ValueExpr* pVar = new VarValueExpr(pValue->getType());
-						pExpr = new AssignExpr(Value(pVar), stack.pop());
 						stack.push(pVar->clone());
+						pStatement = new AssignStatement(Value(pVar), stack.pop());
 					} else {
 						stack.push(pValue->clone());
 					}
@@ -966,19 +608,18 @@ void BytecodeParser::parse(ScriptInfo& info) {
 				} break; 
 				case 0x10: {
 					unsigned int labelIndex = getInt();
-					Block* pJumpBlock = info.getBlockAtLabel(labelIndex);
+					Block* pJumpBlock = cfg.getBlock(info.getLabelAddress(labelIndex));
 
-					pExpr = new JumpExpr(pJumpBlock->index);
+					pStatement = new GotoStatement(pJumpBlock->index);
 
 					pBlock->nextAddress = buf->getAddress();
 					buf->setAddress(pJumpBlock->startAddress);
-					pBlock->blockType = Block::ONEWAY;
 					newBlock = true;
 				} break; 
 				case 0x11: 
 				case 0x12: {
 					unsigned int labelIndex = getInt();
-					Block* pJumpBlock = info.getBlockAtLabel(labelIndex);
+					Block* pJumpBlock = cfg.getBlock(info.getLabelAddress(labelIndex));
 
 					// Pop the condition
 					Value condition = stack.pop();
@@ -989,20 +630,19 @@ void BytecodeParser::parse(ScriptInfo& info) {
 					pBlock->addSuccessor(pJumpBlock);
 
 
-					Block* pNextBlock = info.getBlock(buf->getAddress());
+					Block* pNextBlock = cfg.getBlock(buf->getAddress());
 					if (opcode == 0x11) {
 						condition->negateBool();
 					}
 					
-					pExpr = new JumpExpr(pJumpBlock->index, pNextBlock->index, std::move(condition));
+					pStatement = new BranchStatement(pJumpBlock->index, pNextBlock->index, std::move(condition));
 
 					pBlock->nextAddress = buf->getAddress();
-					pBlock->blockType = Block::TWOWAY;
 					newBlock = true;
 				} break;
 				case 0x13: {
 					unsigned int labelIndex = getInt();
-					Block* pCallBlock = info.getBlockAtLabel(labelIndex);
+					Block* pCallBlock = cfg.getBlock(info.getLabelAddress(labelIndex));
 					pCallBlock->isFunction = true;
 					pBlock->calls.push_back(pCallBlock);
 
@@ -1019,10 +659,7 @@ void BytecodeParser::parse(ScriptInfo& info) {
 
 					addBranch(pCallBlock, &stack);
 
-
-					ShortCallExpr* pCall = new ShortCallExpr(pCallBlock->index, std::move(args));
-					stack.push(pCall->clone());
-					pExpr = pCall;
+					stack.push(new ShortCallExpr(pCallBlock->index, std::move(args)));
 				} break;
 				case 0x15: {
 					unsigned int numArgs = getInt();
@@ -1036,10 +673,9 @@ void BytecodeParser::parse(ScriptInfo& info) {
 						ret.push_back(getArg(type));
 					}
 
-					pExpr = new RetExpr(std::move(ret));
+					pStatement = new ReturnStatement(std::move(ret));
 
 					pBlock->nextAddress = buf->getAddress();
-					pBlock->blockType = Block::RET;
 					newBlock = true;
 
 					if (!stack.empty()) {
@@ -1050,7 +686,8 @@ void BytecodeParser::parse(ScriptInfo& info) {
 					}
 
 				} break; 
-				// case 0x16:
+				// TODO: handle this properly
+				case 0x16: 	Logger::Info(instAddress) << "Script end reached.\n"; break;
 				case 0x20: {
 					unsigned int lType = getInt();
 					unsigned int rType = getInt();
@@ -1073,7 +710,7 @@ void BytecodeParser::parse(ScriptInfo& info) {
 
 					Logger::VVDebug(instAddress) << "Assign: " << VarType(lType) << " <- " << VarType(rType) << std::endl;
 
-					pExpr = new AssignExpr(std::move(lhs), std::move(rhs));
+					pStatement = new AssignStatement(std::move(lhs), std::move(rhs));
 				} break;
 				case 0x22: {
 					unsigned int lhsType = getInt();
@@ -1117,16 +754,16 @@ void BytecodeParser::parse(ScriptInfo& info) {
 
 					// Reversed though
 					Function fn = getCallFunction(info);
-
-					CallExpr* pCall = new CallExpr(fn, option, std::move(args), extraList, returnType);
-
 					if (fn.hasExtra)
 						fn.extraThing(getInt());
 
-					pExpr = pCall;
+					CallExpr* pCall = new CallExpr(fn, option, std::move(args), extraList, returnType);
 					
-					if (fn.pushRet)
-						stack.push(pCall->clone());
+					if (fn.pushRet) {
+						stack.push(pCall);
+					} else {
+						pStatement = new ClearBufferStatement();
+					}
 
 				} break;
 				case 0x31: {
@@ -1135,30 +772,55 @@ void BytecodeParser::parse(ScriptInfo& info) {
 					if (pText->getType() != ValueType::STR) {
 						Logger::Error(instAddress) << pText->print() << "(" << VarType(pText->getType()) << ") cannot be used to add text.\n";
 					}
-					pExpr = new AddTextExpr(std::move(pText), id);
+
+					pStatement = new AddTextStatement(std::move(pText), id);
+					Statement* pLast = pBlock->statements.back();
+					if (pLast->type == Statement::CLEAR_BUFFER) {
+						if (pLast->getLineNum() >= 0)
+							pStatement->setLineNum(pLast->getLineNum());
+						delete pBlock->statements.back();
+						pBlock->statements.pop_back();
+					} else {
+						Logger::Warn(instAddress) << "No preceding 0x54 call. (is this bad?)\n";
+					}
 				} break;
 				case 0x32: {
 					Value pName = stack.pop();
 					if (pName->getType() != ValueType::STR) {
 						Logger::Error(instAddress) << pName->print() << "(" << VarType(pName->getType()) << ") cannot be used to set name.\n";
 					}
-					pExpr = new SetNameExpr(std::move(pName));
+
+					pStatement = new SetNameStatement(std::move(pName));
+					Statement* pLast = pBlock->statements.back();
+					if (pLast->type == Statement::CLEAR_BUFFER) {
+						if (pLast->getLineNum() >= 0)
+							pStatement->setLineNum(pLast->getLineNum());
+						delete pBlock->statements.back();
+						pBlock->statements.pop_back();
+					} else {
+						Logger::Warn(instAddress) << "No preceding 0x54 call. (is this bad?)\n";
+					}
 				} break;
 				default: {
 					Logger::Error(instAddress) << "NOP: 0x" << toHex(opcode, 2) << std::endl;
 				}
 			}
 
-			if (pExpr != nullptr) {
-				pBlock->expressions.push_back(pExpr);
-				if (attachLineNum) {
-					pBlock->expressions.back()->setLineNum(lineNum);
-					attachLineNum = false;
+			if (pStatement != nullptr) {
+				if (pStatement->type != Statement::LINE_NUM && !pBlock->statements.empty()) {
+					Statement* pLast = pBlock->statements.back();
+					if (pLast->type == Statement::LINE_NUM) {
+						pStatement->setLineNum(pLast->getLineNum());
+						delete pLast;
+						pBlock->statements.pop_back();
+					}
 				}
+				pBlock->statements.push_back(pStatement);
 			}
 
-
-			if (newBlock || info.checkBlock(buf->getAddress())) {
+			// Create block if label exists, otherwise just check
+			Block* pNextBlock = cfg.getBlock(buf->getAddress(), info.isLabelled(buf->getAddress()));
+			if (newBlock || pNextBlock) {
 				// if i get the block here, I can dump dead code
 				// it's probably mostly line numbers though
 
@@ -1168,20 +830,21 @@ void BytecodeParser::parse(ScriptInfo& info) {
 					break;
 				}
 
-				Block* pNextBlock = info.getBlock(buf->getAddress());
+				if (pNextBlock == nullptr)
+					pNextBlock = cfg.getBlock(buf->getAddress(), true);
 
 				// Add successor/predecessor no matter what
 				pBlock->addSuccessor(pNextBlock);
 
 				if (!newBlock) {
-					pBlock->blockType = Block::FALL;
-					pBlock->expressions.push_back(new JumpExpr(pNextBlock->index));
+					pBlock->statements.push_back(new GotoStatement(pNextBlock->index));
 				}
 
 				// Exit this branch if target is parsed
 				if (pNextBlock->parsed)
 					break;
 
+				// Next block
 				pBlock = pNextBlock;
 				newBlock = false;
 
@@ -1192,8 +855,17 @@ void BytecodeParser::parse(ScriptInfo& info) {
 	}
 }
 
+unsigned int BytecodeParser::getInt() {
+	return buf->getInt();
+};
+unsigned char BytecodeParser::getChar() {
+	return buf->getChar();
+};
 
 
+//
+// Buffer of bytecode
+//
 
 BytecodeBuffer::BytecodeBuffer(std::ifstream &f, unsigned int length) {
 	dataLength = length;

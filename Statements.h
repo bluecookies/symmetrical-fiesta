@@ -1,5 +1,9 @@
+#ifndef STATEMENTS_H
+#define STATEMENTS_H
+
 #include <memory>
 
+#include "Logger.h"
 #include "Helper.h"
 
 namespace ValueType {
@@ -46,29 +50,15 @@ class Statement;
 typedef std::unique_ptr<ValueExpr> Value;
 typedef std::vector<Statement*> StatementBlock;
 
-class Expression {
+class ValueExpr {
 	private:
 		int lineNum = -1;
-	public:
-		//virtual Expression* clone() { return new Expression(*this); }
-
-		virtual ~Expression() {}
-
-		int getLineNum() { return lineNum; }
-		void setLineNum(int lineNum_) { lineNum = lineNum_; }
-
-		virtual std::string print(bool hex=false) const;
-
-
-		virtual Value* getChild() { return nullptr; }
-};
-
-class ValueExpr: public Expression {
 	protected:
 		unsigned int type = ValueType::UNDEF;
 		ValueExpr(unsigned int type) : type(type) {}
 		ValueExpr() {}
 	public:
+		virtual ~ValueExpr() {}
 		virtual ValueExpr* clone() const = 0;
 
 		unsigned int getType() const { return type; }
@@ -83,6 +73,11 @@ class ValueExpr: public Expression {
 		ValueExpr* toRValue();
 
 		virtual bool hasSideEffect() { return false; }
+		virtual std::string print(bool hex=false) const;
+
+
+		int getLineNum() { return lineNum; }
+		void setLineNum(int lineNum_) { lineNum = lineNum_; }
 
 		virtual IntType getIntType() { return IntegerInvalid; }
 		virtual unsigned int getIndex() { return 0xFF000000; }
@@ -203,7 +198,6 @@ class CallExpr: public ValueExpr {
 
 		std::string print(bool hex=false) const override;
 		bool hasSideEffect() override { return true; }
-
 };
 
 // Near absolute call
@@ -216,77 +210,49 @@ class ShortCallExpr: public CallExpr {
 		std::string print(bool hex=false) const override;
 };
 
-class AssignExpr: public Expression {
-	Value lhs = nullptr;
-	Value rhs = nullptr;
-	public:
-		AssignExpr(Value lhs, Value rhs);
 
-		std::string print(bool hex=false) const override;
-};
-
-
-class JumpExpr: public Expression {
-	unsigned int blockIndex, elseIndex;
-	Value condition;
-	public:
-		JumpExpr(unsigned int blockIndex, unsigned int elseIndex = 0, Value cond = nullptr);
-
-		std::string print(bool hex=false) const override;
-		virtual Value* getChild() override { if (condition) return &condition; else return nullptr; }
-};
-
-class RetExpr: public Expression {
-	std::vector<Value> values;
-	public:
-		RetExpr(std::vector<Value> ret) : values(std::move(ret)) {}
-
-		std::string print(bool hex=false) const override;
-};
-
-class AddTextExpr: public Expression {
-	Value text;
-	unsigned int index = 0;
-	public:
-		AddTextExpr(Value text, unsigned int index) : text(std::move(text)), index(index) {}
-
-		std::string print(bool hex=false) const override;
-};
-
-class SetNameExpr: public Expression {
-	Value name;
-	public:
-		SetNameExpr(Value name) : name(std::move(name)) {}
-
-		std::string print(bool hex=false) const override;
-};
-
-/* class CallExpr: public ValueExpr {
-	
-}; */
+// Statements
 
 class Statement;
 class IfStatement;
 
+typedef struct BasicBlock Block;
+
+
 class Statement {
-	Expression* expr = nullptr;
 	protected:
 		int lineNum = -1;
 		Statement() {}
 	public:
-		Statement(Expression* expr);
-		virtual ~Statement();
+		virtual ~Statement() {};
 
-		virtual void print(std::ostream &out, int indentation = 0) const;
-
-		virtual Value* getChild() {
-			if (expr)
-				return expr->getChild();
-			else
-				return nullptr;
-		}
+		virtual void print(std::ostream &out, int indentation = 0) const = 0;
 
 		virtual IfStatement* makeIf(Value cond, StatementBlock block);
+
+		virtual int getSize() const { return 1; }
+
+		enum StatementType {
+			INVALID,
+			ASSIGN, RETURN,
+			CLEAR_BUFFER, LINE_NUM,
+			JUMP_IF, GOTO
+		};
+
+		StatementType type = INVALID;
+
+		int getLineNum() const { return lineNum; }
+		void setLineNum(int num) { lineNum = num; }
+		std::string printLineNum() const { return (lineNum >= 0) ? ("\t// line " + std::to_string(lineNum) + "\n") : "\n"; }
+};
+
+class ExpressionStatement : public Statement {
+	ValueExpr* expr = nullptr;
+	public:
+		ExpressionStatement(ValueExpr* expr_);
+		~ExpressionStatement();
+
+		virtual void print(std::ostream &out, int indentation = 0) const override;
 };
 
 struct IfBranch {
@@ -306,9 +272,11 @@ class IfStatement: public Statement {
 		IfStatement(Value cond_, StatementBlock trueBlock_, StatementBlock falseBlock_);
 		~IfStatement();
 
-		void print(std::ostream &out, int indentation = 0) const override;
+		virtual void print(std::ostream &out, int indentation = 0) const override;
 
 		virtual IfStatement* makeIf(Value cond, StatementBlock block) override;
+
+		virtual int getSize() const override;
 };
 
 
@@ -316,7 +284,96 @@ class SwitchStatement: public Statement {
 
 };
 
+class ForStatement: public Statement {
+	Value condition;
+	StatementBlock increment;
+	public:
+		ForStatement(Value cond_, StatementBlock inc);
+		~ForStatement();
 
+		virtual void print(std::ostream &out, int indentation = 0) const override;
+};
+
+class GotoStatement: public Statement {
+	unsigned int blockIndex = 0;
+	public:
+		GotoStatement(unsigned int index);
+		virtual void print(std::ostream &out, int indentation = 0) const override;
+		virtual int getSize() const override;
+};
+
+class AssignStatement: public Statement {
+	Value lhs = nullptr;
+	Value rhs = nullptr;
+	public:
+		AssignStatement(Value lhs, Value rhs);
+
+		virtual void print(std::ostream &out, int indentation = 0) const override;
+};
+
+
+class BranchStatement: public Statement {
+	unsigned int blockIndex, elseIndex;
+	Value condition;
+	public:
+		BranchStatement(unsigned int blockIndex, unsigned int elseIndex = 0, Value cond = nullptr);
+
+		virtual void print(std::ostream &out, int indentation = 0) const override;
+		Value& getCondition() { return condition; }
+};
+
+class WhileStatement: public Statement {
+	Value condition;
+	std::vector<Block*> blocks;
+	public:
+		WhileStatement(Value cond_, std::vector<Block*> blocks);
+		//~WhileStatement();
+
+		virtual void print(std::ostream &out, int indentation = 0) const override;
+};
+
+class ReturnStatement: public Statement {
+	std::vector<Value> values;
+	public:
+		ReturnStatement(std::vector<Value> ret) : values(std::move(ret)) { type = RETURN; }
+
+		virtual void print(std::ostream &out, int indentation = 0) const override;
+};
+
+class LineNumStatement: public Statement {
+	public:
+		LineNumStatement(int lineNum_);
+
+		virtual void print(std::ostream &out, int indentation = 0) const override;
+		virtual int getSize() const override;
+};
+
+class ClearBufferStatement: public Statement {
+	public:
+		ClearBufferStatement() { type = CLEAR_BUFFER; }
+
+		virtual void print(std::ostream &out, int indentation = 0) const override;
+		virtual int getSize() const override;
+};
+
+class AddTextStatement: public Statement {
+	Value text;
+	unsigned int index = 0;
+	public:
+		AddTextStatement(Value text, unsigned int index) : text(std::move(text)), index(index) {}
+
+		virtual void print(std::ostream &out, int indentation = 0) const override;
+};
+
+class SetNameStatement: public Statement {
+	Value name;
+	public:
+		SetNameStatement(Value name) : name(std::move(name)) {}
+
+		virtual void print(std::ostream &out, int indentation = 0) const override;
+};
+
+#endif
 
 
 

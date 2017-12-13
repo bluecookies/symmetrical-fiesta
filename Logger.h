@@ -1,6 +1,7 @@
 #ifndef LOGGER_H
 #define LOGGER_H
 
+#include <iostream>
 #include <fstream>
 
 #define ANSI_RESET "\x1b[0m"

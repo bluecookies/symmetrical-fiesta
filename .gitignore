@@ -19,6 +19,7 @@
 *.txt
 *.key
 /*.exe
+*.png
 
 # go away
 .DS_Store

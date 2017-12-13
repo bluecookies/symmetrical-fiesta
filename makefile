@@ -25,7 +25,7 @@ all: $(EXE)
 $(BINDIR)/readscene $(BINDIR)/readscene.exe: ReadScene.o
 $(BINDIR)/readgameexe $(BINDIR)/readgameexe.exe: ReadGameExe.o
 $(BINDIR)/extractpck $(BINDIR)/extractpck.exe: ExtractPack.o
-$(BINDIR)/decompiless $(BINDIR)/decompiless.exe: DecompileScript.o Statements.o
+$(BINDIR)/decompiless $(BINDIR)/decompiless.exe: DecompileScript.o ControlFlow.o Expressions.o Statements.o Bitset.o
 
 $(EXE): Helper.o | $(BINDIR)
 	$(CXX) $(LDFLAGS) -o $@ $^
@@ -33,7 +33,9 @@ $(EXE): Helper.o | $(BINDIR)
 %.o: %.cpp $(HEADERS)
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
-DecompileScript.o Statements.o: Statements.h
+DecompileScript.o Statements.o Expressions.o: Statements.h
+ControlFlow.o Bitset.o: Bitset.h
+DecompileScript.o ControlFlow.o: ControlFlow.h BytecodeParser.h
 
 $(BINDIR):
 	$(MKDIR_P) $@
