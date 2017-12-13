@@ -70,6 +70,7 @@ class ControlFlowGraph {
 		std::vector<Bitset> findDominators();
 		std::vector<Loop> findLoops();
 		bool StructureIf(Block* pBlock);
+		bool StructureMerge(Block* pBlock);
 		void StructureLoops();
 
 		void removeBlock(Block* pBlock);

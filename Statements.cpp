@@ -1,5 +1,6 @@
 #include <iostream>
 
+#include "ControlFlow.h"
 #include "Statements.h"
 
 // Statements
@@ -158,7 +159,7 @@ LineNumStatement::LineNumStatement(int lineNum_) {
 }
 
 void LineNumStatement::print(std::ostream &out, int indentation) const {
-	out << std::string(indentation, '\t') << "line " << std::to_string(lineNum) << "\n";
+	out << std::string(indentation, '\t') << "// line " << std::to_string(lineNum) << "\n";
 }
 
 int LineNumStatement::getSize() const {
@@ -193,7 +194,7 @@ AssignStatement::AssignStatement(Value lhs_, Value rhs_) {
 }
 
 void AssignStatement::print(std::ostream &out, int indentation) const {
-	out << std::string(indentation, '\t') << lhs->print() << " = " << rhs->print() << "\t(" << VarType(lhs->getType()) << ")" << printLineNum();
+	out << std::string(indentation, '\t') << lhs->print() << " = " << rhs->print() << printLineNum();
 }
 
 BranchStatement::BranchStatement(unsigned int thenIndex, unsigned int elseIndex, Value cond) : blockIndex(thenIndex), elseIndex(elseIndex), condition(std::move(cond)) {
@@ -223,6 +224,10 @@ void ReturnStatement::print(std::ostream &out, int indentation) const {
 	out << printLineNum();
 }
 
+void ContinueStatement::print(std::ostream &out, int indentation) const {
+	out << std::string(indentation, '\t') << "continue" << printLineNum();
+}
+
 void AddTextStatement::print(std::ostream &out, int indentation) const {
 	out << std::string(indentation, '\t') << "AddText " << std::to_string(index) << " " << text->print() << printLineNum();
 }
@@ -231,16 +236,57 @@ void SetNameStatement::print(std::ostream &out, int indentation) const {
 	out << std::string(indentation, '\t') << "SetName " << name->print() << printLineNum();
 }
 
-
-WhileStatement::WhileStatement(Value cond_, std::vector<Block*> blocks) : condition(std::move(cond_)), blocks(blocks) {
+// TODO: restructure header
+WhileStatement::WhileStatement(Value cond_, std::vector<Block*> blocks, Block* entry) : condition(std::move(cond_)), blocks(blocks), entryBlock(entry) {
 	if (condition->getLineNum() >= 0)
 		lineNum = condition->getLineNum();
 }
 
 void WhileStatement::print(std::ostream &out, int indentation) const {
-	out << std::string(indentation, '\t') << "while () " << printLineNum();
+	out << std::string(indentation, '\t') << "while (" + condition->print() + ") {" << printLineNum();
+
+	std::vector<Block*> toPrint, printed;
+	toPrint.push_back(entryBlock);
+
+	while (!toPrint.empty()) {
+		Block* pBlock = toPrint.back();
+		toPrint.pop_back();
+
+		for (const auto &pSucc:pBlock->succ) {
+			if (std::find(printed.begin(), printed.end(), pSucc) == printed.end()) {
+				// Block containing while (TODO, remove that link, just replace with a continue if needed)
+				// or maybe other exits
+				if (std::find(blocks.begin(), blocks.end(), pSucc) != blocks.end())
+					toPrint.push_back(pSucc);
+			}
+		}
+		
+		out << std::string(indentation+1, '\t') << "L" << std::to_string(pBlock->index) << "@0x" << toHex(pBlock->startAddress) << ":\n";
+		for (auto &pStatement:pBlock->statements) {
+			if (pStatement == this) {
+				Logger::Error() << "Error: Loop\n";
+				continue;
+			}
+			pStatement->print(out, indentation+1);
+		}
+
+		printed.push_back(pBlock);
+	}
+
+	out << std::string(indentation, '\t') << "}\n";
 }
 
+int WhileStatement::getSize() const {
+	int size = 1;
+	for (const auto& block:blocks) {
+		for (const auto& statement:block->statements) {
+			if (statement == this)
+				continue;
+			size += statement->getSize();
+		}
+	}
+	return size;
+}
 
 /*
 Statement* IfStatement::foldSwitch() {

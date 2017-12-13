@@ -255,6 +255,12 @@ class ExpressionStatement : public Statement {
 		virtual void print(std::ostream &out, int indentation = 0) const override;
 };
 
+//===============================================================
+// Control flow statements
+//    some can be structures as well
+//		infinite descent
+//===============================================================
+
 struct IfBranch {
 	Value condition;
 	StatementBlock block;
@@ -302,16 +308,6 @@ class GotoStatement: public Statement {
 		virtual int getSize() const override;
 };
 
-class AssignStatement: public Statement {
-	Value lhs = nullptr;
-	Value rhs = nullptr;
-	public:
-		AssignStatement(Value lhs, Value rhs);
-
-		virtual void print(std::ostream &out, int indentation = 0) const override;
-};
-
-
 class BranchStatement: public Statement {
 	unsigned int blockIndex, elseIndex;
 	Value condition;
@@ -325,10 +321,17 @@ class BranchStatement: public Statement {
 class WhileStatement: public Statement {
 	Value condition;
 	std::vector<Block*> blocks;
+	Block* entryBlock;
 	public:
-		WhileStatement(Value cond_, std::vector<Block*> blocks);
+		WhileStatement(Value cond_, std::vector<Block*> blocks, Block* entry);
 		//~WhileStatement();
 
+		virtual void print(std::ostream &out, int indentation = 0) const override;
+		virtual int getSize() const override;
+};
+
+class ContinueStatement: public Statement {
+	public:
 		virtual void print(std::ostream &out, int indentation = 0) const override;
 };
 
@@ -339,6 +342,18 @@ class ReturnStatement: public Statement {
 
 		virtual void print(std::ostream &out, int indentation = 0) const override;
 };
+
+//================================================================
+
+class AssignStatement: public Statement {
+	Value lhs = nullptr;
+	Value rhs = nullptr;
+	public:
+		AssignStatement(Value lhs, Value rhs);
+
+		virtual void print(std::ostream &out, int indentation = 0) const override;
+};
+
 
 class LineNumStatement: public Statement {
 	public:

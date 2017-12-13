@@ -361,7 +361,10 @@ void ControlFlowGraph::StructureLoops() {
 			if (loop.header->succ[0] == breakNode)
 				cond->negateBool();
 
-			WhileStatement* pWhile = new WhileStatement(std::move(cond), loop.blocks);	// check condition
+			// Remove header - only the while statement in it
+			// not in general - restructure
+			loop.blocks.erase(std::remove(loop.blocks.begin(), loop.blocks.end(), loop.header), loop.blocks.end());
+			WhileStatement* pWhile = new WhileStatement(std::move(cond), loop.blocks, loopStart);	// check condition
 			
 			loop.header->pop();
 			loop.header->statements.push_back(pWhile);
@@ -369,17 +372,41 @@ void ControlFlowGraph::StructureLoops() {
 
 
 			loop.header->removeSuccessor(loopStart);
+
+			// Remove the link from tail to head
+			loop.tails[0]->removeSuccessor(loop.header);
+			loop.tails[0]->pop();
+			loop.tails[0]->statements.push_back(new ContinueStatement());
+
+			// Transfer calls
+			for (const auto& block:loop.blocks) {
+				loop.header->calls.insert(loop.header->calls.end(), block->calls.begin(), block->calls.end());
+			}
 		}
 	}
 }
 
+bool ControlFlowGraph::StructureMerge(Block* pBlock) {
+	if (pBlock->succ.size() == 1) {
+		Block* pSucc = pBlock->succ[0];
+		if (pSucc->pred.size() == 1) {
+			// Delete jump statement
+			pBlock->pop();
+			// Merge blocks
+			mergeBlocks(pBlock, pSucc);
+			return true;
+		}
+	}
+	return false;
+}
+
 void ControlFlowGraph::structureStatements() {
 	Logger::Info() << "Structuring loops.\n";
-	//StructureLoops();
+	StructureLoops();
 
 
 	Logger::Info() << "Structuring if else statements.\n";
-	// Structure ifs
+	// Structure ifs and simplify blocks
 	bool changed = true;
 	while (changed) {
 		changed = false;
@@ -387,6 +414,8 @@ void ControlFlowGraph::structureStatements() {
 			if (StructureIf(pBlock)) {
 				changed = true;
 				break;
+			} else if (pBlock->index != 0) {
+				changed |= StructureMerge(pBlock);
 			}
 		}
 	}
@@ -398,20 +427,7 @@ void ControlFlowGraph::structureStatements() {
 	//	}
 	//}
 
-	// Simplify blocks
-	for (auto &pBlock:blocks) {
-		if (pBlock->index == 0)
-			continue;
-		if (pBlock->succ.size() == 1) {
-			Block* pSucc = pBlock->succ[0];
-			if (pSucc->pred.size() == 1) {
-				// Delete jump statement
-				pBlock->pop();
-				// Merge blocks
-				mergeBlocks(pBlock, pSucc);
-			}
-		}
-	}
+	
 }
 
 void ControlFlowGraph::printBlocks(std::string filename) {
@@ -429,8 +445,14 @@ void ControlFlowGraph::printBlocks(std::string filename) {
 			}
 		}
 
+		for (const auto &pCall:pBlock->calls) {
+			if (std::find(printed.begin(), printed.end(), pCall) == printed.end()) {
+				toPrint.push_back(pCall);
+			}
+		}
+
 		out << "\nL" << std::to_string(pBlock->index) << "@0x" << toHex(pBlock->startAddress) << ":\n";
-		for (auto &pStatement:pBlock->statements){
+		for (auto &pStatement:pBlock->statements) {
 			pStatement->print(out);
 		}
 
@@ -440,57 +462,75 @@ void ControlFlowGraph::printBlocks(std::string filename) {
 }
 
 void ControlFlowGraph::dumpGraph(std::string filename) {
+	std::vector<Block*> toPrint, printed;
+	printed.push_back(blocks.at(0));
+
 	std::ofstream out(filename);
 	// should be same - check
 	out << "strict digraph " << "CFG" << " {\n";
 	out << "\tnode [shape=box, fixedsize=true, fontsize=8, labelloc=\"t\"]\n";
-	for (const auto &block:blocks) {
-		std::string props;
-		if (block->index == 0)  {
-			props += "penwidth=2,color=blue,";
-			props += "height=" + std::to_string(block->getDrawSize()*0.05);
-			out << "\tEntry" << " [" << props << "]\n";
 
-			out << "\tEntry -> {";
-			for (auto p = block->succ.begin(); p != block->succ.end(); p++) {
-				if (p != block->succ.begin())
+	std::string props;
+
+	Block* pBlock = blocks.at(0);
+	props += "penwidth=2,color=blue,";
+	props += "height=" + std::to_string(pBlock->getDrawSize()*0.05);
+	out << "\tEntry" << " [" << props << "]\n";
+
+	out << "\tEntry -> {";
+	for (auto p = pBlock->succ.begin(); p != pBlock->succ.end(); p++) {
+		if (p != pBlock->succ.begin())
+			out << "; ";
+		out << "Block" << std::to_string((*p)->index);
+
+		toPrint.push_back(*p);
+	}
+	out << "}\n";
+
+	while (!toPrint.empty()) {
+		pBlock = toPrint.back();
+		toPrint.pop_back();
+
+		props = "";
+		if (pBlock->isFunction)
+			props += "color=red,";
+		props += "height=" + std::to_string(pBlock->getDrawSize()*0.05);
+
+		out << "\tBlock" << std::to_string(pBlock->index) << " [" << props << "]\n";
+
+		// Successors
+		if (pBlock->succ.empty()) {
+			if (!pBlock->isFunction)
+				out << "\tBlock" << std::to_string(pBlock->index) << " -> Exit\n";
+		} else {
+			out << "\tBlock" << std::to_string(pBlock->index) << " -> {";
+			for (auto p = pBlock->succ.begin(); p != pBlock->succ.end(); p++) {
+				if (p != pBlock->succ.begin())
 					out << "; ";
 				out << "Block" << std::to_string((*p)->index);
+
+				if (std::find(printed.begin(), printed.end(), *p) == printed.end())
+					toPrint.push_back(*p);
 			}
 			out << "}\n";
-
-		} else {
-			if (block->isFunction)
-				props += "color=red,";
-			props += "height=" + std::to_string(block->getDrawSize()*0.05);
-
-			out << "\tBlock" << std::to_string(block->index) << " [" << props << "]\n";
-
-			// Successors
-			if (block->succ.empty()) {
-				if (!block->isFunction)
-					out << "\tBlock" << std::to_string(block->index) << " -> Exit\n";
-			} else {
-				out << "\tBlock" << std::to_string(block->index) << " -> {";
-				for (auto p = block->succ.begin(); p != block->succ.end(); p++) {
-					if (p != block->succ.begin())
-						out << "; ";
-					out << "Block" << std::to_string((*p)->index);
-				}
-				out << "}\n";
-			}
-
-			if (!block->calls.empty()) {
-				out << "\tBlock" << std::to_string(block->index) << " -> {";
-				for (auto p = block->calls.begin(); p != block->calls.end(); p++) {
-					if (p != block->calls.begin())
-						out << "; ";
-					out << "Block" << std::to_string((*p)->index);
-				}
-				out << "} [color=red]\n";
-			}
 		}
+
+		if (!pBlock->calls.empty()) {
+			out << "\tBlock" << std::to_string(pBlock->index) << " -> {";
+			for (auto p = pBlock->calls.begin(); p != pBlock->calls.end(); p++) {
+				if (p != pBlock->calls.begin())
+					out << "; ";
+				out << "Block" << std::to_string((*p)->index);
+
+				if (std::find(printed.begin(), printed.end(), *p) == printed.end())
+					toPrint.push_back(*p);
+			}
+			out << "} [color=red]\n";
+		}
+
+		printed.push_back(pBlock);
 	}
+
 
 	out << "\tExit [penwidth=2, height=0.15]\n";
 
