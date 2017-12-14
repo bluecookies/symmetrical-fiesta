@@ -9,7 +9,7 @@
 
 
 void negateCondition(Value& cond) {
-	if (cond->exprType == ValueExpr::BINARY_BOOL_EXPR) {
+	if (cond->exprType == ValueExpr::BOOL_EXPR) {
 		static_cast<BinaryValueExpr*>(cond.get())->negateBool();
 	} else {
 		// check if its a not, if so remove the not

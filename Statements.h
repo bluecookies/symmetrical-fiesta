@@ -113,6 +113,9 @@ class BinaryValueExpr: public ValueExpr {
 
 	public:
 		void negateBool();
+		bool isEquality() { return op == 0x11; }
+		Value& getLHS() { return expr1; }
+		Value& getRHS() { return expr2; }
 };
 
 class IndexValueExpr: public BinaryValueExpr {
@@ -246,6 +249,7 @@ class ShortCallExpr: public CallExpr {
 
 class Statement;
 class IfStatement;
+class SwitchStatement;
 
 typedef struct BasicBlock Block;
 
@@ -268,7 +272,8 @@ class Statement {
 			ASSIGN, RETURN,
 			CLEAR_BUFFER, LINE_NUM,
 			JUMP_IF, GOTO,
-			CONTINUE
+			CONTINUE, SWITCH,
+			WHILE, IF_ELSE
 		};
 
 		StatementType type = INVALID;
@@ -276,6 +281,8 @@ class Statement {
 		int getLineNum() const { return lineNum; }
 		virtual void setLineNum(int num) { lineNum = num; }
 		std::string printLineNum() const { return (lineNum >= 0) ? ("\t// line " + std::to_string(lineNum) + "\n") : "\n"; }
+
+		virtual SwitchStatement* foldSwitch() { return nullptr; }
 };
 
 class ExpressionStatement : public Statement {
@@ -316,11 +323,19 @@ class IfStatement: public Statement {
 		virtual IfStatement* makeIf(Value cond, StatementBlock block) override;
 
 		virtual int getSize() const override;
+
+		virtual SwitchStatement* foldSwitch() override;
+		SwitchStatement* doFoldSwitch();
 };
 
 
 class SwitchStatement: public Statement {
+	Value testExpr;
+	std::vector<IfBranch> switches;
+	public:
+		SwitchStatement(Value expr, std::vector<IfBranch> switches);
 
+		virtual void print(std::ostream &out, int indentation = 0) const override;
 };
 
 class ForStatement: public Statement {
@@ -361,6 +376,8 @@ class WhileStatement: public Statement {
 
 		virtual void print(std::ostream &out, int indentation = 0) const override;
 		virtual int getSize() const override;
+		virtual SwitchStatement* foldSwitch() override;
+
 };
 
 class ContinueStatement: public Statement {

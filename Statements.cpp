@@ -50,6 +50,8 @@ IfStatement::IfStatement(Value cond, StatementBlock trueBlock_, StatementBlock f
 	if (!falseBlock_.empty())
 		branches.push_back(IfBranch(nullptr, falseBlock_));
 	branches.push_back(IfBranch(std::move(cond), trueBlock_));
+
+	type = IF_ELSE;
 }
 
 IfStatement::~IfStatement() {
@@ -110,6 +112,130 @@ int IfStatement::getSize() const {
 void IfStatement::setLineNum(int num) {
 	if (!branches.empty())
 		branches.back().lineNum = num;
+}
+
+
+SwitchStatement* IfStatement::doFoldSwitch() {
+	if (branches.size() < 3)
+		return nullptr;
+
+	std::vector<IfBranch> switches;
+
+
+	auto pBranch = branches.rbegin();
+	// original condition not moved
+	Value& pOrigCond = pBranch->condition;
+	if (pOrigCond == nullptr)
+		return nullptr;
+
+	if (pOrigCond->exprType != ValueExpr::BOOL_EXPR)
+		return nullptr;
+
+	// comp goes out of scope if exit
+	BinaryValueExpr* comp = static_cast<BinaryValueExpr*>(pOrigCond.get());
+	if (!comp->isEquality())
+		return nullptr;
+
+	Value* pOrig = &comp->getLHS();
+	std::string exprName = (*pOrig)->print();
+	// cloned value will be deleted safely if exit
+	// statements only have one copy in original branch if exit
+	switches.push_back(IfBranch(Value(comp->getRHS()->clone()), pBranch->block));
+	switches.back().lineNum = pBranch->lineNum;
+
+	while (++pBranch != branches.rend()) {
+		Value& pExpr = pBranch->condition;
+		if (pExpr == nullptr) {
+			switches.push_back(IfBranch(Value(), pBranch->block));
+		} else if (pExpr->exprType != ValueExpr::BOOL_EXPR) {
+			return nullptr;
+		} else {
+			comp = static_cast<BinaryValueExpr*>(pExpr.get());
+			if (!comp->isEquality())
+				return nullptr;
+
+			if (comp->getLHS()->print() != exprName)
+				return nullptr;
+
+			switches.push_back(IfBranch(Value(comp->getRHS()->clone()), pBranch->block));
+			switches.back().lineNum = pBranch->lineNum;
+		}
+	}
+
+	// "Check?" for success - skip
+	// Move test expression
+	SwitchStatement* pSwitch = new SwitchStatement(std::move(*pOrig), std::move(switches));
+	// Detach statements from if branches
+	for (auto &branch:branches) {
+		branch.block.clear();
+	}
+
+	return pSwitch;
+}
+
+SwitchStatement* IfStatement::foldSwitch() {
+	SwitchStatement* pSwitch = doFoldSwitch();
+	if (pSwitch != nullptr)
+		return pSwitch;
+
+	for (auto& pBranch:branches) {
+		for (auto& statement:pBranch.block) {
+			pSwitch = statement->foldSwitch();
+			if (pSwitch != nullptr) {
+				delete statement;
+				statement = pSwitch;
+			}
+		}
+	}
+
+	return nullptr;
+}
+
+SwitchStatement* WhileStatement::foldSwitch() {
+	for (auto& pBlock:blocks) {
+		for (auto& statement:pBlock->statements) {
+			SwitchStatement* pSwitch = statement->foldSwitch();
+			if (pSwitch != nullptr) {
+				delete statement;
+				statement = pSwitch;
+			}
+		}
+	}
+	return nullptr;
+}
+
+
+// Switches do not fall through
+SwitchStatement::SwitchStatement(Value expr, std::vector<IfBranch> switches) : testExpr(std::move(expr)), switches(std::move(switches)) {
+	type = SWITCH;
+}
+
+void SwitchStatement::print(std::ostream &out, int indentation) const {
+	out << std::string(indentation, '\t') << "switch (" << testExpr->print() << ") {" << printLineNum();
+
+	auto pBranch = switches.begin();
+	auto pStatement = pBranch->block.begin();
+
+	while (pBranch != switches.end()) {
+		pStatement = pBranch->block.begin();
+		if (pBranch->condition)
+			out << std::string(indentation+1, '\t') << "case " << pBranch->condition->print() << ":\t";
+		else
+			out << std::string(indentation+1, '\t') << "default:\t";
+
+		if (pStatement != pBranch->block.end()) {
+			(*pStatement)->print(out);
+			pStatement++;
+		}
+		while (pStatement != pBranch->block.end()) {
+			(*pStatement)->print(out, indentation + 2);
+			pStatement++;
+		}
+		
+		
+		pBranch++;
+	}
+	out << std::string(indentation, '\t') << "}\n";
 }
 
 
@@ -289,35 +415,6 @@ int WhileStatement::getSize() const {
 void Op21Statement::print(std::ostream &out, int indentation) const {
 	out << std::string(indentation, '\t') << " op21 " << std::to_string(u1) << " " << std::to_string(u2) << printLineNum();
 }
-
-
-/*
-Statement* IfStatement::foldSwitch() {
-	if (!condition->isBinaryExpression())
-		return nullptr;
-
-
-	BinaryValueExpr* comp = static_cast<BinaryValueExpr*>(condition.get());
-	std::string hopefullyTemp = comp->getExpression1()->print();
-
-	if (comp->getOp() != 0x11)
-		return nullptr;
-
-	unsigned int value = comp->getExpression2()->getIndex();
-	if (value & 0xFF000000)
-		return nullptr;
-
-	if (falseBlock.size() > 1)
-		return nullptr;
-	else if (falseBlock.empty())
-
-	//falseBlock.back
-		return nullptr;
-
-	return nullptr;
-} */
-
-
 
 
 

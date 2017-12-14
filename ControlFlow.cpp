@@ -458,11 +458,16 @@ void ControlFlowGraph::structureStatements() {
 	}
 
 	// Turn ifs into switches
-	//for (auto &pBlock:blocks) {
-	//	if (!pBlock->statements.empty()) {
-	//		pBlock->statements.back()->foldSwitch();
-	//	}
-	//}
+	// needs to be recursive or keep track of ifs previously
+	for (auto &pBlock:blocks) {
+		for (auto &statement:pBlock->statements) {
+			SwitchStatement* pSwitch = statement->foldSwitch();
+			if (pSwitch != nullptr) {
+				delete statement;
+				statement = pSwitch;
+			}
+		}
+	}
 
 	
 }
