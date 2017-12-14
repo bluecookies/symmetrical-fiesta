@@ -44,6 +44,7 @@ Block::Type BasicBlock::getBlockType() {
 		case Statement::RETURN:
 			return RET;
 		case Statement::GOTO:
+		case Statement::CONTINUE:
 			return ONEWAY;
 		case Statement::JUMP_IF:{
 			if (succ.size() != 2)
@@ -51,7 +52,7 @@ Block::Type BasicBlock::getBlockType() {
 			return TWOWAY;
 		}
 		default: {
-			Logger::Debug() << "Invalid block type.\n";
+			Logger::Warn() << "Invalid block type at L" << std::to_string(index) << ".\n";
 			return INVALID;
 		}
 	}
@@ -86,7 +87,7 @@ void NaturalLoop::merge(Block* tail) {
 	if (std::find(blocks.begin(), blocks.end(), tail) != blocks.end()) {
 		return;
 	}
-	Logger::Debug() << "Loop found from L" << std::to_string(tail->index) << " to L" << std::to_string(header->index) << "\n";
+	Logger::VDebug() << "Loop found from L" << std::to_string(tail->index) << " to L" << std::to_string(header->index) << "\n";
 
 	// DFS stack for backwards traversal
 	std::vector<Block*> toSearch;
@@ -298,7 +299,7 @@ bool ControlFlowGraph::StructureIf(Block* pBlock) {
 
 	Value& cond = pBranch->getCondition();
 	if (trueBlock == nullptr) {
-		cond->negateBool();
+		negateCondition(cond);
 		trueBlock = falseBlock;
 		falseBlock = nullptr;
 	}
@@ -324,6 +325,7 @@ bool ControlFlowGraph::StructureIf(Block* pBlock) {
 		pIf = new IfStatement(std::move(cond), trueBlock->statements, StatementBlock());
 		trueBlock->statements.clear();
 	}
+	pIf->setLineNum(pBranch->getLineNum());
 	/* Ahem
 	 The last statement (which should contain the last expression which is a conditional jump) is destroyed,
 	 destroying the jump expression, which by now has its condition moved out into the if statement.
@@ -395,7 +397,7 @@ void ControlFlowGraph::StructureLoops() {
 		// if (condition) jump breaknode => while (!condition)
 		// if (condition) jump loopnode => while (condition)
 		if (loop.header->succ[0] == breakNode)
-			cond->negateBool();
+			negateCondition(cond);
 
 		// Remove header - only the while statement in it
 		// not in general - restructure

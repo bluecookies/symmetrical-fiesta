@@ -441,8 +441,24 @@ ValueExpr* BytecodeParser::getLValue(const ScriptInfo &info) {
 					pLast = make_unique<IndexValueExpr>(std::move(pLast), std::move(pCurr));
 					Logger::VVDebug(instAddress) << "Created index reference " << pLast->print(true) << "\n";
 				} else {
-					pLast = make_unique<VarValueExpr>(localString + pCurr->print(true), ValueType::INTLIST, 1);
-					Logger::VVDebug(instAddress) << "Created array " << pLast->print(true) << "\n";
+					if (pLast == nullptr) {
+						unsigned int type;
+						if (localVar) {
+							switch (pCurr->getIndex()) {
+								case 0x00: type = ValueType::INTLIST; break;
+								case 0x01: type = ValueType::STRLIST; break;
+								case 0x02: type = ValueType::OBJLIST; break;
+								default: type = ValueType::INTLIST; break;
+							}
+						} else {
+							type = ValueType::INTLIST;
+						}
+						pLast = make_unique<VarValueExpr>(localString + pCurr->print(true), type, 1);
+						Logger::VVDebug(instAddress) << "Created array " << pLast->print(true) << "\n";
+					} else if (pLast->getType() == ValueType::OBJ_STR) { //ODD: LOOK
+						pLast = make_unique<MemberExpr>(std::move(pLast), std::move(pCurr));
+						Logger::VVDebug(instAddress) << "Created member access " << pLast->print(true) << "\n";
+					}
 				}
 
 			} break;
@@ -479,7 +495,7 @@ ValueExpr* BytecodeParser::getLValue(const ScriptInfo &info) {
 		Logger::Error(instAddress) << "Could not get lvalue!\n";
 
 	stack.closeFrame();
-	return pLast->clone();
+	return pLast->clone();	// think about whether this is needed, or maybe I could just release/pass directly back (i forget how this is used)
 }
 
 Function BytecodeParser::getCallFunction(const ScriptInfo& info) {
@@ -499,8 +515,8 @@ Function BytecodeParser::getCallFunction(const ScriptInfo& info) {
 		// else
 		Function fn("FN_" + pCall->print(true));
 
-		// Play voice
-		if (pCall->getIndex() == 0x12)
+		// Play voice/Select choice
+		if (pCall->getIndex() == 0x12 || pCall->getIndex() == 0x4c)
 			fn.hasExtra = true;
 		else if (pCall->getIndex() == 0x54)
 			fn.pushRet = false;
@@ -516,6 +532,7 @@ Function BytecodeParser::getCallFunction(const ScriptInfo& info) {
 		name += "_{" + pCurr->print(true) + "}";
 		curr++;
 	}
+	stack.closeFrame();
 	return Function(name);
 }
 
@@ -533,7 +550,7 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 		stack = std::move(branch.stack);
 		pBlock->parsed = true;
 
-		Logger::Debug(instAddress) << "Parsing new branch - starting at block " << std::to_string(pBlock->index) << std::endl;
+		Logger::VDebug(instAddress) << "Parsing new branch - starting at block " << std::to_string(pBlock->index) << std::endl;
 
 		unsigned char opcode;
 		Statement* pStatement;
@@ -629,7 +646,7 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 
 					Block* pNextBlock = cfg.getBlock(buf->getAddress());
 					if (opcode == 0x11) {
-						condition->negateBool();
+						negateCondition(condition);
 					}
 					
 					pStatement = new BranchStatement(pJumpBlock->index, pNextBlock->index, std::move(condition));
@@ -813,8 +830,7 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 					Statement* pLast = pBlock->statements.back();
 					if (pLast->type == Statement::LINE_NUM) {
 						pStatement->setLineNum(pLast->getLineNum());
-						delete pLast;
-						pBlock->statements.pop_back();
+						pBlock->pop();
 					}
 				}
 				pBlock->statements.push_back(pStatement);

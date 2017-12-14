@@ -28,9 +28,6 @@ Statement* Statement::makeStatement(Expression* expr) {
 ExpressionStatement::ExpressionStatement(ValueExpr* expr_) : expr(expr_) {
 	if (expr == nullptr)
 		throw std::logic_error("Null pointer passed into statement.");
-
-	if (expr->getLineNum() >= 0)
-		lineNum = expr->getLineNum();
 }
 
 
@@ -50,10 +47,9 @@ IfStatement* Statement::makeIf(Value cond, StatementBlock block) {
 
 
 IfStatement::IfStatement(Value cond, StatementBlock trueBlock_, StatementBlock falseBlock_) {
-	int lineNum = cond->getLineNum();
 	if (!falseBlock_.empty())
 		branches.push_back(IfBranch(nullptr, falseBlock_));
-	branches.push_back(IfBranch(std::move(cond), trueBlock_, lineNum));
+	branches.push_back(IfBranch(std::move(cond), trueBlock_));
 }
 
 IfStatement::~IfStatement() {
@@ -97,8 +93,7 @@ void IfStatement::print(std::ostream &out, int indentation) const {
 }
 
 IfStatement* IfStatement::makeIf(Value cond, StatementBlock block) {
-	int lineNum = cond->getLineNum();
-	branches.push_back(IfBranch(std::move(cond), block, lineNum));
+	branches.push_back(IfBranch(std::move(cond), block));
 	return this;
 }
 
@@ -111,6 +106,12 @@ int IfStatement::getSize() const {
 	}
 	return size;
 }
+
+void IfStatement::setLineNum(int num) {
+	if (!branches.empty())
+		branches.back().lineNum = num;
+}
+
 
 // For statement - contains.. blocks?
 
@@ -136,9 +137,7 @@ void ForStatement::print(std::ostream &out, int indentation) const {
 		pStatement++;
 	}
 
-	std::string lineComment = (condition->getLineNum() < 0) ? "\n" : ("\t// line " + std::to_string(condition->getLineNum()) + "\n");
-
-	out << ") {" << lineComment;
+	out << ") {" << printLineNum();
 	out << std::string(indentation, '\t') << "}\n";
 }
 
@@ -239,8 +238,6 @@ void SetNameStatement::print(std::ostream &out, int indentation) const {
 
 // TODO: restructure header
 WhileStatement::WhileStatement(Value cond_, std::vector<Block*> blocks, Block* entry) : condition(std::move(cond_)), blocks(blocks), entryBlock(entry) {
-	if (condition->getLineNum() >= 0)
-		lineNum = condition->getLineNum();
 }
 
 void WhileStatement::print(std::ostream &out, int indentation) const {

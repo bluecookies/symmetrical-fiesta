@@ -8,6 +8,15 @@
 #include "Statements.h"
 
 
+void negateCondition(Value& cond) {
+	if (cond->exprType == ValueExpr::BINARY_BOOL_EXPR) {
+		static_cast<BinaryValueExpr*>(cond.get())->negateBool();
+	} else {
+		// check if its a not, if so remove the not
+		cond = make_unique<NotExpr>(std::move(cond));
+	}
+}
+
 // Expressions
 
 std::string ValueExpr::print(bool) const {
@@ -48,6 +57,18 @@ BinaryValueExpr::BinaryValueExpr(Value e1, Value e2, unsigned int op_) {
 		else
 			type = ValueType::INT;
 	}
+
+	switch(op) {
+		case 0x10:
+		case 0x11:
+		case 0x12:
+		case 0x13:
+		case 0x14:
+		case 0x15:
+		case 0x20:
+		case 0x21:
+			exprType = BOOL_EXPR;
+	}
 }
 
 std::string BinaryValueExpr::print(bool hex) const {
@@ -85,13 +106,13 @@ void BinaryValueExpr::negateBool() {
 		// DeMorgan's laws
 		case 0x20:
 			op = 0x21;
-			expr1->negateBool();
-			expr2->negateBool();
+			negateCondition(expr1);
+			negateCondition(expr2);
 		break;
 		case 0x21:
 			op = 0x20;
-			expr1->negateBool();
-			expr2->negateBool();
+			negateCondition(expr1);
+			negateCondition(expr2);
 		break;
 	}
 }
@@ -111,7 +132,7 @@ IndexValueExpr::IndexValueExpr(Value e1, Value e2) : BinaryValueExpr(std::move(e
 		type = ValueType::INTREF;
 	else if (arrType == ValueType::STRLIST)
 		type = ValueType::STRREF;
-	else if (arrType == ValueType::OBJ_STR - 3)
+	else if (arrType == ValueType::OBJLIST)
 		type = ValueType::OBJ_STR;
 	else
 		type = ValueType::INTREF;
@@ -120,6 +141,25 @@ IndexValueExpr::IndexValueExpr(Value e1, Value e2) : BinaryValueExpr(std::move(e
 std::string IndexValueExpr::print(bool hex) const {
 	return expr1->print(hex) + "[" + expr2->print(hex) + "]";
 }
+
+bool IndexValueExpr::isLValue() {
+	return (type == ValueType::INTREF || type == ValueType::STRREF || type == ValueType::OBJ_STR);
+}
+
+
+MemberExpr::MemberExpr(Value e1, Value e2) : BinaryValueExpr(std::move(e1), std::move(e2), 0xFFFFFFFF) {
+	if (expr2->getType() != ValueType::INT) {
+		Logger::Warn() << "Accessing with non-int value (is that bad?).\n";
+	}
+
+	// Temporary
+	type = ValueType::INTREF;
+}
+
+std::string MemberExpr::print(bool hex) const {
+	return expr1->print(hex) + "." + expr2->print(hex);
+}
+
 
 std::string RawValueExpr::print(bool hex) const {
 	if (type == ValueType::STR) {
@@ -151,6 +191,10 @@ IntType RawValueExpr::getIntType() {
 		default:
 			return IntegerInvalid;
 	}
+}
+
+std::string NotExpr::print(bool hex) const {
+	return "!(" + cond->print(hex) + ")";
 }
 
 

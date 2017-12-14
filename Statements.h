@@ -16,6 +16,7 @@ namespace ValueType {
 	const unsigned int STRLIST  = 0x15;
 	const unsigned int STRREF   = 0x17;
 	const unsigned int OBJ_STR  = 0x51e;
+	const unsigned int OBJLIST  = 0xFFFF0000;
 };
 
 inline std::string VarType(unsigned int type) {
@@ -50,6 +51,9 @@ class Statement;
 typedef std::unique_ptr<ValueExpr> Value;
 typedef std::vector<Statement*> StatementBlock;
 
+
+void negateCondition(Value& cond);
+
 class ValueExpr {
 	private:
 		int lineNum = -1;
@@ -76,14 +80,21 @@ class ValueExpr {
 		virtual std::string print(bool hex=false) const;
 
 
-		int getLineNum() { return lineNum; }
-		void setLineNum(int lineNum_) { lineNum = lineNum_; }
+		//virtual int getAddress() const { return address; }
+		//int getLineNum() const { return lineNum; }
+		//void setLineNum(int lineNum_) { lineNum = lineNum_; }
 
 		virtual IntType getIntType() { return IntegerInvalid; }
 		virtual unsigned int getIndex() { return 0xFF000000; }
 
-		virtual void negateBool() { Logger::Warn() << "Negating non condition.\n"; }
 		virtual bool isBinaryExpression() { return false; }
+
+
+		enum ExpressionType {
+			INVALID, BOOL_EXPR
+		};
+
+		ExpressionType exprType = INVALID;
 };
 
 class BinaryValueExpr: public ValueExpr {
@@ -100,13 +111,8 @@ class BinaryValueExpr: public ValueExpr {
 		bool hasSideEffect() override { return expr1->hasSideEffect() || expr2->hasSideEffect(); }
 		IntType getIntType() override { return (type == ValueType::INT) ? IntegerSimple : IntegerInvalid; }
 
-		void negateBool() override;
-
-		Value& getExpression1() { return expr1; }
-		Value& getExpression2() { return expr2; }
-		unsigned int getOp() { return op; }
-
-		virtual bool isBinaryExpression() override { return true; }
+	public:
+		void negateBool();
 };
 
 class IndexValueExpr: public BinaryValueExpr {
@@ -116,8 +122,19 @@ class IndexValueExpr: public BinaryValueExpr {
 
 		std::string print(bool hex=false) const override;
 
-		virtual bool isLValue() override { return (type == ValueType::INTREF || type == ValueType::STRREF); }
+		virtual bool isLValue() override;
 };
+
+class MemberExpr: public BinaryValueExpr {
+	public:
+		MemberExpr(Value e1, Value e2);
+		virtual MemberExpr* clone() const override { return new MemberExpr(*this); }
+
+		std::string print(bool hex=false) const override;
+
+		virtual bool isLValue() override { return true; }
+};
+
 
 class RawValueExpr: public ValueExpr {
 	unsigned int value = 0;
@@ -162,6 +179,20 @@ class ErrValueExpr: public ValueExpr {
 
 };
 
+// This might only come up with weird debugging conditions
+class NotExpr: public ValueExpr {
+	Value cond;
+	public:
+		NotExpr(Value cond) : cond(std::move(cond)) {}
+		NotExpr(const NotExpr& copy) : ValueExpr(copy), cond(copy.cond->clone()) {}
+		virtual NotExpr* clone() const override { return new NotExpr(*this); }
+
+		std::string print(bool hex=false) const override;
+		IntType getIntType() override { return IntegerBool; }
+};
+
+// TODO: turn into expression, reap access
+// eg (var.fn => fn)
 // Represents the target of the call (loosely)
 class Function {
 	std::string name;
@@ -236,13 +267,14 @@ class Statement {
 			INVALID,
 			ASSIGN, RETURN,
 			CLEAR_BUFFER, LINE_NUM,
-			JUMP_IF, GOTO
+			JUMP_IF, GOTO,
+			CONTINUE
 		};
 
 		StatementType type = INVALID;
 
 		int getLineNum() const { return lineNum; }
-		void setLineNum(int num) { lineNum = num; }
+		virtual void setLineNum(int num) { lineNum = num; }
 		std::string printLineNum() const { return (lineNum >= 0) ? ("\t// line " + std::to_string(lineNum) + "\n") : "\n"; }
 };
 
@@ -266,7 +298,7 @@ struct IfBranch {
 	StatementBlock block;
 	int lineNum = -1;
 
-	IfBranch(Value cond_, StatementBlock block_, int lineNum_ = -1) : condition(std::move(cond_)), block(block_), lineNum(lineNum_) {}
+	IfBranch(Value cond_, StatementBlock block_) : condition(std::move(cond_)), block(block_) {}
 
 	std::string lineComment() const { return (lineNum >= 0) ? ("\t// line " + std::to_string(lineNum)) : ""; }
 };
@@ -279,6 +311,7 @@ class IfStatement: public Statement {
 		~IfStatement();
 
 		virtual void print(std::ostream &out, int indentation = 0) const override;
+		virtual void setLineNum(int num) override;
 
 		virtual IfStatement* makeIf(Value cond, StatementBlock block) override;
 
@@ -332,6 +365,7 @@ class WhileStatement: public Statement {
 
 class ContinueStatement: public Statement {
 	public:
+		ContinueStatement() { type = CONTINUE; }
 		virtual void print(std::ostream &out, int indentation = 0) const override;
 };
 
