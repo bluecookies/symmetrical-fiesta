@@ -204,6 +204,10 @@ SwitchStatement* WhileStatement::foldSwitch() {
 	return nullptr;
 }
 
+void WhileStatement::removeBlock(Block* pBlock) {
+	blocks.erase(std::remove(blocks.begin(), blocks.end(), pBlock), blocks.end());
+}
+
 
 // Switches do not fall through
 SwitchStatement::SwitchStatement(Value expr, std::vector<IfBranch> switches) : testExpr(std::move(expr)), switches(std::move(switches)) {
@@ -300,6 +304,12 @@ int ClearBufferStatement::getSize() const {
 	return 0;
 }
 
+
+void EndScriptStatement::print(std::ostream &out, int indentation) const {
+	out << std::string(indentation, '\t') << "EndScript" << printLineNum();
+}
+
+
 AssignStatement::AssignStatement(Value lhs_, Value rhs_) {
 	if (lhs_ == nullptr || rhs_ == nullptr) {
 		throw std::logic_error("Assigning null pointers.");
@@ -364,38 +374,52 @@ void SetNameStatement::print(std::ostream &out, int indentation) const {
 
 // TODO: restructure header
 WhileStatement::WhileStatement(Value cond_, std::vector<Block*> blocks, Block* entry) : condition(std::move(cond_)), blocks(blocks), entryBlock(entry) {
+	for (auto& pBlock:blocks) {
+		pBlock->loops.push_back(this);
+	}
 }
 
 void WhileStatement::print(std::ostream &out, int indentation) const {
 	out << std::string(indentation, '\t') << "while (" + condition->print() + ") {" << printLineNum();
 
-	std::vector<Block*> toPrint, printed;
-	toPrint.push_back(entryBlock);
-
-	while (!toPrint.empty()) {
-		Block* pBlock = toPrint.back();
-		toPrint.pop_back();
-
-		for (const auto &pSucc:pBlock->succ) {
-			if (std::find(printed.begin(), printed.end(), pSucc) == printed.end()) {
-				// Block containing while (TODO, remove that link, just replace with a continue if needed)
-				// or maybe other exits
-				if (std::find(blocks.begin(), blocks.end(), pSucc) != blocks.end())
-					toPrint.push_back(pSucc);
-			}
-		}
-		
-		out << std::string(indentation+1, '\t') << "L" << std::to_string(pBlock->index) << "@0x" << toHex(pBlock->startAddress) << ":\n";
-		for (auto &pStatement:pBlock->statements) {
+	if (blocks.size() == 1) {
+		for (auto &pStatement:blocks.back()->statements) {
 			if (pStatement == this) {
 				Logger::Error() << "Error: Loop\n";
 				continue;
 			}
-			pStatement->print(out, indentation+1);
+			if (pStatement != blocks.back()->statements.back())
+				pStatement->print(out, indentation+1);
 		}
+	} else {
+		std::vector<Block*> toPrint, printed;
+		toPrint.push_back(entryBlock);
 
-		printed.push_back(pBlock);
-	}
+		while (!toPrint.empty()) {
+			Block* pBlock = toPrint.back();
+			toPrint.pop_back();
+
+			for (const auto &pSucc:pBlock->succ) {
+				if (std::find(printed.begin(), printed.end(), pSucc) == printed.end()) {
+					// Block containing while (TODO, remove that link, just replace with a continue if needed)
+					// or maybe other exits
+					if (std::find(blocks.begin(), blocks.end(), pSucc) != blocks.end())
+						toPrint.push_back(pSucc);
+				}
+			}
+			
+			out << std::string(indentation+1, '\t') << "L" << std::to_string(pBlock->index) << "@0x" << toHex(pBlock->startAddress) << ":\n";
+			for (auto &pStatement:pBlock->statements) {
+				if (pStatement == this) {
+					Logger::Error() << "Error: Loop\n";
+					continue;
+				}
+				pStatement->print(out, indentation+1);
+			}
+
+			printed.push_back(pBlock);
+		}
+	} 
 
 	out << std::string(indentation, '\t') << "}\n";
 }

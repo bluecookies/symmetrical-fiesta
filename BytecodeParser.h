@@ -60,7 +60,7 @@ class BytecodeParser {
 		Value getArg(unsigned int type, const ScriptInfo& info);
 		ValueExpr* getLValue(const ScriptInfo &info);
 
-		Function getCallFunction(const ScriptInfo& info);
+		FunctionExpr* getCallFunction(const ScriptInfo& info);
 	public:
 		BytecodeParser(std::ifstream &f, HeaderPair index);
 		~BytecodeParser();

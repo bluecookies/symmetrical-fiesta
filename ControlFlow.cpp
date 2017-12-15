@@ -42,6 +42,7 @@ Block::Type BasicBlock::getBlockType() {
 	// Maybe don't put goto and check fallthrough here
 	switch (type) {
 		case Statement::RETURN:
+		case Statement::END_SCRIPT:
 			return RET;
 		case Statement::GOTO:
 		case Statement::CONTINUE:
@@ -161,6 +162,10 @@ void ControlFlowGraph::removeBlock(Block* pBlock) {
 	// Remove from graph entirely, hope there's nothing remaining (remember to handle the calls)
 	blocks.erase(std::remove(blocks.begin(), blocks.end(), pBlock), blocks.end());
 	removedBlocks.push_back(pBlock);
+
+	// Remove from any loops its part of
+	for (auto& loopStatement:pBlock->loops)
+		loopStatement->removeBlock(pBlock);
 }
 
 void ControlFlowGraph::mergeBlocks(Block* pBlock, Block* pSucc) {

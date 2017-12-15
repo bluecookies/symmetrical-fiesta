@@ -194,21 +194,20 @@ class NotExpr: public ValueExpr {
 		IntType getIntType() override { return IntegerBool; }
 };
 
-// TODO: turn into expression, reap access
-// eg (var.fn => fn)
 // Represents the target of the call (loosely)
-class Function {
+class FunctionExpr: public ValueExpr {
 	std::string name;
-	// if it is a script command
-	int fileIndex = -1;
-	unsigned int address = 0;
+	Value callValue;
 	public:
-		Function(std::string name) : name(name) {}
-		Function(std::string name, int index, unsigned int address) : name(name), fileIndex(index), address(address) {}
+		FunctionExpr(std::string name) : name(name) {}
+		FunctionExpr(Value val) : callValue(std::move(val)) {}
+		FunctionExpr(const FunctionExpr& copy) : name(copy.name), callValue(copy.callValue->clone()) {}
+		virtual FunctionExpr* clone() const override { return new FunctionExpr(*this); }
+
 
 		void extraThing(unsigned int extra) { extraCall = extra; }
 
-		std::string print() const;
+		std::string print(bool hex=false) const override;
 
 		// if it is special
 		bool hasExtra = false;
@@ -219,15 +218,16 @@ class Function {
 
 // Far absolute call/system call
 class CallExpr: public ValueExpr {
-	Function callFunc;
+	FunctionExpr* callFunc = nullptr;
 	unsigned int fnOption = 0;
 	std::vector<unsigned int> fnExtra;
 	protected:
 		std::vector<Value> fnArgs;
-		CallExpr() : callFunc("undefined") {}
+		CallExpr() : callFunc(new FunctionExpr("undefined")) {}
 	public:
-		CallExpr(Function callFunc, unsigned int option, std::vector<Value> args, std::vector<unsigned int> extraList, unsigned int returnType);
+		CallExpr(FunctionExpr* callFunc, unsigned int option, std::vector<Value> args, std::vector<unsigned int> extraList, unsigned int returnType);
 		CallExpr(const CallExpr& copy);
+		~CallExpr();
 		virtual CallExpr* clone() const override { return new CallExpr(*this); }
 
 		std::string print(bool hex=false) const override;
@@ -273,7 +273,8 @@ class Statement {
 			CLEAR_BUFFER, LINE_NUM,
 			JUMP_IF, GOTO,
 			CONTINUE, SWITCH,
-			WHILE, IF_ELSE
+			WHILE, IF_ELSE,
+			END_SCRIPT
 		};
 
 		StatementType type = INVALID;
@@ -283,6 +284,7 @@ class Statement {
 		std::string printLineNum() const { return (lineNum >= 0) ? ("\t// line " + std::to_string(lineNum) + "\n") : "\n"; }
 
 		virtual SwitchStatement* foldSwitch() { return nullptr; }
+		virtual void removeBlock(Block*) { }
 };
 
 class ExpressionStatement : public Statement {
@@ -377,6 +379,8 @@ class WhileStatement: public Statement {
 		virtual void print(std::ostream &out, int indentation = 0) const override;
 		virtual int getSize() const override;
 		virtual SwitchStatement* foldSwitch() override;
+		virtual void removeBlock(Block* pBlock) override;
+
 
 };
 
@@ -422,6 +426,15 @@ class ClearBufferStatement: public Statement {
 		virtual int getSize() const override;
 };
 
+
+class EndScriptStatement: public Statement {
+	public:
+		EndScriptStatement() { type = END_SCRIPT; }
+
+		virtual void print(std::ostream &out, int indentation = 0) const override;
+};
+
+
 class AddTextStatement: public Statement {
 	Value text;
 	unsigned int index = 0;
@@ -445,7 +458,6 @@ class Op21Statement: public Statement {
 	public:
 		Op21Statement(unsigned int u1, unsigned char u2) : u1(u1), u2(u2) {}
 		virtual void print(std::ostream &out, int indentation = 0) const override;
-
 };
 
 #endif

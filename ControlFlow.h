@@ -21,7 +21,7 @@ typedef struct BasicBlock {
 	bool isFunction = false;
 	bool isEntrypoint = false;
 
-	bool inLoop = false;
+	std::vector<Statement*> loops;
 
 	unsigned int startAddress;
 	unsigned int nextAddress;

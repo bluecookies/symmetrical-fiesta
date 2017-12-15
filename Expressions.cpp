@@ -7,6 +7,8 @@
 
 #include "Statements.h"
 
+// TODO: some renaming, maybe have expression inherit statement
+
 
 void negateCondition(Value& cond) {
 	if (cond->exprType == ValueExpr::BOOL_EXPR) {
@@ -226,22 +228,26 @@ std::string ErrValueExpr::print(bool) const {
 	return std::string("(ERROR)");
 }
 
-CallExpr::CallExpr(Function fnCall_, unsigned int option_, std::vector<Value> args_, std::vector<unsigned int> extraList_, unsigned int returnType_) : callFunc(fnCall_) {
+CallExpr::CallExpr(FunctionExpr* fnCall_, unsigned int option_, std::vector<Value> args_, std::vector<unsigned int> extraList_, unsigned int returnType_) : callFunc(fnCall_) {
 	type = returnType_;
 	fnOption = option_;
 	fnArgs = std::move(args_);
 	fnExtra = extraList_;
 }
 
-CallExpr::CallExpr(const CallExpr& copy) : ValueExpr(copy), callFunc(copy.callFunc), fnOption(copy.fnOption), fnExtra(copy.fnExtra) {
+CallExpr::CallExpr(const CallExpr& copy) : ValueExpr(copy), callFunc(copy.callFunc->clone()), fnOption(copy.fnOption), fnExtra(copy.fnExtra) {
 	for (const auto& arg:copy.fnArgs) {
 		fnArgs.emplace_back(arg->clone());
 	}
 }
 
+CallExpr::~CallExpr() {
+	delete callFunc;
+}
+
 
 std::string CallExpr::print(bool hex) const {
-	std::string str = callFunc.print();
+	std::string str = callFunc->print(true);
 	if (fnOption != 0)
 		str += "-" + std::to_string(fnOption);
 	str += "(";
@@ -262,14 +268,20 @@ std::string CallExpr::print(bool hex) const {
 		}
 		str += "}";
 	}
-	if (callFunc.hasExtra)
-		str += "<" + std::to_string(callFunc.extraCall) + ">";
 
 	return str;
 }
 
-std::string Function::print() const {
-	return name;
+std::string FunctionExpr::print(bool hex) const {
+	std::string ret;
+	if (callValue != nullptr)
+		ret = callValue->print(hex);
+	else
+		ret = name;
+
+	if (hasExtra)
+		ret += "<" + std::to_string(extraCall) + ">";
+	return ret;
 }
 
 ShortCallExpr::ShortCallExpr(unsigned int index, std::vector<Value> args) {
