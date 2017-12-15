@@ -257,12 +257,12 @@ void ScriptInfo::readGlobalInfo(std::string filename) {
 	// Global commands
 	globalInfoFile.read((char*) &count, 4);
 	globalCommands.reserve(count);
-	unsigned int address, fileIndex;
+	unsigned int address, functionFile;
 	for (unsigned int i = 0; i < count; i++) {
 		globalInfoFile.read((char*) &address, 4);
-		globalInfoFile.read((char*) &fileIndex, 4); // careful about signedness here - should be fine mostly
-		if (fileIndex >= sceneNames.size()) {
-			Logger::Error() << "Command " << std::to_string(i) << " referencing non-existent file index " << std::to_string(fileIndex) << std::endl;
+		globalInfoFile.read((char*) &functionFile, 4); // careful about signedness here - should be fine mostly
+		if (functionFile >= sceneNames.size()) {
+			Logger::Error() << "Command " << std::to_string(i) << " referencing non-existent file index " << std::to_string(functionFile) << std::endl;
 			throw std::exception();
 		}
 		std::getline(globalInfoFile, name, '\0');
@@ -405,13 +405,22 @@ int main(int argc, char* argv[]) {
 
 	ControlFlowGraph cfg(parser, info.getEntrypoints(), info.getFunctionAddresses());
 	
+
+	std::map<unsigned int, std::string> asmLines;
 	try {
-		if (dumpAsm)
-			parser.parse(info, cfg, filename + ".asm");
-		else
+		if (dumpAsm) {
+			parser.parse(info, cfg, &asmLines);
+		} else {
 			parser.parse(info, cfg);
-	} catch(std::logic_error &e) {
-		std::cerr << "Error: 0x" << toHex(parser.instAddress) << " " << e.what() << std::endl;
+		}
+	} catch (std::logic_error &e) {
+		std::cerr << e.what() << std::endl;
+	}
+	if (dumpAsm) {
+		std::ofstream dumpStream(filename + ".asm");
+		Logger::Info() << "Dumping assembler to " << filename << ".asm" << "\n";
+		for (const auto& line:asmLines)
+			dumpStream << "0x" << toHex(line.first, parser.addressWidth) << "\t" << line.second << "\n";
 	}
 
 	cfg.structureStatements();
@@ -457,7 +466,7 @@ BytecodeParser::~BytecodeParser() {
 struct ProgBranch {
 	Block* pBlock;
 	Stack stack;
-	ProgBranch(Block* pBlock) : pBlock(pBlock) {}
+	ProgBranch(Block* pBlock_) : pBlock(pBlock_) {}
 };
 
 
@@ -505,6 +514,14 @@ Value BytecodeParser::getArg(unsigned int type, const ScriptInfo &info) {
 	return make_unique<ErrValueExpr>(VarType(type));
 }
 
+Value BytecodeParser::getLocalVar(unsigned int index) {
+	if (index >= localVars.size())
+		return make_unique<ErrValueExpr>("Local var index " + std::to_string(index) + " out of range.", instAddress);
+
+	return Value(localVars[index]->clone());
+}
+
+
 ValueExpr* BytecodeParser::getLValue(const ScriptInfo &info) {
 	if (stack.stackHeights.size() <= 1) {
 		return new ErrValueExpr("No frames to close!", instAddress);
@@ -517,6 +534,7 @@ ValueExpr* BytecodeParser::getLValue(const ScriptInfo &info) {
 	std::string localString = "g_";
 	while (curr != stack.values.end()) {
 		pCurr = std::move(*curr);
+		// this will likeky change when i implement member functions
 		if (pCurr->getType() != ValueType::INT)
 			throw std::logic_error("Non int encountered when getting LValue.");
 
@@ -558,7 +576,10 @@ ValueExpr* BytecodeParser::getLValue(const ScriptInfo &info) {
 					Logger::Warn(instAddress) << "Getting local var without local reference.\n";
 
 				if (pLast != nullptr)	Logger::Warn(instAddress) << "Overwriting variable.\n";
-				pLast = make_unique<VarValueExpr>("A local var goes here", ValueType::INT, 0);
+				unsigned int index = pCurr->getIndex();
+				pLast = getLocalVar(index);
+
+				Logger::VDebug(instAddress) << pLast->print() << ": " << VarType(pLast->getType()) << std::endl;
 			} break;
 			case IntegerGlobalVar: {
 				if (localVar)
@@ -582,12 +603,12 @@ ValueExpr* BytecodeParser::getLValue(const ScriptInfo &info) {
 	}
 
 
-	if (!pLast->isLValue())
-		Logger::Error(instAddress) << "Could not get lvalue!\n";
+	if (!pLast->isLValue()) {
+		Logger::Error(instAddress) << "Could not get lvalue! (" << VarType(pLast->getType()) << ")\n";
+	}
 
-	ValueExpr* ret = pLast->clone(); // think about whether this is needed, or maybe I could just release/pass directly back (i forget how this is used)
 	stack.closeFrame();
-	return ret;
+	return pLast->clone(); // think about whether this is needed, or maybe I could just release/pass directly back (i forget how this is used)
 }
 
 FunctionExpr* BytecodeParser::getCallFunction(const ScriptInfo& info) {
@@ -630,13 +651,11 @@ FunctionExpr* BytecodeParser::getCallFunction(const ScriptInfo& info) {
 	return new FunctionExpr(Value(getLValue(info)));
 }
 
-void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::string asmFile) {
+void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::map<unsigned int, std::string> *pAsmLines) {
 	std::string asmLine;
-	bool dumpAsm = !asmFile.empty();
-	std::map<unsigned int, std::string> asmLines;
+	bool dumpAsm = pAsmLines != nullptr;
 
 	unsigned int numParams = 0;
-	std::vector<Value> localVars;
 	while (!toTraverse.empty()) {
 		ProgBranch branch = std::move(toTraverse.back());
 		toTraverse.pop_back();
@@ -708,7 +727,8 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::string 
 					Value& pValue = stack.back();
 					if (pValue->getType() != type) {
 						Logger::Error(instAddress) << "Dup - Expected type " << VarType(type) << ", got type " << VarType(pValue->getType()) << std::endl;
-						//break;	// TODO: this crashes if i remove with a bug - examine the bug
+						stack.push(new ErrValueExpr(pValue->print(), instAddress));
+						break;
 					}
 
 					// Move the value into a variable if it has side effects
@@ -735,12 +755,16 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::string 
 					asmLine = "rep";
 				} break; 
 				case 0x07: {
+					// TODO: support intlist and strlist
+					// I saw it, so i know it exists
+					// I hope it'll crash (gracefully ofc) when I get to it
 					unsigned int type = getInt();
 					std::string name = info.getLocalVarName(getInt());
 
 					localVars.push_back(make_unique<VarValueExpr>(name, type, 0));
 
-					asmLine = "param " + VarType(type) + " " + name;
+					pStatement = new DeclareVarStatement(type, name);
+					asmLine = "var " + VarType(type) + " " + name;
 				} break;
 				case 0x08: {
 					stack.openFrame();
@@ -859,12 +883,10 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::string 
 					Value lhs = Value(getLValue(info));
 
 					if (lhs->getType() != lType) {
-						Logger::Error(instAddress) << "Assign - Expected type " << VarType(lType) << ", got type " << VarType(lhs->getType()) << std::endl;
-						lhs = make_unique<ErrValueExpr>();
+						lhs = make_unique<ErrValueExpr>("Assign - Expected type " + VarType(lType) + ", got type " + VarType(lhs->getType()), instAddress);
 					}
 					if (rhs->getType() != rType) {
-						Logger::Error(instAddress) << "Assign - Expected type " << VarType(rType) << ", got type " << VarType(rhs->getType()) << std::endl;
-						rhs = make_unique<ErrValueExpr>();
+						rhs = make_unique<ErrValueExpr>("Assign - Expected type " + VarType(rType) + ", got type " + VarType(rhs->getType()), instAddress);
 					}
 
 					Logger::VVDebug(instAddress) << "Assign: " << VarType(lType) << " <- " << VarType(rType) << std::endl;
@@ -886,12 +908,10 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::string 
 					Value rhs = stack.pop();
 					Value lhs = stack.pop();
 					if (lhs->getType() != lhsType) {
-						Logger::Error(instAddress) << "Calc - Expected type " << VarType(lhsType) << ", got type " << VarType(lhs->getType()) << std::endl;
-						lhs = make_unique<ErrValueExpr>();
+						lhs = make_unique<ErrValueExpr>("Calc - Expected type " + VarType(lhsType) + ", got type " + VarType(lhs->getType()), instAddress);
 					}
 					if (rhs->getType() != rhsType) {
-						Logger::Error(instAddress) << "Calc - Expected type " << VarType(rhsType) << ", got type " << VarType(rhs->getType()) << std::endl;
-						rhs = make_unique<ErrValueExpr>();
+						rhs = make_unique<ErrValueExpr>("Calc - Expected type " + VarType(rhsType) + ", got type " + VarType(rhs->getType()), instAddress);
 					}
 
 					stack.push(new BinaryValueExpr(std::move(lhs), std::move(rhs), op));
@@ -998,7 +1018,7 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::string 
 				}
 			}
 			if (dumpAsm) {
-				asmLines[instAddress] = asmLine;
+				(*pAsmLines)[instAddress] = asmLine;
 			}
 
 			if (pStatement != nullptr) {
@@ -1023,8 +1043,8 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::string 
 						Logger::Warn(instAddress) << "Stack size is positive.\n";
 
 					if (dumpAsm) {
-						if (asmLines.count(buf->getAddress()) == 0)
-							asmLines[buf->getAddress()] = "unmapped";
+						if (pAsmLines->count(buf->getAddress()) == 0)
+							(*pAsmLines)[buf->getAddress()] = "unmapped";
 					}
 					break;
 				}
@@ -1050,13 +1070,6 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::string 
 				pBlock->parsed = true;
 			}
 		}
-	}
-
-	if (dumpAsm) {
-		std::ofstream dumpStream(asmFile);
-		Logger::Info() << "Dumping assembler to " << asmFile << "\n";
-		for (const auto& line:asmLines)
-			dumpStream << "0x" << toHex(line.first, addressWidth) << "\t" << line.second << "\n";
 	}
 }
 

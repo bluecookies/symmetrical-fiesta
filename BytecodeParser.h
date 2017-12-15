@@ -2,6 +2,7 @@
 #define PARSER_H
 
 #include <vector>
+#include <map>
 
 #include "Statements.h"
 
@@ -44,7 +45,7 @@ struct Function {
 	unsigned int index = 0xFFFFFFFF;
 
 	Function() {}
-	Function(std::string name, unsigned int address, int index) : name(name), address(address), index(index) {}
+	Function(std::string name_, unsigned int address_, int index_) : name(name_), address(address_), index(index_) {}
 };
 
 typedef class BytecodeParser Parser;
@@ -55,7 +56,9 @@ class ControlFlowGraph;
 class BytecodeParser {
 	private:
 		BytecodeBuffer* buf;
-		unsigned char addressWidth;
+
+		std::vector<Value> localVars;
+		Value getLocalVar(unsigned int index);
 	public:
 		std::vector<ProgBranch> toTraverse;
 		unsigned int instAddress = 0;
@@ -75,7 +78,9 @@ class BytecodeParser {
 		~BytecodeParser();
 
 		void addBranch(BasicBlock* pBlock, Stack* saveStack = nullptr);
-		void parse(ScriptInfo& info, ControlFlowGraph& cfg, std::string dumpAsm = "");
+		void parse(ScriptInfo& info, ControlFlowGraph& cfg, std::map<unsigned int, std::string> *pAsmLines = nullptr);
+
+		unsigned char addressWidth;
 };
 
 #endif

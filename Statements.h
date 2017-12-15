@@ -59,7 +59,7 @@ class ValueExpr {
 		int lineNum = -1;
 	protected:
 		unsigned int type = ValueType::UNDEF;
-		ValueExpr(unsigned int type) : type(type) {}
+		ValueExpr(unsigned int type_) : type(type_) {}
 		ValueExpr() {}
 	public:
 		virtual ~ValueExpr() {}
@@ -74,6 +74,7 @@ class ValueExpr {
 		// This is some fake misleading naming here
 		// Not real lvalues and rvalues, more like just "assignable"
 		virtual bool isLValue() { return false; }
+		ValueExpr* toLValue();
 		ValueExpr* toRValue();
 
 		virtual bool hasSideEffect() { return false; }
@@ -143,8 +144,8 @@ class RawValueExpr: public ValueExpr {
 	unsigned int value = 0;
 	std::string str;
 	public:
-		RawValueExpr(unsigned int type, unsigned int value) : ValueExpr(type), value(value) {}
-		RawValueExpr(std::string str, unsigned int value) : ValueExpr(ValueType::STR), value(value), str(str) {}
+		RawValueExpr(unsigned int type_, unsigned int value_) : ValueExpr(type_), value(value_) {}
+		RawValueExpr(std::string str_, unsigned int value_) : ValueExpr(ValueType::STR), value(value_), str(str_) {}
 
 		virtual RawValueExpr* clone() const override { return new RawValueExpr(*this); }
 
@@ -170,7 +171,7 @@ class VarValueExpr: public ValueExpr {
 		bool hasSideEffect() override { return false; }
 		IntType getIntType() override { return (type == ValueType::INT) ? IntegerSimple : IntegerInvalid; }
 
-		virtual bool isLValue() override { return (type == ValueType::INTREF || type == ValueType::STRREF); }
+		virtual bool isLValue() override;
 };
 
 class ErrValueExpr: public ValueExpr {
@@ -187,7 +188,7 @@ class ErrValueExpr: public ValueExpr {
 class NotExpr: public ValueExpr {
 	Value cond;
 	public:
-		NotExpr(Value cond) : cond(std::move(cond)) {}
+		NotExpr(Value cond_) : cond(std::move(cond_)) {}
 		NotExpr(const NotExpr& copy) : ValueExpr(copy), cond(copy.cond->clone()) {}
 		virtual NotExpr* clone() const override { return new NotExpr(*this); }
 
@@ -200,8 +201,8 @@ class FunctionExpr: public ValueExpr {
 	std::string name;
 	Value callValue;
 	public:
-		FunctionExpr(std::string name) : name(name) {}
-		FunctionExpr(Value val) : callValue(std::move(val)) {}
+		FunctionExpr(std::string name_) : name(name_) {}
+		FunctionExpr(Value val_) : callValue(std::move(val_)) {}
 		FunctionExpr(const FunctionExpr& copy) : name(copy.name), callValue(copy.callValue->clone()) {}
 		virtual FunctionExpr* clone() const override { return new FunctionExpr(*this); }
 
@@ -440,7 +441,7 @@ class AddTextStatement: public Statement {
 	Value text;
 	unsigned int index = 0;
 	public:
-		AddTextStatement(Value text, unsigned int index) : text(std::move(text)), index(index) {}
+		AddTextStatement(Value text_, unsigned int index_) : text(std::move(text_)), index(index_) {}
 
 		virtual void print(std::ostream &out, int indentation = 0) const override;
 };
@@ -448,16 +449,25 @@ class AddTextStatement: public Statement {
 class SetNameStatement: public Statement {
 	Value name;
 	public:
-		SetNameStatement(Value name) : name(std::move(name)) {}
+		SetNameStatement(Value name_) : name(std::move(name_)) {}
 
 		virtual void print(std::ostream &out, int indentation = 0) const override;
+};
+
+class DeclareVarStatement: public Statement {
+	unsigned int type;
+	std::string name;
+	public:
+		DeclareVarStatement(unsigned int type_, std::string name_) : type(type_), name(name_) {}
+		virtual void print(std::ostream &out, int indentation = 0) const override;
+
 };
 
 class Op21Statement: public Statement {
 	unsigned int u1;
 	unsigned char u2;
 	public:
-		Op21Statement(unsigned int u1, unsigned char u2) : u1(u1), u2(u2) {}
+		Op21Statement(unsigned int u1_, unsigned char u2_) : u1(u1_), u2(u2_) {}
 		virtual void print(std::ostream &out, int indentation = 0) const override;
 };
 

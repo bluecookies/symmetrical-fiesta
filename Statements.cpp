@@ -210,7 +210,7 @@ void WhileStatement::removeBlock(Block* pBlock) {
 
 
 // Switches do not fall through
-SwitchStatement::SwitchStatement(Value expr, std::vector<IfBranch> switches) : testExpr(std::move(expr)), switches(std::move(switches)) {
+SwitchStatement::SwitchStatement(Value expr_, std::vector<IfBranch> switches_) : testExpr(std::move(expr_)), switches(std::move(switches_)) {
 	type = SWITCH;
 }
 
@@ -296,6 +296,11 @@ int LineNumStatement::getSize() const {
 	return 0;
 }
 
+void DeclareVarStatement::print(std::ostream &out, int indentation) const {
+	out << std::string(indentation, '\t') << VarType(type) << " " << name << "\n";
+}
+
+
 void ClearBufferStatement::print(std::ostream &out, int indentation) const {
 	out << std::string(indentation, '\t') << "clearbuf" << printLineNum();
 }
@@ -333,7 +338,7 @@ void AssignStatement::print(std::ostream &out, int indentation) const {
 	out << std::string(indentation, '\t') << lhs->print() << " = " << rhs->print() << printLineNum();
 }
 
-BranchStatement::BranchStatement(unsigned int thenIndex, unsigned int elseIndex, Value cond) : blockIndex(thenIndex), elseIndex(elseIndex), condition(std::move(cond)) {
+BranchStatement::BranchStatement(unsigned int thenIndex_, unsigned int elseIndex_, Value cond_) : blockIndex(thenIndex_), elseIndex(elseIndex_), condition(std::move(cond_)) {
 	if (condition == nullptr)
 		throw std::logic_error("Jump with null condition");
 	type = JUMP_IF;
@@ -373,7 +378,7 @@ void SetNameStatement::print(std::ostream &out, int indentation) const {
 }
 
 // TODO: restructure header
-WhileStatement::WhileStatement(Value cond_, std::vector<Block*> blocks, Block* entry) : condition(std::move(cond_)), blocks(blocks), entryBlock(entry) {
+WhileStatement::WhileStatement(Value cond_, std::vector<Block*> blocks_, Block* entry_) : condition(std::move(cond_)), blocks(blocks_), entryBlock(entry_) {
 	for (auto& pBlock:blocks) {
 		pBlock->loops.push_back(this);
 	}

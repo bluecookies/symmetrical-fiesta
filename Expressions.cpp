@@ -34,6 +34,16 @@ ValueExpr* ValueExpr::toRValue() {
 	return this;
 }
 
+ValueExpr* ValueExpr::toLValue() {
+	if (type == ValueType::INT)
+		type = ValueType::INTREF;
+	else if (type == ValueType::STR)
+		type = ValueType::STRREF;
+
+	return this;
+}
+
+
 
 BinaryValueExpr::BinaryValueExpr(Value e1, Value e2, unsigned int op_) {
 	if (e1 == nullptr || e2 == nullptr) {
@@ -129,7 +139,7 @@ IndexValueExpr::IndexValueExpr(Value e1, Value e2) : BinaryValueExpr(std::move(e
 	Logger::VVDebug() << expr1->print() << " is array of type " << VarType(expr1->getType()) << "\n";
 
 	// Set type of value
-	unsigned int arrType = expr1->getType() - 3;
+	unsigned int arrType = expr1->getType();
 	if (arrType == ValueType::INTLIST)
 		type = ValueType::INTREF;
 	else if (arrType == ValueType::STRLIST)
@@ -145,6 +155,10 @@ std::string IndexValueExpr::print(bool hex) const {
 }
 
 bool IndexValueExpr::isLValue() {
+	return (type == ValueType::INTREF || type == ValueType::STRREF || type == ValueType::OBJ_STR);
+}
+
+bool VarValueExpr::isLValue() {
 	return (type == ValueType::INTREF || type == ValueType::STRREF || type == ValueType::OBJ_STR);
 }
 
@@ -202,7 +216,7 @@ std::string NotExpr::print(bool hex) const {
 
 // fix
 unsigned int VarValueExpr::varCount = 0;
-VarValueExpr::VarValueExpr(std::string name, unsigned int type, unsigned int length) : ValueExpr(type + 3), name(name), length(length) {
+VarValueExpr::VarValueExpr(std::string name_, unsigned int type_, unsigned int length_) : ValueExpr(type_), name(name_), length(length_) {
 	if (type == ValueType::INTLIST || type == ValueType::STRLIST) {
 		if (length == 0)
 			Logger::Error() << VarType(type) << " must have positive length.\n";
@@ -210,6 +224,9 @@ VarValueExpr::VarValueExpr(std::string name, unsigned int type, unsigned int len
 		if (length > 0)
 			Logger::Error() << VarType(type) << " cannot have positive length.\n";
 	}
+
+	Logger::VDebug() << "Created var " << name << " (" << VarType(type) << ")\n";
+	this->toLValue();
 }
 
 VarValueExpr::VarValueExpr(unsigned int type) : ValueExpr(type) {

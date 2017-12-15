@@ -61,7 +61,7 @@ class ControlFlowGraph {
 		std::vector<Block*> blocks, removedBlocks;
 		struct checkAddress {
 			unsigned int address;
-		    checkAddress(int address) : address(address) {}
+		    checkAddress(int address_) : address(address_) {}
 
 		    bool operator ()(Block* const& pBlock) const {
 		    	return pBlock->startAddress == address;

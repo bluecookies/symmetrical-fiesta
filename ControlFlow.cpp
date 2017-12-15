@@ -78,9 +78,9 @@ void BasicBlock::pop() {
 	statements.pop_back();
 }
 
-NaturalLoop::NaturalLoop(Block* header, Block* tail) : header(header) {
+NaturalLoop::NaturalLoop(Block* header_, Block* tail_) : header(header_) {
 	blocks.push_back(header);
-	merge(tail);
+	merge(tail_);
 }
 
 void NaturalLoop::merge(Block* tail) {
@@ -88,7 +88,7 @@ void NaturalLoop::merge(Block* tail) {
 	if (std::find(blocks.begin(), blocks.end(), tail) != blocks.end()) {
 		return;
 	}
-	Logger::VDebug() << "Loop found from L" << std::to_string(tail->index) << " to L" << std::to_string(header->index) << "\n";
+	Logger::VVDebug() << "Loop found from L" << std::to_string(tail->index) << " to L" << std::to_string(header->index) << "\n";
 
 	// DFS stack for backwards traversal
 	std::vector<Block*> toSearch;
