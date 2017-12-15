@@ -46,7 +46,7 @@ class ControlFlowGraph;
 class BytecodeParser {
 	private:
 		BytecodeBuffer* buf;
-
+		unsigned char addressWidth;
 	public:
 		std::vector<ProgBranch> toTraverse;
 		unsigned int instAddress = 0;
@@ -66,7 +66,7 @@ class BytecodeParser {
 		~BytecodeParser();
 
 		void addBranch(BasicBlock* pBlock, Stack* saveStack = nullptr);
-		void parse(ScriptInfo& info, ControlFlowGraph& cfg);
+		void parse(ScriptInfo& info, ControlFlowGraph& cfg, std::string dumpAsm = "");
 };
 
 #endif

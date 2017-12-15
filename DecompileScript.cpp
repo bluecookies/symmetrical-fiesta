@@ -4,6 +4,7 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <map>
 #include <algorithm>
 #include <memory>
 #include <bitset>
@@ -304,7 +305,7 @@ int main(int argc, char* argv[]) {
 	}
 	
 	if (outFilename.empty())
-		outFilename = filename + std::string(".asm");
+		outFilename = filename + ".src";
 	
 	// Start reading stuff
 
@@ -322,7 +323,7 @@ int main(int argc, char* argv[]) {
 	ControlFlowGraph cfg(parser, info.getEntrypoints());
 	
 	try {
-		parser.parse(info, cfg);
+		parser.parse(info, cfg, filename + ".asm");
 	} catch(std::logic_error &e) {
 		std::cerr << "Error: 0x" << toHex(parser.instAddress) << " " << e.what() << std::endl;
 	}
@@ -357,6 +358,14 @@ int main(int argc, char* argv[]) {
 BytecodeParser::BytecodeParser(std::ifstream &f, HeaderPair index) {
 	f.seekg(index.offset, std::ios_base::beg);
 	buf = new BytecodeBuffer(f, index.count);
+
+	unsigned int ll = index.count;
+	unsigned char w = 1;
+	while (ll > 0) {
+		ll /= 0x10;
+		w++;
+	}
+	addressWidth = (w / 2) * 2;
 }
 
 BytecodeParser::~BytecodeParser() {
@@ -515,10 +524,11 @@ Function BytecodeParser::getCallFunction(const ScriptInfo& info) {
 		// else
 		Function fn("FN_" + pCall->print(true));
 
-		// Play voice/Select choice
-		if (pCall->getIndex() == 0x12 || pCall->getIndex() == 0x4c)
+		// Unknown/Play voice/Select choice
+		unsigned int index = pCall->getIndex();
+		if (index == 0xc || index == 0x12 || index == 0x4c)
 			fn.hasExtra = true;
-		else if (pCall->getIndex() == 0x54)
+		else if (index == 0x54)
 			fn.pushRet = false;
 
 		return fn;
@@ -536,7 +546,10 @@ Function BytecodeParser::getCallFunction(const ScriptInfo& info) {
 	return Function(name);
 }
 
-void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
+void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::string asmFile) {
+	std::string asmLine;
+	std::map<unsigned int, std::string> asmLines;
+
 	while (!toTraverse.empty()) {
 		ProgBranch branch = std::move(toTraverse.back());
 		toTraverse.pop_back();
@@ -544,7 +557,6 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 		Block* pBlock = branch.pBlock;
 		if (pBlock->parsed)
 			continue;
-
 
 		buf->setAddress(pBlock->startAddress);
 		stack = std::move(branch.stack);
@@ -561,18 +573,25 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 			opcode = getChar();
 
 			pStatement = nullptr;
+			asmLine = "";
 			switch (opcode) {
 				case 0x01: {
-					pStatement = new LineNumStatement(getInt());
+					unsigned int lineNum = getInt();
+					pStatement = new LineNumStatement(lineNum);
+					asmLine = "line " + std::to_string(lineNum);
 				} break;
 				case 0x02: {
 					unsigned int type = getInt();
 					unsigned int value = getInt();
+
+					asmLine = "push " + VarType(type);
 					if (type == ValueType::STR) {
 						std::string str = info.getString(value);
 						stack.push(new RawValueExpr(str, value));
+						asmLine += " \"" + str + "\"";
 					} else {
 						stack.push(new RawValueExpr(type, value));
+						asmLine += " 0x" + toHex(value);
 					}
 				} break; 
 				case 0x03: {
@@ -585,6 +604,8 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 					if (back->hasSideEffect()) {
 						pStatement = new ExpressionStatement(back.release());
 					}
+
+					asmLine = "pop " + VarType(type);
 				} break;
 				case 0x04: {
 					unsigned int type = getInt();
@@ -606,9 +627,12 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 					} else {
 						stack.push(pValue->clone());
 					}
+
+					asmLine = "dup " + VarType(type);
 				} break;
 				case 0x05: {
 					stack.push(getLValue(info)->toRValue());
+					asmLine = "eval";
 				} break;
 				case 0x06: {
 					unsigned int count = stack.height();
@@ -616,9 +640,11 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 					for (unsigned int i = 0; i < count; i++) {
 						stack.push(stack.values.at(stack.size() - count)->clone());
 					}
+					asmLine = "rep";
 				} break; 
 				case 0x08: {
 					stack.openFrame();
+					asmLine = "frame";
 				} break; 
 				case 0x10: {
 					unsigned int labelIndex = getInt();
@@ -629,6 +655,8 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 					pBlock->nextAddress = buf->getAddress();
 					buf->setAddress(pJumpBlock->startAddress);
 					newBlock = true;
+
+					asmLine = "jmp 0x" + toHex(buf->getAddress(), addressWidth); 
 				} break; 
 				case 0x11: 
 				case 0x12: {
@@ -647,6 +675,9 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 					Block* pNextBlock = cfg.getBlock(buf->getAddress());
 					if (opcode == 0x11) {
 						negateCondition(condition);
+						asmLine = "jz 0x" + toHex(pJumpBlock->startAddress, addressWidth); 
+					} else {
+						asmLine = "jnz 0x" + toHex(pJumpBlock->startAddress, addressWidth); 
 					}
 					
 					pStatement = new BranchStatement(pJumpBlock->index, pNextBlock->index, std::move(condition));
@@ -674,6 +705,8 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 					addBranch(pCallBlock, &stack);
 
 					stack.push(new ShortCallExpr(pCallBlock->index, std::move(args)));
+
+					asmLine = "shortcall 0x" + toHex(pCallBlock->startAddress, addressWidth);
 				} break;
 				case 0x15: {
 					unsigned int numArgs = getInt();
@@ -683,9 +716,12 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 					}
 
 					std::vector<Value> ret;
+					asmLine = "ret (";
 					for (auto &type:retTypes) {
 						ret.push_back(getArg(type, info));
+						asmLine += VarType(type) + ", ";
 					}
+					asmLine += ")";
 
 					pStatement = new ReturnStatement(std::move(ret));
 
@@ -699,9 +735,13 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 						}
 					}
 
+
 				} break; 
 				// TODO: handle this properly
-				case 0x16: 	Logger::Info(instAddress) << "Script end reached.\n"; break;
+				case 0x16:
+					Logger::Info(instAddress) << "Script end reached.\n";
+					asmLine = "endscript";
+				break;
 				case 0x20: {
 					unsigned int lType = getInt();
 					unsigned int rType = getInt();
@@ -725,11 +765,13 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 					Logger::VVDebug(instAddress) << "Assign: " << VarType(lType) << " <- " << VarType(rType) << std::endl;
 
 					pStatement = new AssignStatement(std::move(lhs), std::move(rhs));
+					asmLine = "assign " + VarType(lType) + " " + VarType(rType) + " 0x" + toHex(unknown);
 				} break;
 				case 0x21: {
 					unsigned int u1 = getInt();
 					unsigned char u2 = getChar();
 					pStatement = new Op21Statement(u1, u2);
+					asmLine = "[21] 0x" + toHex(u1) + " " + std::to_string(u2);
 				} break;
 				case 0x22: {
 					unsigned int lhsType = getInt();
@@ -748,33 +790,52 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 					}
 
 					stack.push(new BinaryValueExpr(std::move(lhs), std::move(rhs), op));
+					asmLine = "calc " + VarType(lhsType) + " " + VarType(rhsType) + " 0x" + toHex(op, 2);
 				} break; 
 				case 0x30: {
 					unsigned int option = getInt();
 
 					unsigned int numArgs = getInt();
+					asmLine = "call " + std::to_string(option) + " (";
 					std::vector<unsigned int> argTypes;
 					for (unsigned int i = 0; i < numArgs; i++) {
-						argTypes.push_back(getInt());
+						unsigned int type = getInt();
+						argTypes.push_back(type);
+
+						asmLine += VarType(type) + ", ";
 					}
+					asmLine += ")";
 
 					unsigned int numExtra = getInt();
 					std::vector<unsigned int> extraList;
-					for (unsigned int i = 0; i < numExtra; i++) {
-						extraList.push_back(getInt());
+					if (numExtra > 0) {
+						asmLine += " (";
+						for (unsigned int i = 0; i < numExtra; i++) {
+							unsigned int u = getInt();
+							extraList.push_back(u);
+							asmLine += "0x" + toHex(u) + ", ";
+						}
+						asmLine += ") ";
 					}
 
 					unsigned int returnType = getInt();
+					asmLine += VarType(returnType);
 
 					std::vector<Value> args;
+					
 					for (auto &type:argTypes) {
 						args.push_back(getArg(type, info));
+
 					}
 
 					// Reversed though
 					Function fn = getCallFunction(info);
-					if (fn.hasExtra)
-						fn.extraThing(getInt());
+					if (fn.hasExtra) {
+						unsigned int extra = getInt();
+						fn.extraThing(extra);
+
+						asmLine += " <0x" + toHex(extra) + ">";
+					}
 
 					CallExpr* pCall = new CallExpr(fn, option, std::move(args), extraList, returnType);
 					
@@ -783,6 +844,7 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 					} else {
 						pStatement = new ClearBufferStatement();
 					}
+
 
 				} break;
 				case 0x31: {
@@ -802,6 +864,8 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 					} else {
 						Logger::Warn(instAddress) << "No preceding 0x54 call. (is this bad?)\n";
 					}
+
+					asmLine = "addtext " + std::to_string(id);
 				} break;
 				case 0x32: {
 					Value pName = stack.pop();
@@ -819,11 +883,16 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 					} else {
 						Logger::Warn(instAddress) << "No preceding 0x54 call. (is this bad?)\n";
 					}
+
+					asmLine = "setname";
 				} break;
 				default: {
 					Logger::Error(instAddress) << "NOP: 0x" << toHex(opcode, 2) << std::endl;
+					asmLine = "[" + toHex(opcode, 2) + "]";
 				}
 			}
+
+			asmLines[instAddress] = asmLine;
 
 			if (pStatement != nullptr) {
 				if (pStatement->type != Statement::LINE_NUM && !pBlock->statements.empty()) {
@@ -842,9 +911,12 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 				// if i get the block here, I can dump dead code
 				// it's probably mostly line numbers though
 
-				if (opcode == 0x15) {
+				if (opcode == 0x15 || opcode == 0x16) {
 					if (stack.values.size() > 0)
 						Logger::Warn(instAddress) << "Stack size is positive.\n";
+
+					if (asmLines.count(buf->getAddress()) == 0)
+						asmLines[buf->getAddress()] = "unmapped";
 					break;
 				}
 
@@ -869,7 +941,13 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg) {
 				pBlock->parsed = true;
 			}
 		}
+	}
 
+	if (!asmFile.empty()) {
+		std::ofstream dumpStream(asmFile);
+		Logger::Info() << "Dumping assembler to " << asmFile << "\n";
+		for (const auto& line:asmLines)
+			dumpStream << "0x" << toHex(line.first, addressWidth) << "\t" << line.second << "\n";
 	}
 }
 
