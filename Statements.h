@@ -175,6 +175,7 @@ class VarValueExpr: public ValueExpr {
 
 class ErrValueExpr: public ValueExpr {
 	public:
+		ErrValueExpr(std::string err="", unsigned int address=0xFFFFFFFF);
 		std::string print(bool hex=false) const override;
 		IntType getIntType() override { return IntegerInvalid; }
 

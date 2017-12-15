@@ -243,7 +243,7 @@ std::vector<Loop> ControlFlowGraph::findLoops() {
 	return loops;
 }
 
-ControlFlowGraph::ControlFlowGraph(Parser &parser, std::vector<unsigned int> entrypoints) {
+ControlFlowGraph::ControlFlowGraph(Parser &parser, std::vector<unsigned int> entrypoints, std::vector<Function> funcs) {
 	Block* entry = getBlock(0xFFFFFFFF);
 	Block* pBlock;
 	for (const auto& address:entrypoints) {
@@ -255,6 +255,14 @@ ControlFlowGraph::ControlFlowGraph(Parser &parser, std::vector<unsigned int> ent
 		parser.addBranch(pBlock);
 
 		entry->addSuccessor(pBlock);
+	}
+
+	functions = funcs;
+	for (const auto& fn:functions) {
+		Logger::VVDebug() << "Function added at 0x" << toHex(fn.address) << std::endl;
+		pBlock = getBlock(fn.address);
+		pBlock->isFunction = true;
+		parser.addBranch(pBlock);
 	}
 }
 
@@ -478,10 +486,11 @@ void ControlFlowGraph::structureStatements() {
 }
 
 void ControlFlowGraph::printBlocks(std::string filename) {
+	std::ofstream out(filename);
 	std::vector<Block*> toPrint, printed;
+
 	toPrint.push_back(blocks.at(0));
 
-	std::ofstream out(filename);
 	while (!toPrint.empty()) {
 		Block* pBlock = toPrint.back();
 		toPrint.pop_back();
@@ -507,6 +516,42 @@ void ControlFlowGraph::printBlocks(std::string filename) {
 
 		printed.push_back(pBlock);
 	}
+
+	for (const auto& fn:functions) {
+		toPrint.push_back(getBlock(fn.address));
+
+		out << "fn " << fn.name << "{\n";
+
+		while (!toPrint.empty()) {
+			Block* pBlock = toPrint.back();
+			toPrint.pop_back();
+
+			for (const auto &pSucc:pBlock->succ) {
+				if (std::find(printed.begin(), printed.end(), pSucc) == printed.end()) {
+					toPrint.push_back(pSucc);
+				}
+			}
+
+			// this is a bit strange, if its called from here
+			// maybe keep a list of all the calls and do it at the end
+			for (const auto &pCall:pBlock->calls) {
+				if (std::find(printed.begin(), printed.end(), pCall) == printed.end()) {
+					toPrint.push_back(pCall);
+				}
+			}
+
+			out << "\nL" << std::to_string(pBlock->index) << "@0x" << toHex(pBlock->startAddress) << ":\n";
+			for (auto &pStatement:pBlock->statements) {
+				pStatement->print(out, 1);
+			}
+
+			printed.push_back(pBlock);
+		}
+
+
+		out << "}\n";
+	}
+
 	out.close();
 }
 

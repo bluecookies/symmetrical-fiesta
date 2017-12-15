@@ -20,6 +20,7 @@
 *.key
 /*.exe
 *.png
+*.log
 
 # go away
 .DS_Store

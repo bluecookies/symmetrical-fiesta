@@ -54,6 +54,7 @@ typedef struct NaturalLoop {
 } Loop;
 
 class BytecodeParser;
+struct Function;
 
 class ControlFlowGraph {
 	private:
@@ -76,8 +77,9 @@ class ControlFlowGraph {
 		void removeBlock(Block* pBlock);
 		void mergeBlocks(Block* pBlock, Block* pSucc);
 
+		std::vector<Function> functions;
 	public:
-		ControlFlowGraph(BytecodeParser &parser, std::vector<unsigned int> entrypoints);
+		ControlFlowGraph(BytecodeParser &parser, std::vector<unsigned int> entrypoints, std::vector<Function> functions);
 		~ControlFlowGraph();
 
 		Block* getBlock(unsigned int address, bool create = true);

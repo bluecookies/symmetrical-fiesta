@@ -224,8 +224,14 @@ std::string VarValueExpr::print(bool hex) const {
 		return ValueExpr::print(hex);
 }
 
+ErrValueExpr::ErrValueExpr(std::string err, unsigned int address) {
+	Logger::Error(address) << "Error value: " << err << std::endl;
+}
+
+
 std::string ErrValueExpr::print(bool) const {
 	return std::string("(ERROR)");
+
 }
 
 CallExpr::CallExpr(FunctionExpr* fnCall_, unsigned int option_, std::vector<Value> args_, std::vector<unsigned int> extraList_, unsigned int returnType_) : callFunc(fnCall_) {

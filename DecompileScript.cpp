@@ -73,28 +73,31 @@ void Stack::push(ValueExpr* pValue) {
 class ScriptInfo {
 	private:
 		std::vector<Label> labels, entrypoints, functions;
-
+		std::vector<unsigned int> globalFunctionDefinitions;
 	private:
 		int fileIndex;
 		StringList sceneNames;
 		StringList functionNames;
 
 		StringList stringData;
+		StringList localVarNames;
 		std::vector<Value> globalVars;
-		StringList globalCommands;
-		StringList localCommands;
+		std::vector<Function> globalCommands;
+		std::vector<Function> localCommands;
 
 		void readLocalCommands(std::ifstream&, const HeaderPair&);
 	public:
-		ScriptInfo(std::ifstream &f, const ScriptHeader& header, int fileIndex);
+		ScriptInfo(std::ifstream &f, const ScriptHeader& header, int fileIndex, std::string filename);
 
-		std::string getString(unsigned int index);
+		std::string getString(unsigned int index) const;
+		std::string getLocalVarName(unsigned int index) const;
 		Value getGlobalVar(unsigned int index) const;
 		std::string getCommand(unsigned int index) const;
 
 		void readGlobalInfo(std::string filename);
 
 		std::vector<unsigned int> getEntrypoints();
+		std::vector<Function> getFunctionAddresses();
 		unsigned int getLabelAddress(unsigned int labelIndex);
 		bool isLabelled(unsigned int address);
 };
@@ -113,12 +116,13 @@ void readScriptHeader(std::ifstream &f, ScriptHeader &header) {
 	
 	readHeaderPair(f, header.labels);
 	readHeaderPair(f, header.entrypoints);
-	
-	readHeaderPair(f, header.localCommandIndex);
-	readHeaderPair(f, header.unknown1);
+	readHeaderPair(f, header.localCommandIndex);	// Function index
+
+	readHeaderPair(f, header.staticVarTypes);
 	readHeaderPair(f, header.staticVarIndex);    
 	readHeaderPair(f, header.staticVarNames);
 	
+	// Static functions
 	readHeaderPair(f, header.functions);
 	readHeaderPair(f, header.functionNameIndex);
 	readHeaderPair(f, header.functionNames);
@@ -144,12 +148,20 @@ void readLabels(std::ifstream &stream, std::vector<Label> &labels, const HeaderP
 }
 
 
-std::string ScriptInfo::getString(unsigned int index) {
+std::string ScriptInfo::getString(unsigned int index) const {
 	if (index >= stringData.size()) {
 		Logger::Warn() << "String index " << std::to_string(index) << " out of bounds.\n";
 		return "";
 	}
 	return stringData[index];
+}
+
+std::string ScriptInfo::getLocalVarName(unsigned int index) const {
+	if (index >= localVarNames.size()) {
+		Logger::Warn() << "Var name index " << std::to_string(index) << " out of bounds.\n";
+		return "VAR_" + std::to_string(index);
+	}
+	return localVarNames[index];
 }
 
 Value ScriptInfo::getGlobalVar(unsigned int index) const {
@@ -169,24 +181,38 @@ std::string ScriptInfo::getCommand(unsigned int index) const {
 		return "ERROR";
 
 	if (index >= globalCommands.size()) {
-		index -= globalCommands.size();
-		if (index >= localCommands.size()) {
-			Logger::Error() << "Command index " << std::to_string(index) << " is out of range.\n";
-			return "ERROR";
-		}
+		//index -= globalCommands.size();
+		//if (index >= localCommands.size()) {
+		//	Logger::Error() << "Command index " << std::to_string(index) << " is out of range.\n";
+		//	return "ERROR";
+		//}
 
-		return localCommands[index];
+		//return localCommands[index].name;
+		auto funcIt = std::find_if(localCommands.begin(), localCommands.end(), [index](Function func) {
+			return (func.index == index);
+		});
+
+		if (funcIt == localCommands.end())
+			return "ERROR";
+
+		return funcIt->name;
 	}
 
-	return globalCommands[index];
+	return globalCommands[index].name;
 }
 
-ScriptInfo::ScriptInfo(std::ifstream &stream, const ScriptHeader &header, int index) : fileIndex(index) {
+ScriptInfo::ScriptInfo(std::ifstream &stream, const ScriptHeader &header, int index, std::string filename) : fileIndex(index) {
+
 	readLabels(stream, labels, header.labels);
 	readLabels(stream, entrypoints, header.entrypoints);
 	readLabels(stream, functions, header.functions);
+	Logger::Info() << "Found " << std::to_string(functions.size()) << " functions.\n";
+
+	// Needs to be done before reading local commands but after reading functions
+	readGlobalInfo(filename);
 
 	readStrings(stream, stringData, header.stringIndex, header.stringData, true);
+	readStrings(stream, localVarNames, header.localVarIndex, header.localVarNames);
 	readStrings(stream, functionNames, header.functionNameIndex, header.functionNames);
 	readLocalCommands(stream, header.localCommandIndex);
 }
@@ -242,7 +268,7 @@ void ScriptInfo::readGlobalInfo(std::string filename) {
 		std::getline(globalInfoFile, name, '\0');
 		
 		//globalCommands.push_back(Command(name, address, fileIndex));
-		globalCommands.push_back(name);
+		globalCommands.emplace_back(name, address, globalCommands.size());
 	}
 	Logger::Info() << "Read " << std::to_string(count) << " global commands.\n";
 
@@ -250,34 +276,36 @@ void ScriptInfo::readGlobalInfo(std::string filename) {
 }
 
 void ScriptInfo::readLocalCommands(std::ifstream& stream, const HeaderPair& pairIndex) {
-	unsigned int numLocalCommands = pairIndex.count;
+	unsigned int numCommands = pairIndex.count;
 	unsigned int numGlobalCommands = globalCommands.size();
-	localCommands.resize(numLocalCommands, "FN_ERROR");
 
 	unsigned int commandIndex, commandOffset;
 	stream.seekg(pairIndex.offset, std::ios::beg);
-	for (unsigned int i = 0; i < numLocalCommands; i++) {
+	for (unsigned int i = 0; i < numCommands; i++) {
 		stream.read((char*) &commandIndex, 4);
 		stream.read((char*) &commandOffset, 4);
 
-		commandIndex -= numGlobalCommands;
-		if (commandIndex >= numLocalCommands) {
-			Logger::Error() << "Local command index " << std::to_string(commandIndex + numGlobalCommands) << " out of range.\n";
-		} else {
+		 if (commandIndex >= numGlobalCommands) {
+			// Static function
+
 			auto predAtOffset = [commandOffset](Label function) {
 				return (function.address == commandOffset);
 			};
 
 			unsigned int fnIndex = std::find_if(functions.begin(), functions.end(), predAtOffset) - functions.begin();
 			if (fnIndex != functions.size()) {
-				localCommands[commandIndex] = functionNames.at(fnIndex);
+				localCommands.emplace_back(functionNames.at(fnIndex), commandOffset, commandIndex);
+				Logger::Debug() << "Local command index " << std::to_string(commandIndex + numGlobalCommands) << " in range, it was " << functionNames.at(fnIndex) <<  "\n";
 			} else {
 				Logger::Error() << "Command " << std::to_string(commandIndex) << " at 0x" << toHex(commandOffset) << " not found.\n";
 			}
+		} else {
+			// it is a global function
+			globalFunctionDefinitions.push_back(commandIndex);
 		}
 	}
 
-	Logger::Info() << "Read " << std::to_string(numLocalCommands) << " commands.\n";
+	Logger::Info() << "Read " << std::to_string(numCommands) << " commands.\n";
 }
 
 std::vector<unsigned int> ScriptInfo::getEntrypoints() {
@@ -286,6 +314,17 @@ std::vector<unsigned int> ScriptInfo::getEntrypoints() {
 		addresses.push_back(ep.address);
 
 	return addresses;
+}
+
+std::vector<Function> ScriptInfo::getFunctionAddresses() {
+	std::vector<Function> fns;
+	for (const auto& index:globalFunctionDefinitions) {
+		fns.push_back(globalCommands.at(index));
+	}
+
+	fns.insert(fns.end(), localCommands.begin(), localCommands.end());
+
+	return fns;
 }
 
 unsigned int ScriptInfo::getLabelAddress(unsigned int labelIndex) {
@@ -361,12 +400,10 @@ int main(int argc, char* argv[]) {
 
 	BytecodeParser parser(fileStream, header.bytecode);
 
-	ScriptInfo info(fileStream, header, fileIndex);
+	ScriptInfo info(fileStream, header, fileIndex, filename);
 	fileStream.close();
 
-	info.readGlobalInfo(filename);
-
-	ControlFlowGraph cfg(parser, info.getEntrypoints());
+	ControlFlowGraph cfg(parser, info.getEntrypoints(), info.getFunctionAddresses());
 	
 	try {
 		if (dumpAsm)
@@ -384,10 +421,6 @@ int main(int argc, char* argv[]) {
 	cfg.dumpGraph(filename + ".gv");
 		
 	// TODO: handle these
-	if (header.unknown1.count != 0) {
-		Logger::Warn() << "Unknown1 has " << header.unknown1.count << " elements.\n";
-		
-	}
 	if (header.unknown6.count != 0) {
 		Logger::Warn() << "Unknown6 has " << header.unknown6.count << " elements.\n";
 		
@@ -469,13 +502,12 @@ Value BytecodeParser::getArg(unsigned int type, const ScriptInfo &info) {
 		return Value(getLValue(info));
 	}
 
-	return make_unique<ErrValueExpr>();
+	return make_unique<ErrValueExpr>(VarType(type));
 }
 
 ValueExpr* BytecodeParser::getLValue(const ScriptInfo &info) {
 	if (stack.stackHeights.size() <= 1) {
-		Logger::Error(instAddress) << "No frames to close!\n";
-		return nullptr;
+		return new ErrValueExpr("No frames to close!", instAddress);
 	}
 	auto frame = stack.values.end() - stack.height();
 	auto curr = frame;
@@ -509,11 +541,12 @@ ValueExpr* BytecodeParser::getLValue(const ScriptInfo &info) {
 								default: type = ValueType::INTLIST; break;
 							}
 						} else {
+							// Engine specific here
 							type = ValueType::INTLIST;
 						}
 						pLast = make_unique<VarValueExpr>(localString + pCurr->print(true), type, 1);
 						Logger::VVDebug(instAddress) << "Created array " << pLast->print(true) << "\n";
-					} else if (pLast->getType() == ValueType::OBJ_STR) { //ODD: LOOK
+					} else {
 						pLast = make_unique<MemberExpr>(std::move(pLast), std::move(pCurr));
 						Logger::VVDebug(instAddress) << "Created member access " << pLast->print(true) << "\n";
 					}
@@ -552,8 +585,9 @@ ValueExpr* BytecodeParser::getLValue(const ScriptInfo &info) {
 	if (!pLast->isLValue())
 		Logger::Error(instAddress) << "Could not get lvalue!\n";
 
+	ValueExpr* ret = pLast->clone(); // think about whether this is needed, or maybe I could just release/pass directly back (i forget how this is used)
 	stack.closeFrame();
-	return pLast->clone();	// think about whether this is needed, or maybe I could just release/pass directly back (i forget how this is used)
+	return ret;
 }
 
 FunctionExpr* BytecodeParser::getCallFunction(const ScriptInfo& info) {
@@ -601,6 +635,8 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::string 
 	bool dumpAsm = !asmFile.empty();
 	std::map<unsigned int, std::string> asmLines;
 
+	unsigned int numParams = 0;
+	std::vector<Value> localVars;
 	while (!toTraverse.empty()) {
 		ProgBranch branch = std::move(toTraverse.back());
 		toTraverse.pop_back();
@@ -613,7 +649,12 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::string 
 		stack = std::move(branch.stack);
 		pBlock->parsed = true;
 
-		Logger::VDebug(instAddress) << "Parsing new branch - starting at block " << std::to_string(pBlock->index) << std::endl;
+		if (pBlock->isFunction) {
+			numParams = 0;
+			localVars.clear();
+		}
+
+		Logger::VVDebug(instAddress) << "Parsing new branch - starting at block " << std::to_string(pBlock->index) << std::endl;
 
 		unsigned char opcode;
 		Statement* pStatement;
@@ -667,7 +708,7 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::string 
 					Value& pValue = stack.back();
 					if (pValue->getType() != type) {
 						Logger::Error(instAddress) << "Dup - Expected type " << VarType(type) << ", got type " << VarType(pValue->getType()) << std::endl;
-						break;
+						//break;	// TODO: this crashes if i remove with a bug - examine the bug
 					}
 
 					// Move the value into a variable if it has side effects
@@ -693,10 +734,22 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::string 
 					}
 					asmLine = "rep";
 				} break; 
+				case 0x07: {
+					unsigned int type = getInt();
+					std::string name = info.getLocalVarName(getInt());
+
+					localVars.push_back(make_unique<VarValueExpr>(name, type, 0));
+
+					asmLine = "param " + VarType(type) + " " + name;
+				} break;
 				case 0x08: {
 					stack.openFrame();
 					asmLine = "frame";
 				} break; 
+				case 0x09: {
+					numParams = localVars.size();
+					asmLine = "endparams";
+				} break;
 				case 0x10: {
 					unsigned int labelIndex = getInt();
 					Block* pJumpBlock = cfg.getBlock(info.getLabelAddress(labelIndex));
@@ -999,7 +1052,7 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::string 
 		}
 	}
 
-	if (!asmFile.empty()) {
+	if (dumpAsm) {
 		std::ofstream dumpStream(asmFile);
 		Logger::Info() << "Dumping assembler to " << asmFile << "\n";
 		for (const auto& line:asmLines)

@@ -38,6 +38,15 @@ struct Stack {
 struct BasicBlock;
 struct ProgBranch;
 
+struct Function {
+	std::string name = "FN_ERROR";
+	unsigned int address = 0xFFFFFFFF;
+	unsigned int index = 0xFFFFFFFF;
+
+	Function() {}
+	Function(std::string name, unsigned int address, int index) : name(name), address(address), index(index) {}
+};
+
 typedef class BytecodeParser Parser;
 class BytecodeBuffer;
 class ScriptInfo;
