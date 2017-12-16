@@ -438,19 +438,41 @@ int main(int argc, char* argv[]) {
 	ScriptInfo info(fileStream, header, fileIndex, filename);
 	fileStream.close();
 
-	ControlFlowGraph cfg(parser, info.getEntrypoints(), info.getFunctionAddresses());
+	std::ofstream outStream(outFilename);
+
+	// TODO: implement an actual way to copy assign cfg
+	ControlFlowGraph mainCFG(parser, info.getEntrypoints());
 	
 
 	std::map<unsigned int, std::string> asmLines;
+	std::map<unsigned int, std::string>* pAsmLines = dumpAsm ? &asmLines : nullptr;
 	try {
-		if (dumpAsm) {
-			parser.parse(info, cfg, &asmLines);
-		} else {
-			parser.parse(info, cfg);
-		}
+		parser.parse(mainCFG, info, pAsmLines);
+
+		mainCFG.structureStatements();
+
+		mainCFG.printBlocks(outStream);
+
+		auto fns = info.getFunctionAddresses();
+
+		for (const auto& fn:fns) {
+			ControlFlowGraph cfg(parser, {fn.address});
+
+			Logger::Info() << "Parsing function " << fn.name << " (0x" << toHex(fn.address, parser.addressWidth) << ")\n";
+			parser.parse(cfg, info, pAsmLines);
+
+			cfg.structureStatements();
+
+			outStream << "\nfn " << fn.name << parser.getFunctionSignature() << " {\n";
+			cfg.printBlocks(outStream, 1);
+			outStream << "}\n";
+
+		}	
+
 	} catch (std::logic_error &e) {
 		std::cerr << e.what() << std::endl;
 	}
+
 	if (dumpAsm) {
 		std::ofstream dumpStream(filename + ".asm");
 		Logger::Info() << "Dumping assembler to " << filename << ".asm" << "\n";
@@ -458,11 +480,7 @@ int main(int argc, char* argv[]) {
 			dumpStream << "0x" << toHex(line.first, parser.addressWidth) << "\t" << line.second << "\n";
 	}
 
-	cfg.structureStatements();
-
-	cfg.printBlocks(outFilename);
-
-	cfg.dumpGraph(filename + ".gv");
+	//cfg.dumpGraph(filename + ".gv");
 		
 	// TODO: handle these
 	if (header.unknown6.count != 0) {
@@ -562,6 +580,20 @@ Value BytecodeParser::getLocalVar(unsigned int index) {
 		return make_unique<ErrValueExpr>("Local var index " + std::to_string(index) + " out of range.", instAddress);
 
 	return Value(localVars[index]->clone());
+}
+
+std::string BytecodeParser::getFunctionSignature() {
+	if (numParams > localVars.size())
+		return "(ERROR)";
+	std::string sig = "(";
+	for (unsigned int i = 0; i < numParams; i++) {
+		if (i != 0)
+			sig += ", ";
+		Value& var = localVars[i];
+		sig += VarType(var->getType()) + " " + var->print();
+	}
+	sig += ")";
+	return sig;
 }
 
 
@@ -698,11 +730,13 @@ FunctionExpr* BytecodeParser::getCallFunction(const ScriptInfo& info) {
 	return new FunctionExpr(Value(getLValue(info)));
 }
 
-void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::map<unsigned int, std::string> *pAsmLines) {
+void BytecodeParser::parse(ControlFlowGraph& cfg, ScriptInfo& info, std::map<unsigned int, std::string> *pAsmLines) {
 	std::string asmLine;
 	bool dumpAsm = pAsmLines != nullptr;
 
-	unsigned int numParams = 0;
+	numParams = 0;
+	bool paramsDone = false;
+	localVars.clear();
 	while (!toTraverse.empty()) {
 		ProgBranch branch = std::move(toTraverse.back());
 		toTraverse.pop_back();
@@ -714,11 +748,6 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::map<uns
 		buf->setAddress(pBlock->startAddress);
 		stack = std::move(branch.stack);
 		pBlock->parsed = true;
-
-		if (pBlock->isFunction) {
-			numParams = 0;
-			localVars.clear();
-		}
 
 		Logger::VVDebug(instAddress) << "Parsing new branch - starting at block " << std::to_string(pBlock->index) << std::endl;
 
@@ -825,7 +854,8 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::map<uns
 						localVars.push_back(make_unique<VarValueExpr>(name, type, 0));
 					}
 
-					pStatement = new DeclareVarStatement(type, name);
+					if (paramsDone)
+						pStatement = new DeclareVarStatement(type, name);
 					asmLine = "var " + VarType(type) + " " + name;
 				} break;
 				case 0x08: {
@@ -834,6 +864,7 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::map<uns
 				} break; 
 				case 0x09: {
 					numParams = localVars.size();
+					paramsDone = true;
 					asmLine = "endparams";
 				} break;
 				case 0x10: {
@@ -1146,7 +1177,6 @@ unsigned int BytecodeParser::getInt() {
 unsigned char BytecodeParser::getChar() {
 	return buf->getChar();
 };
-
 
 //
 // Buffer of bytecode

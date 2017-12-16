@@ -9,8 +9,7 @@ class Statement;
 typedef std::vector<Statement*> StatementBlock;
 
 typedef struct BasicBlock {
-	static int count;
-	int index = 0;
+	int index = -1;
 	enum Type {
 		ONEWAY, TWOWAY,
 		RET, FALL,
@@ -19,7 +18,6 @@ typedef struct BasicBlock {
 
 	bool parsed = false;
 	bool isFunction = false;
-	bool isEntrypoint = false;
 
 	std::vector<Statement*> loops;
 
@@ -30,7 +28,7 @@ typedef struct BasicBlock {
 
 	std::vector<BasicBlock*> pred, succ, calls;
 
-	BasicBlock(unsigned int address) : index(count++), startAddress(address){}
+	BasicBlock(unsigned int address, int index_) : index(index_), startAddress(address){}
 	~BasicBlock();
 
 	void addSuccessor(BasicBlock*);
@@ -58,6 +56,7 @@ struct Function;
 
 class ControlFlowGraph {
 	private:
+		int blockIndex = 0;
 		std::vector<Block*> blocks, removedBlocks;
 		struct checkAddress {
 			unsigned int address;
@@ -77,16 +76,17 @@ class ControlFlowGraph {
 		void removeBlock(Block* pBlock);
 		void mergeBlocks(Block* pBlock, Block* pSucc);
 
-		std::vector<Function> functions;
 	public:
-		ControlFlowGraph(BytecodeParser &parser, std::vector<unsigned int> entrypoints, std::vector<Function> functions);
+		ControlFlowGraph(BytecodeParser &parser, std::vector<unsigned int> entrypoints);
+		ControlFlowGraph(const ControlFlowGraph& other) = delete;
+		ControlFlowGraph& operator=(ControlFlowGraph const&) = delete;	// TODO: fix this
 		~ControlFlowGraph();
 
 		Block* getBlock(unsigned int address, bool create = true);
 
 		void structureStatements();
 
-		void printBlocks(std::string filename);
+		void printBlocks(std::ofstream& out, unsigned int indentation = 0);
 		void dumpGraph(std::string filename);
 };
 

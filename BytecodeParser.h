@@ -54,7 +54,8 @@ class BytecodeParser {
 	private:
 		BytecodeBuffer* buf;
 
-		std::vector<Value> localVars;
+		unsigned int numParams = 0;	// part of state
+		std::vector<Value> localVars; // please no corrupt
 		Value getLocalVar(unsigned int index);
 	public:
 		std::vector<ProgBranch> toTraverse;
@@ -75,9 +76,11 @@ class BytecodeParser {
 		~BytecodeParser();
 
 		void addBranch(BasicBlock* pBlock, Stack* saveStack = nullptr);
-		void parse(ScriptInfo& info, ControlFlowGraph& cfg, std::map<unsigned int, std::string> *pAsmLines = nullptr);
+		void parse(ControlFlowGraph& cfg, ScriptInfo& info, std::map<unsigned int, std::string> *pAsmLines = nullptr);
 
 		unsigned char addressWidth;
+
+		std::string getFunctionSignature();
 };
 
 #endif

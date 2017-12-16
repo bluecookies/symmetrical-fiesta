@@ -6,9 +6,6 @@
 #include "ControlFlow.h"
 #include "Logger.h"
 
-
-int Block::count;
-
 BasicBlock::~BasicBlock() {
 	for (auto s:statements)
 		delete s;
@@ -136,7 +133,7 @@ Block* ControlFlowGraph::getBlock(unsigned int address, bool createIfNone) {
 	if (!createIfNone)
 		return nullptr;
 
-	Block* pBlock = new Block(address);
+	Block* pBlock = new Block(address, blockIndex++);
 	blocks.push_back(pBlock);
 	return pBlock;
 }
@@ -194,7 +191,7 @@ std::vector<Bitset> ControlFlowGraph::findDominators() {
 	int numBlocks = blocks.size();
   	std::vector<Bitset> dominators(numBlocks, Bitset(numBlocks, true));
   	if (blocks[0]->index != 0) {
-  		Logger::Error() << "Blocks corrupted.\n";
+  		Logger::Error() << "Blocks corrupted (" << std::to_string(blocks[0]->index) << ")\n";
   		return dominators;
   	}
   	// Set entry to have itself
@@ -243,7 +240,7 @@ std::vector<Loop> ControlFlowGraph::findLoops() {
 	return loops;
 }
 
-ControlFlowGraph::ControlFlowGraph(Parser &parser, std::vector<unsigned int> entrypoints, std::vector<Function> funcs) {
+ControlFlowGraph::ControlFlowGraph(Parser &parser, std::vector<unsigned int> entrypoints) {
 	Block* entry = getBlock(0xFFFFFFFF);
 	Block* pBlock;
 	for (const auto& address:entrypoints) {
@@ -251,18 +248,9 @@ ControlFlowGraph::ControlFlowGraph(Parser &parser, std::vector<unsigned int> ent
 			continue;
 		Logger::VDebug() << "Entrypoint added at 0x" << toHex(address) << std::endl;
 		pBlock = getBlock(address);
-		pBlock->isEntrypoint = true;
 		parser.addBranch(pBlock);
 
 		entry->addSuccessor(pBlock);
-	}
-
-	functions = funcs;
-	for (const auto& fn:functions) {
-		Logger::VVDebug() << "Function added at 0x" << toHex(fn.address) << std::endl;
-		pBlock = getBlock(fn.address);
-		pBlock->isFunction = true;
-		parser.addBranch(pBlock);
 	}
 }
 
@@ -274,6 +262,18 @@ ControlFlowGraph::~ControlFlowGraph() {
 		delete pBlock;
 	}
 }
+/*
+
+ControlFlowGraph::ControlFlowGraph(const ControlFlowGraph& other) {
+}
+
+
+ControlFlowGraph& ControlFlowGraph::operator=(ControlFlowGraph other) {
+}
+
+ControlFlowGraph::ControlFlowGraph(ControlFlowGraph&& other) : ControlFlowGraph() {
+}
+*/
 
 // see if i can't fix this up a bit
 bool ControlFlowGraph::StructureIf(Block* pBlock) {
@@ -451,11 +451,11 @@ bool ControlFlowGraph::StructureMerge(Block* pBlock) {
 }
 
 void ControlFlowGraph::structureStatements() {
-	Logger::Info() << "Structuring loops.\n";
+	Logger::Debug() << "Structuring loops.\n";
 	StructureLoops();
 
 
-	Logger::Info() << "Structuring if else statements.\n";
+	Logger::Debug() << "Structuring if else statements.\n";
 	// Structure ifs and simplify blocks
 	bool changed = true;
 	while (changed) {
@@ -485,11 +485,11 @@ void ControlFlowGraph::structureStatements() {
 	
 }
 
-void ControlFlowGraph::printBlocks(std::string filename) {
-	std::ofstream out(filename);
+void ControlFlowGraph::printBlocks(std::ofstream& out, unsigned int indentation) {
 	std::vector<Block*> toPrint, printed;
 
-	toPrint.push_back(blocks.at(0));
+	Block* entryBlock = blocks.at(0);
+	toPrint.push_back(entryBlock);
 
 	while (!toPrint.empty()) {
 		Block* pBlock = toPrint.back();
@@ -508,51 +508,18 @@ void ControlFlowGraph::printBlocks(std::string filename) {
 		}
 
 		if (pBlock->index > 0) {
-			out << "\nL" << std::to_string(pBlock->index) << "@0x" << toHex(pBlock->startAddress) << ":\n";
+			//unsigned int entryIndex = std::find(entryBlock->succ.begin(), entryBlock->succ.end(), pBlock) - entryBlock->succ.begin();
+			
+			if (blocks.size() > 1)
+				out << std::string(indentation, '\t') << "L" << std::to_string(pBlock->index) << "@0x" << toHex(pBlock->startAddress) << ":\n";
+			
 			for (auto &pStatement:pBlock->statements) {
-				pStatement->print(out);
+				pStatement->print(out, indentation);
 			}
 		}
 
 		printed.push_back(pBlock);
 	}
-
-	for (const auto& fn:functions) {
-		toPrint.push_back(getBlock(fn.address));
-
-		out << "fn " << fn.name << " {";
-
-		while (!toPrint.empty()) {
-			Block* pBlock = toPrint.back();
-			toPrint.pop_back();
-
-			for (const auto &pSucc:pBlock->succ) {
-				if (std::find(printed.begin(), printed.end(), pSucc) == printed.end()) {
-					toPrint.push_back(pSucc);
-				}
-			}
-
-			// this is a bit strange, if its called from here
-			// maybe keep a list of all the calls and do it at the end
-			for (const auto &pCall:pBlock->calls) {
-				if (std::find(printed.begin(), printed.end(), pCall) == printed.end()) {
-					toPrint.push_back(pCall);
-				}
-			}
-
-			out << "\nL" << std::to_string(pBlock->index) << "@0x" << toHex(pBlock->startAddress) << ":\n";
-			for (auto &pStatement:pBlock->statements) {
-				pStatement->print(out, 1);
-			}
-
-			printed.push_back(pBlock);
-		}
-
-
-		out << "}\n";
-	}
-
-	out.close();
 }
 
 void ControlFlowGraph::dumpGraph(std::string filename) {
