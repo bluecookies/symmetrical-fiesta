@@ -70,6 +70,14 @@ void Stack::push(ValueExpr* pValue) {
 	}
 }
 
+void Stack::closeFrame() {
+	values.erase(values.end() - height(), values.end());
+	stackHeights.pop_back();
+	// this might actually arise now with member functions of objects
+	if (stackHeights.empty())
+		stackHeights.push_back(0);
+}
+
 class ScriptInfo {
 	private:
 		std::vector<Label> labels, entrypoints, functions;
@@ -82,10 +90,12 @@ class ScriptInfo {
 		StringList stringData;
 		StringList localVarNames;
 		std::vector<Value> globalVars;
+		std::vector<Value> staticVars;
 		std::vector<Function> globalCommands;
 		std::vector<Function> localCommands;
 
 		void readLocalCommands(std::ifstream&, const HeaderPair&);
+		void readStaticVars(std::ifstream&, const HeaderPair&, const StringList&);
 	public:
 		ScriptInfo(std::ifstream &f, const ScriptHeader& header, int fileIndex, std::string filename);
 
@@ -119,7 +129,7 @@ void readScriptHeader(std::ifstream &f, ScriptHeader &header) {
 	readHeaderPair(f, header.localCommandIndex);	// Function index
 
 	readHeaderPair(f, header.staticVarTypes);
-	readHeaderPair(f, header.staticVarIndex);    
+	readHeaderPair(f, header.staticVarIndex);
 	readHeaderPair(f, header.staticVarNames);
 	
 	// Static functions
@@ -134,6 +144,7 @@ void readScriptHeader(std::ifstream &f, ScriptHeader &header) {
 	readHeaderPair(f, header.unknown7);
 
 	assert(header.functions.count == header.functionNameIndex.count);
+	assert(header.staticVarTypes.count == header.staticVarIndex.count);
 }
 
 void readLabels(std::ifstream &stream, std::vector<Label> &labels, const HeaderPair& index) {
@@ -165,12 +176,16 @@ std::string ScriptInfo::getLocalVarName(unsigned int index) const {
 }
 
 Value ScriptInfo::getGlobalVar(unsigned int index) const {
-	if (index & 0xFF000000) {
-		throw std::logic_error("Invalid index for global var.");
-		return nullptr;
-	} else if (index >= globalVars.size()) {
-		throw std::out_of_range("Global var index out of range.");
-		return nullptr;
+	if (index & 0xFF000000)
+		return make_unique<ErrValueExpr>("Invalid index for global var.");
+
+
+	if (index >= globalVars.size()) {
+		index -= globalVars.size();
+		if (index >= staticVars.size())
+			throw std::out_of_range("Error: Global var index " + std::to_string(index) + " out of range.");
+		
+		return Value(staticVars[index]->clone());
 	}
 
 	return Value(globalVars[index]->clone());
@@ -178,7 +193,7 @@ Value ScriptInfo::getGlobalVar(unsigned int index) const {
 
 std::string ScriptInfo::getCommand(unsigned int index) const {
 	if (index & 0xFF000000)
-		return "ERROR";
+		return "ERROR_INVALIDCOMMAND";
 
 	if (index >= globalCommands.size()) {
 		//index -= globalCommands.size();
@@ -214,7 +229,12 @@ ScriptInfo::ScriptInfo(std::ifstream &stream, const ScriptHeader &header, int in
 	readStrings(stream, stringData, header.stringIndex, header.stringData, true);
 	readStrings(stream, localVarNames, header.localVarIndex, header.localVarNames);
 	readStrings(stream, functionNames, header.functionNameIndex, header.functionNames);
+	
+	// Indexed the same as global ones
 	readLocalCommands(stream, header.localCommandIndex);
+	StringList staticVarNames;
+	readStrings(stream, staticVarNames, header.staticVarIndex, header.staticVarNames);
+	readStaticVars(stream, header.staticVarTypes, staticVarNames);
 }
 
 void ScriptInfo::readGlobalInfo(std::string filename) {
@@ -306,6 +326,21 @@ void ScriptInfo::readLocalCommands(std::ifstream& stream, const HeaderPair& pair
 	}
 
 	Logger::Info() << "Read " << std::to_string(numCommands) << " commands.\n";
+}
+
+void ScriptInfo::readStaticVars(std::ifstream& stream, const HeaderPair& varTypeIndex, const StringList& varNames) {
+	unsigned int numVars = varTypeIndex.count;
+
+	unsigned int type, length;
+	stream.seekg(varTypeIndex.offset, std::ios::beg);
+	for (unsigned int i = 0; i < numVars; i++) {
+		stream.read((char*) &type, 4);
+		stream.read((char*) &length, 4);
+
+		staticVars.push_back(make_unique<VarValueExpr>(varNames.at(i), type, length));
+	}
+
+	Logger::Info() << "Read " << std::to_string(numVars) << " static variables.\n";
 }
 
 std::vector<unsigned int> ScriptInfo::getEntrypoints() {
@@ -498,6 +533,11 @@ Value BytecodeParser::getArg(unsigned int type, const ScriptInfo &info) {
 
 	unsigned int actualType = stack.back()->getType();
 	if (type == actualType) {
+		if (type == ValueType::OBJ_STR || type == ValueType::OBJ_REF) {
+			Value temp = stack.pop();
+			stack.closeFrame();
+			return temp;
+		}
 		return stack.pop();
 	}
 
@@ -509,9 +549,12 @@ Value BytecodeParser::getArg(unsigned int type, const ScriptInfo &info) {
 		return stack.pop();
 	} else if (type == ValueType::OBJ_STR) {
 		return Value(getLValue(info));
+	} else if (type == ValueType::OBJ_REF) {
+		if (actualType == ValueType::INT)
+			return Value(getLValue(info));
 	}
 
-	return make_unique<ErrValueExpr>(VarType(type));
+	return make_unique<ErrValueExpr>("Argument of type " + VarType(type) + ", got " + VarType(actualType), instAddress);
 }
 
 Value BytecodeParser::getLocalVar(unsigned int index) {
@@ -523,33 +566,41 @@ Value BytecodeParser::getLocalVar(unsigned int index) {
 
 
 ValueExpr* BytecodeParser::getLValue(const ScriptInfo &info) {
-	if (stack.stackHeights.size() <= 1) {
-		return new ErrValueExpr("No frames to close!", instAddress);
-	}
 	auto frame = stack.values.end() - stack.height();
 	auto curr = frame;
 
 	Value pCurr, pLast;
 	bool localVar = false, indexing = false;
 	std::string localString = "g_";
+
+	if (curr != stack.values.end()) {
+		unsigned int index = (*curr)->getIndex();
+		if (index == 0x53 || index == 0x25 || index == 0x26) {
+			localVar = true;
+			localString = "loc_" + (*curr)->print(true) + "_";
+			pLast = make_unique<VarValueExpr>((*curr)->print(true), ValueType::OBJ_REF, 0);
+			curr++;
+		}
+	}
+
+
 	while (curr != stack.values.end()) {
 		pCurr = std::move(*curr);
-		// this will likeky change when i implement member functions
-		if (pCurr->getType() != ValueType::INT)
-			throw std::logic_error("Non int encountered when getting LValue.");
+
+		if (pCurr->getType() != ValueType::INT) {
+			pLast = std::move(pCurr);
+			curr++;
+			continue;
+		}
 
 		switch(pCurr->getIntType()) {
-			case IntegerLocalRef:
-				localVar = true;
-				localString = "loc_" + pCurr->print(true) + "_";
-			break;
 			case IntegerSimple: {
 				if (indexing) {
 					indexing = false;
 					pLast = make_unique<IndexValueExpr>(std::move(pLast), std::move(pCurr));
 					Logger::VVDebug(instAddress) << "Created index reference " << pLast->print(true) << "\n";
 				} else {
-					if (pLast == nullptr) {
+					if (pLast == nullptr || pLast->getType() == ValueType::OBJ_REF) {
 						unsigned int type;
 						if (localVar) {
 							switch (pCurr->getIndex()) {
@@ -569,13 +620,12 @@ ValueExpr* BytecodeParser::getLValue(const ScriptInfo &info) {
 						Logger::VVDebug(instAddress) << "Created member access " << pLast->print(true) << "\n";
 					}
 				}
-
 			} break;
 			case IntegerLocalVar: {
 				if (!localVar)
 					Logger::Warn(instAddress) << "Getting local var without local reference.\n";
 
-				if (pLast != nullptr)	Logger::Warn(instAddress) << "Overwriting variable.\n";
+				if (pLast != nullptr && pLast->getType() != ValueType::OBJ_REF)	Logger::Warn(instAddress) << "Overwriting variable.\n";
 				unsigned int index = pCurr->getIndex();
 				pLast = getLocalVar(index);
 
@@ -592,14 +642,14 @@ ValueExpr* BytecodeParser::getLValue(const ScriptInfo &info) {
 				indexing = true;
 			break;
 			default:
-				throw std::logic_error("Unexpected integer type.");
+				throw std::logic_error("0x" + toHex(instAddress) + ": Unexpected integer type.");
 		}
 
 		curr++;
 	}
 
 	if (pLast == nullptr) {
-		throw std::logic_error("Something went horribly wrong.");
+		throw std::logic_error("0x" + toHex(instAddress) + ": Something went horribly wrong.");
 	}
 
 
@@ -612,9 +662,6 @@ ValueExpr* BytecodeParser::getLValue(const ScriptInfo &info) {
 }
 
 FunctionExpr* BytecodeParser::getCallFunction(const ScriptInfo& info) {
-	if (stack.stackHeights.size() <= 1) {
-		Logger::Error(instAddress) << "No frames to close!\n";
-	}
 	if (stack.height() == 0) {
 		Logger::Error(instAddress) << "Empty function!\n";
 		return new FunctionExpr("FN_ERROR");
@@ -743,7 +790,11 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::map<uns
 					asmLine = "dup " + VarType(type);
 				} break;
 				case 0x05: {
-					stack.push(getLValue(info)->toRValue());
+					ValueExpr* val = getLValue(info)->toRValue();
+					unsigned int type = val->getType();
+					if (type == ValueType::OBJ_STR || type == ValueType::OBJ_REF)
+						stack.openFrame();
+					stack.push(val);
 					asmLine = "eval";
 				} break;
 				case 0x06: {
@@ -761,7 +812,18 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::map<uns
 					unsigned int type = getInt();
 					std::string name = info.getLocalVarName(getInt());
 
-					localVars.push_back(make_unique<VarValueExpr>(name, type, 0));
+					// objlist?
+					if (type == ValueType::INTLIST || type == ValueType::STRLIST) {
+						Value pLength = stack.pop();
+						unsigned int index = pLength->getIndex();
+						if (index & 0xFF000000) {
+							localVars.push_back(make_unique<ErrValueExpr>("Length for " + name + " is " + pLength->print(), instAddress));
+						} else {
+							localVars.push_back(make_unique<VarValueExpr>(name, type, index));
+						}
+					} else {
+						localVars.push_back(make_unique<VarValueExpr>(name, type, 0));
+					}
 
 					pStatement = new DeclareVarStatement(type, name);
 					asmLine = "var " + VarType(type) + " " + name;
@@ -921,13 +983,18 @@ void BytecodeParser::parse(ScriptInfo& info, ControlFlowGraph& cfg, std::map<uns
 					unsigned int option = getInt();
 
 					unsigned int numArgs = getInt();
-					asmLine = "call " + std::to_string(option) + " (";
 					std::vector<unsigned int> argTypes;
 					for (unsigned int i = 0; i < numArgs; i++) {
 						unsigned int type = getInt();
 						argTypes.push_back(type);
 
-						asmLine += VarType(type) + ", ";
+					}
+
+					asmLine = "call " + std::to_string(option) + " (";
+					for (auto it = argTypes.rbegin(); it != argTypes.rend(); it++) {
+						if (it != argTypes.rbegin())
+							asmLine += ", ";
+						asmLine += VarType(*it);
 					}
 					asmLine += ") ";
 

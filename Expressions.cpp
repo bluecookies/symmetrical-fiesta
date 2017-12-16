@@ -159,7 +159,7 @@ bool IndexValueExpr::isLValue() {
 }
 
 bool VarValueExpr::isLValue() {
-	return (type == ValueType::INTREF || type == ValueType::STRREF || type == ValueType::OBJ_STR);
+	return (type == ValueType::INTREF || type == ValueType::STRREF || type == ValueType::OBJ_STR || type == ValueType::OBJ_REF);
 }
 
 
@@ -196,17 +196,20 @@ IntType RawValueExpr::getIntType() {
 
 	unsigned char intType = value >> 24;
 	switch (intType) {
-		case 0x00:
-			if (value == 0x53 || value == 0x25 || value == 0x26)
-				return IntegerLocalRef;
-			else
-				return IntegerSimple;
+		case 0x00:	return IntegerSimple;
 		case 0x7d:	return IntegerLocalVar;
 		case 0x7e:	return IntegerFunction;
 		case 0x7f:	return IntegerGlobalVar;
 		default:
 			return IntegerInvalid;
 	}
+}
+
+IntType CallExpr::getIntType() {
+	if (type != ValueType::INT)
+		return IntegerInvalid;
+
+	return IntegerSimple;
 }
 
 std::string NotExpr::print(bool hex) const {
@@ -306,6 +309,14 @@ std::string FunctionExpr::print(bool hex) const {
 		ret += "<" + std::to_string(extraCall) + ">";
 	return ret;
 }
+
+FunctionExpr::FunctionExpr(const FunctionExpr& copy) : name(copy.name) {
+	if (copy.callValue != nullptr)
+		callValue = Value(copy.callValue->clone());
+	else
+		callValue = nullptr;
+}
+
 
 ShortCallExpr::ShortCallExpr(unsigned int index, std::vector<Value> args) {
 	blockIndex = index;

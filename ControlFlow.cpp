@@ -280,7 +280,7 @@ bool ControlFlowGraph::StructureIf(Block* pBlock) {
 	if (pBlock->getBlockType() != Block::TWOWAY) {
 		return false;
 	}
-	Logger::VVDebug() << std::to_string(pBlock->index) << " has " << std::to_string(pBlock->succ.size()) << " successors.\n";
+	//Logger::VVDebug() << std::to_string(pBlock->index) << " has " << std::to_string(pBlock->succ.size()) << " successors.\n";
 
 	// Might be a little confusing - jump location was added first when hitting a conditional jump
 	Block* trueBlock = pBlock->succ.at(0);
@@ -520,7 +520,7 @@ void ControlFlowGraph::printBlocks(std::string filename) {
 	for (const auto& fn:functions) {
 		toPrint.push_back(getBlock(fn.address));
 
-		out << "fn " << fn.name << "{\n";
+		out << "fn " << fn.name << " {";
 
 		while (!toPrint.empty()) {
 			Block* pBlock = toPrint.back();

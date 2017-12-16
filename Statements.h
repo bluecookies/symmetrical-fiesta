@@ -15,6 +15,7 @@ namespace ValueType {
 	const unsigned int STR      = 0x14;
 	const unsigned int STRLIST  = 0x15;
 	const unsigned int STRREF   = 0x17;
+	const unsigned int OBJ_REF  = 0x514;
 	const unsigned int OBJ_STR  = 0x51e;
 	const unsigned int OBJLIST  = 0xFFFF0000;
 };
@@ -28,6 +29,7 @@ inline std::string VarType(unsigned int type) {
 		case ValueType::STR: return std::string("str");
 		case ValueType::STRLIST: return std::string("strlist");
 		case ValueType::STRREF: return std::string("strref");
+		case ValueType::OBJ_REF: return std::string("objref");	//unsure
 		case ValueType::OBJ_STR: return std::string("obj");	//unsure
 		default:
 			return "<0x" + toHex(type) + ">";
@@ -43,7 +45,6 @@ enum IntType {
 	IntegerGlobalVar,
 	IntegerIndexer,
 	IntegerBool,
-	IntegerLocalRef,
 };
 
 class ValueExpr;
@@ -73,6 +74,7 @@ class ValueExpr {
 
 		// This is some fake misleading naming here
 		// Not real lvalues and rvalues, more like just "assignable"
+		// At this point, now it just means something that can be gotten from an open frame
 		virtual bool isLValue() { return false; }
 		ValueExpr* toLValue();
 		ValueExpr* toRValue();
@@ -203,7 +205,7 @@ class FunctionExpr: public ValueExpr {
 	public:
 		FunctionExpr(std::string name_) : name(name_) {}
 		FunctionExpr(Value val_) : callValue(std::move(val_)) {}
-		FunctionExpr(const FunctionExpr& copy) : name(copy.name), callValue(copy.callValue->clone()) {}
+		FunctionExpr(const FunctionExpr& copy);
 		virtual FunctionExpr* clone() const override { return new FunctionExpr(*this); }
 
 
@@ -234,6 +236,7 @@ class CallExpr: public ValueExpr {
 
 		std::string print(bool hex=false) const override;
 		bool hasSideEffect() override { return true; }
+		IntType getIntType() override;
 };
 
 // Near absolute call

@@ -26,10 +26,7 @@ struct Stack {
 
 	unsigned int& height() { return stackHeights.back(); }
 	void openFrame() { stackHeights.push_back(0); }
-	void closeFrame() { 
-		values.erase(values.end() - height(), values.end());
-		stackHeights.pop_back();
-	}
+	void closeFrame();
 
 
 	Value pop();
