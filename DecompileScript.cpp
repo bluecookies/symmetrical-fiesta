@@ -45,38 +45,7 @@ class BytecodeBuffer {
 		~BytecodeBuffer();
 };
 
-Value Stack::pop() {
-	if (empty())
-		throw std::out_of_range("Popping empty stack.");
-
-	if (height() == 0)
-		throw std::logic_error("Popping empty frame.");
-
-	Value pExpr = std::move(back());
-	values.pop_back();
-	height()--;
-
-	return pExpr;
-}
-
-// Takes ownership of raw pointer
-void Stack::push(ValueExpr* pValue) {
-	values.emplace_back(pValue);
-	height()++;
-
-	if (back() == nullptr) {
-		Logger::Error() << "Nullptr placed onto stack.\n";
-		throw std::logic_error("NULL on stack.");
-	}
-}
-
-void Stack::closeFrame() {
-	values.erase(values.end() - height(), values.end());
-	stackHeights.pop_back();
-	// this might actually arise now with member functions of objects
-	if (stackHeights.empty())
-		stackHeights.push_back(0);
-}
+std::string printArgList(const std::vector<unsigned int>& argTypes);
 
 class ScriptInfo {
 	private:
@@ -270,7 +239,7 @@ void ScriptInfo::readGlobalInfo(std::string filename) {
 		globalInfoFile.read((char*) &length, 4);
 		std::getline(globalInfoFile, name, '\0');
 
-		globalVars.push_back(make_unique<VarValueExpr>(name, type, length));
+		globalVars.push_back(make_unique<VariableExpression>(name, type, length));
 	}
 	Logger::Info() << "Read " << std::to_string(count) << " global variables.\n";
 
@@ -337,7 +306,7 @@ void ScriptInfo::readStaticVars(std::ifstream& stream, const HeaderPair& varType
 		stream.read((char*) &type, 4);
 		stream.read((char*) &length, 4);
 
-		staticVars.push_back(make_unique<VarValueExpr>(varNames.at(i), type, length));
+		staticVars.push_back(make_unique<VariableExpression>(varNames.at(i), type, length));
 	}
 
 	Logger::Info() << "Read " << std::to_string(numVars) << " static variables.\n";
@@ -436,8 +405,6 @@ int main(int argc, char* argv[]) {
 	BytecodeParser parser(fileStream, header.bytecode);
 
 	ScriptInfo info(fileStream, header, fileIndex, filename);
-	fileStream.close();
-
 	std::ofstream outStream(outFilename);
 
 	// TODO: implement an actual way to copy assign cfg
@@ -485,17 +452,28 @@ int main(int argc, char* argv[]) {
 	// TODO: handle these
 	if (header.unknown6.count != 0) {
 		Logger::Warn() << "Unknown6 has " << header.unknown6.count << " elements.\n";
-		
+
+		int u6 = 0;
+		fileStream.seekg(header.unknown6.offset, std::ios::beg);
+		for (uint32_t i = 0; i < header.unknown6.count; i++) {
+			fileStream.read((char*) &u6, 4);
+			Logger::Debug() << std::to_string(u6) << " ";
+		}
+		Logger::Debug() << std::endl;
 	}
 	if (header.unknown7.count != 0) {
 		Logger::Warn() << "Unknown7 has " << header.unknown7.count << " elements.\n";
+		int u7 = 0;
+		fileStream.seekg(header.unknown7.offset, std::ios::beg);
+		for (uint32_t i = 0; i < header.unknown7.count; i++) {
+			fileStream.read((char*) &u7, 4);
+			Logger::Debug() << std::to_string(u7) << " ";
+		}
+		Logger::Debug() << std::endl;
 	}
 			
 	return 0;
 }
-
-
-
 
 
 
@@ -538,42 +516,43 @@ void BytecodeParser::addBranch(Block* pBlock, Stack* saveStack) {
 
 	if (saveStack != nullptr) {
 		ProgBranch& branch = toTraverse.back();
-		branch.stack.stackHeights = saveStack->stackHeights;
-		for (const auto& value:saveStack->values) {
-			branch.stack.values.emplace_back(value->clone());
-		}
+		branch.stack = *saveStack;
 	}
 }
 
 Value BytecodeParser::getArg(unsigned int type, const ScriptInfo &info) {
-	if (stack.empty())
-		throw std::out_of_range("Popping arguments off an empty stack.");
+	if (stack.empty()) {
+		return make_unique<ErrValueExpr>("Popping arguments off an empty stack.", instAddress);
+	}
 
 	unsigned int actualType = stack.back()->getType();
-	if (type == actualType) {
-		if (type == ValueType::OBJ_STR || type == ValueType::OBJ_REF) {
-			Value temp = stack.pop();
-			stack.closeFrame();
-			return temp;
-		}
+	if (type == ValueType::INT || type == ValueType::STR) {
+		if (actualType != type)
+			Logger::Error(instAddress) << "Expected arg: " << VarType(type) << ", got " << VarType(actualType) << std::endl;
 		return stack.pop();
 	}
-
-	if (type == ValueType::INT) {
-		Logger::Error(instAddress) << "Cannot get argument of type int with type " << VarType(actualType) << std::endl;
-		return stack.pop();
-	} else if (type == ValueType::STR) {
-		Logger::Error(instAddress) << "Cannot get argument of type str with type " << VarType(actualType) << std::endl;
-		return stack.pop();
-	} else if (type == ValueType::OBJ_STR) {
-		return Value(getLValue(info));
-	} else if (type == ValueType::OBJ_REF) {
-		if (actualType == ValueType::INT)
-			return Value(getLValue(info));
-	}
-
-	return make_unique<ErrValueExpr>("Argument of type " + VarType(type) + ", got " + VarType(actualType), instAddress);
+	// Yeah I'll just do this
+	Expression* arg = getLValue(info);
+	arg->setType(type);
+	return Value(arg);
 }
+
+unsigned int BytecodeParser::getArgs(std::vector<Value> &args, std::vector<unsigned int> &argTypes, const ScriptInfo& info) {
+	unsigned int numArgs = getInt();
+	for (unsigned int i = 0; i < numArgs; i++) {
+		unsigned int type = getInt();
+		if (type == 0xFFFFFFFF) {
+			std::vector<Value> list;
+			argTypes.push_back(getArgs(list, argTypes, info));
+			args.push_back(make_unique<ListExpression>(std::move(list)));
+		} else {
+			args.push_back(getArg(type, info));
+		}
+		argTypes.push_back(type);
+	}
+	return numArgs;
+}
+
 
 Value BytecodeParser::getLocalVar(unsigned int index) {
 	if (index >= localVars.size())
@@ -596,27 +575,28 @@ std::string BytecodeParser::getFunctionSignature() {
 	return sig;
 }
 
-
-ValueExpr* BytecodeParser::getLValue(const ScriptInfo &info) {
-	auto frame = stack.values.end() - stack.height();
-	auto curr = frame;
-
+// Not too sure where this belongs
+Expression* BytecodeParser::getLValue(const ScriptInfo &info) {
+	auto curr = stack.getFrame();
 	Value pCurr, pLast;
 	bool localVar = false, indexing = false;
 	std::string localString = "g_";
 
-	if (curr != stack.values.end()) {
-		unsigned int index = (*curr)->getIndex();
-		if (index == 0x53 || index == 0x25 || index == 0x26) {
-			localVar = true;
-			localString = "loc_" + (*curr)->print(true) + "_";
-			pLast = make_unique<VarValueExpr>((*curr)->print(true), ValueType::OBJ_REF, 0);
-			curr++;
-		}
+	if (curr == stack.end())
+		return new ErrValueExpr("Cannot pop element code - stack empty!", instAddress);
+
+	unsigned int index = (*curr)->getIndex();
+	// Not right, only 0x25 and 0x26 are indices
+	// 0x53 => 0x00, 0x01, 0x7d, 0x7f
+	if (index == 0x53 || index == 0x25 || index == 0x26) {
+		localVar = true;
+		localString = "loc_" + (*curr)->print(true) + "_";
+		pLast = make_unique<VariableExpression>((*curr)->print(true), ValueType::STAGE_ELEMENT);
+		curr++;
 	}
 
 
-	while (curr != stack.values.end()) {
+	while (curr != stack.end()) {
 		pCurr = std::move(*curr);
 
 		if (pCurr->getType() != ValueType::INT) {
@@ -632,20 +612,20 @@ ValueExpr* BytecodeParser::getLValue(const ScriptInfo &info) {
 					pLast = make_unique<IndexValueExpr>(std::move(pLast), std::move(pCurr));
 					Logger::VVDebug(instAddress) << "Created index reference " << pLast->print(true) << "\n";
 				} else {
-					if (pLast == nullptr || pLast->getType() == ValueType::OBJ_REF) {
+					if (pLast == nullptr || pLast->getType() == ValueType::STAGE_ELEMENT) {
 						unsigned int type;
 						if (localVar) {
 							switch (pCurr->getIndex()) {
-								case 0x00: type = ValueType::INTLIST; break;
-								case 0x01: type = ValueType::STRLIST; break;
-								case 0x02: type = ValueType::OBJLIST; break;
-								default: type = ValueType::INTLIST; break;
+								case 0x00: type = ValueType::INT_LIST; break;
+								case 0x01: type = ValueType::STR_LIST; break;
+								case 0x02: type = ValueType::OBJECT_LIST; break;
+								default: type = ValueType::INT_LIST; break;
 							}
 						} else {
 							// Engine specific here
-							type = ValueType::INTLIST;
+							type = ValueType::INT_LIST;
 						}
-						pLast = make_unique<VarValueExpr>(localString + pCurr->print(true), type, 1);
+						pLast = make_unique<VariableExpression>(localString + pCurr->print(true), type, 1);
 						Logger::VVDebug(instAddress) << "Created array " << pLast->print(true) << "\n";
 					} else {
 						pLast = make_unique<MemberExpr>(std::move(pLast), std::move(pCurr));
@@ -657,9 +637,9 @@ ValueExpr* BytecodeParser::getLValue(const ScriptInfo &info) {
 				if (!localVar)
 					Logger::Warn(instAddress) << "Getting local var without local reference.\n";
 
-				if (pLast != nullptr && pLast->getType() != ValueType::OBJ_REF)	Logger::Warn(instAddress) << "Overwriting variable.\n";
-				unsigned int index = pCurr->getIndex();
-				pLast = getLocalVar(index);
+				if (pLast != nullptr && pLast->getType() != ValueType::STAGE_ELEMENT)	Logger::Warn(instAddress) << "Overwriting variable.\n";
+				unsigned int index2 = pCurr->getIndex();
+				pLast = getLocalVar(index2);
 
 				Logger::VDebug(instAddress) << pLast->print() << ": " << VarType(pLast->getType()) << std::endl;
 			} break;
@@ -684,11 +664,6 @@ ValueExpr* BytecodeParser::getLValue(const ScriptInfo &info) {
 		throw std::logic_error("0x" + toHex(instAddress) + ": Something went horribly wrong.");
 	}
 
-
-	if (!pLast->isLValue()) {
-		Logger::Error(instAddress) << "Could not get lvalue! (" << VarType(pLast->getType()) << ")\n";
-	}
-
 	stack.closeFrame();
 	return pLast->clone(); // think about whether this is needed, or maybe I could just release/pass directly back (i forget how this is used)
 }
@@ -711,8 +686,8 @@ FunctionExpr* BytecodeParser::getCallFunction(const ScriptInfo& info) {
 		unsigned int index = pCall->getIndex();
 		if (index == 0xc || index == 0x12 || index == 0x4c)
 			fn->hasExtra = true;
-		else if (index == 0x54)
-			fn->pushRet = false;
+		//else if (index == 0x54)
+		//	fn->pushRet = false;
 
 		return fn;
 	}
@@ -783,15 +758,18 @@ void BytecodeParser::parse(ControlFlowGraph& cfg, ScriptInfo& info, std::map<uns
 				} break; 
 				case 0x03: {
 					unsigned int type = getInt();
-					Value back = stack.pop();
-					if (back->getType() != type) {
-						Logger::Error(instAddress) << "Expected type " << VarType(type) << ", got type " << VarType(back->getType()) << std::endl;
+					if (type == ValueType::INT || type == ValueType::STR) {
+						Value back = stack.pop();
+						if (back->getType() != type) {
+							Logger::Error(instAddress) << "Expected type " << VarType(type) << ", got type " << VarType(back->getType()) << std::endl;
+						}
+						// Turn into a statement if it has side effects
+						if (back->hasSideEffect()) {
+							pStatement = new ExpressionStatement(back.release());
+						}
+					} else if (type != ValueType::VOID) {
+						Logger::Error(instAddress) << "Cannot pop " << VarType(type) << std::endl;
 					}
-					// Turn into a statement if it has side effects
-					if (back->hasSideEffect()) {
-						pStatement = new ExpressionStatement(back.release());
-					}
-
 					asmLine = "pop " + VarType(type);
 				} break;
 				case 0x04: {
@@ -809,7 +787,7 @@ void BytecodeParser::parse(ControlFlowGraph& cfg, ScriptInfo& info, std::map<uns
 
 					// Move the value into a variable if it has side effects
 					if (pValue->hasSideEffect()) {
-						ValueExpr* pVar = new VarValueExpr(pValue->getType());
+						Expression* pVar = new VariableExpression(pValue->getType());
 						stack.push(pVar->clone());
 						pStatement = new AssignStatement(Value(pVar), stack.pop());
 					} else {
@@ -819,20 +797,22 @@ void BytecodeParser::parse(ControlFlowGraph& cfg, ScriptInfo& info, std::map<uns
 					asmLine = "dup " + VarType(type);
 				} break;
 				case 0x05: {
-					ValueExpr* val = getLValue(info)->toRValue();
+					// NOTE: maybe can change getLValue
+					// make it a stack member function
+					// return a value
+					// change the stackheight back to the original size
+					Expression* val = getLValue(info);
 					unsigned int type = val->getType();
-					if (type == ValueType::OBJ_STR || type == ValueType::OBJ_REF)
+					// Element code
+					if (type != ValueType::INT && type != ValueType::STR)
 						stack.openFrame();
+
 					stack.push(val);
 					asmLine = "eval";
 				} break;
 				case 0x06: {
-					unsigned int count = stack.height();
-					stack.openFrame();
-					for (unsigned int i = 0; i < count; i++) {
-						stack.push(stack.values.at(stack.size() - count)->clone());
-					}
-					asmLine = "rep";
+					stack.duplicateElement();
+					asmLine = "dup element";
 				} break; 
 				case 0x07: {
 					// TODO: support intlist and strlist
@@ -842,16 +822,16 @@ void BytecodeParser::parse(ControlFlowGraph& cfg, ScriptInfo& info, std::map<uns
 					std::string name = info.getLocalVarName(getInt());
 
 					// objlist?
-					if (type == ValueType::INTLIST || type == ValueType::STRLIST) {
+					if (type == ValueType::INT_LIST || type == ValueType::STR_LIST) {
 						Value pLength = stack.pop();
 						unsigned int index = pLength->getIndex();
 						if (index & 0xFF000000) {
 							localVars.push_back(make_unique<ErrValueExpr>("Length for " + name + " is " + pLength->print(), instAddress));
 						} else {
-							localVars.push_back(make_unique<VarValueExpr>(name, type, index));
+							localVars.push_back(make_unique<VariableExpression>(name, type, index));
 						}
 					} else {
-						localVars.push_back(make_unique<VarValueExpr>(name, type, 0));
+						localVars.push_back(make_unique<VariableExpression>(name, type, 0));
 					}
 
 					if (paramsDone)
@@ -894,7 +874,7 @@ void BytecodeParser::parse(ControlFlowGraph& cfg, ScriptInfo& info, std::map<uns
 
 
 					Block* pNextBlock = cfg.getBlock(buf->getAddress());
-					if (opcode == 0x11) {
+					if (opcode == 0x12) {
 						negateCondition(condition);
 						asmLine = "jz 0x" + toHex(pJumpBlock->startAddress, addressWidth); 
 					} else {
@@ -906,43 +886,27 @@ void BytecodeParser::parse(ControlFlowGraph& cfg, ScriptInfo& info, std::map<uns
 					pBlock->nextAddress = buf->getAddress();
 					newBlock = true;
 				} break;
-				case 0x13: {
+				case 0x13:
+				case 0x14: {
 					unsigned int labelIndex = getInt();
 					Block* pCallBlock = cfg.getBlock(info.getLabelAddress(labelIndex));
 					pCallBlock->isFunction = true;
 					pBlock->calls.push_back(pCallBlock);
 
-					unsigned int numArgs = getInt();
 					std::vector<unsigned int> argTypes;
-					for (unsigned int i = 0; i < numArgs; i++) {
-						argTypes.push_back(getInt());
-					}
-
 					std::vector<Value> args;
-					for (auto &type:argTypes) {
-						args.push_back(getArg(type, info));
-					}
+					getArgs(args, argTypes, info);
 
 					addBranch(pCallBlock, &stack);
 
 					stack.push(new ShortCallExpr(pCallBlock->index, std::move(args)));
 
-					asmLine = "shortcall 0x" + toHex(pCallBlock->startAddress, addressWidth);
+					asmLine = "gosub 0x" + toHex(pCallBlock->startAddress, addressWidth) + printArgList(argTypes);
 				} break;
 				case 0x15: {
-					unsigned int numArgs = getInt();
 					std::vector<unsigned int> retTypes;
-					for (unsigned int i = 0; i < numArgs; i++) {
-						retTypes.push_back(getInt());
-					}
-
 					std::vector<Value> ret;
-					asmLine = "ret (";
-					for (auto &type:retTypes) {
-						ret.push_back(getArg(type, info));
-						asmLine += VarType(type) + ", ";
-					}
-					asmLine += ")";
+					unsigned int numArgs = getArgs(ret, retTypes, info);
 
 					pStatement = new ReturnStatement(std::move(ret));
 
@@ -950,13 +914,10 @@ void BytecodeParser::parse(ControlFlowGraph& cfg, ScriptInfo& info, std::map<uns
 					newBlock = true;
 
 					if (!stack.empty()) {
-						Logger::Error(instAddress) << "Stack is not empty! (" << std::to_string(stack.size()) << ")\n";
-						for (auto &value:stack.values) {
-							Logger::Debug() << value->print() << "\n";
-						}
+						Logger::Error(instAddress) << "Stack is not empty!\n" << stack.print();
 					}
 
-
+					asmLine = "ret" + ((numArgs > 0) ? printArgList(retTypes) : "");
 				} break; 
 				// TODO: handle this properly
 				case 0x16:
@@ -965,33 +926,36 @@ void BytecodeParser::parse(ControlFlowGraph& cfg, ScriptInfo& info, std::map<uns
 					asmLine = "endscript";
 				break;
 				case 0x20: {
-					unsigned int lType = getInt();
-					unsigned int rType = getInt();
-					unsigned int unknown = getInt();
-					if (unknown != 1) {
-						Logger::Warn(instAddress) << "Assigning with " << std::to_string(unknown) << std::endl;
+					unsigned int unknown1 = getInt();
+					unsigned int type = getInt();
+					unsigned int unknown2 = getInt();
+					if (unknown2 != 1) {
+						Logger::Warn(instAddress) << "Assigning with " << std::to_string(unknown2) << std::endl;
 					}
 
 					Value rhs = stack.pop();
 					Value lhs = Value(getLValue(info));
 
-					if (lhs->getType() != lType) {
-						lhs = make_unique<ErrValueExpr>("Assign - Expected type " + VarType(lType) + ", got type " + VarType(lhs->getType()), instAddress);
-					}
-					if (rhs->getType() != rType) {
-						rhs = make_unique<ErrValueExpr>("Assign - Expected type " + VarType(rType) + ", got type " + VarType(rhs->getType()), instAddress);
+					if (rhs->getType() != type) {
+						rhs = make_unique<ErrValueExpr>("Assign - Expected type " + VarType(type) + ", got type " + VarType(rhs->getType()), instAddress);
 					}
 
-					Logger::VVDebug(instAddress) << "Assign: " << VarType(lType) << " <- " << VarType(rType) << std::endl;
+					Logger::VVDebug(instAddress) << "Assign: " << VarType(unknown1) << " <- " << VarType(type) << std::endl;
 
 					pStatement = new AssignStatement(std::move(lhs), std::move(rhs));
-					asmLine = "assign " + VarType(lType) + " " + VarType(rType) + " 0x" + toHex(unknown);
+					asmLine = "assign " + VarType(unknown1) + " " + VarType(type) + " 0x" + toHex(unknown2);
 				} break;
 				case 0x21: {
-					unsigned int u1 = getInt();
-					unsigned char u2 = getChar();
-					pStatement = new Op21Statement(u1, u2);
-					asmLine = "[21] 0x" + toHex(u1) + " " + std::to_string(u2);
+					unsigned int type = getInt();
+					unsigned char op = getChar();
+
+					Value val = stack.pop();
+					if (val->getType() != type) {
+						val = make_unique<ErrValueExpr>("Calc1 - Expected type " + VarType(type) + ", got type " + VarType(val->getType()), instAddress);
+					}
+					stack.push(new UnaryExpression(std::move(val), op));
+
+					asmLine = "calc1 " + VarType(type) + " 0x" + toHex(op);
 				} break;
 				case 0x22: {
 					unsigned int lhsType = getInt();
@@ -1001,75 +965,57 @@ void BytecodeParser::parse(ControlFlowGraph& cfg, ScriptInfo& info, std::map<uns
 					Value rhs = stack.pop();
 					Value lhs = stack.pop();
 					if (lhs->getType() != lhsType) {
-						lhs = make_unique<ErrValueExpr>("Calc - Expected type " + VarType(lhsType) + ", got type " + VarType(lhs->getType()), instAddress);
+						lhs = make_unique<ErrValueExpr>("Calc2 - Expected type " + VarType(lhsType) + ", got type " + VarType(lhs->getType()), instAddress);
 					}
 					if (rhs->getType() != rhsType) {
-						rhs = make_unique<ErrValueExpr>("Calc - Expected type " + VarType(rhsType) + ", got type " + VarType(rhs->getType()), instAddress);
+						rhs = make_unique<ErrValueExpr>("Calc2 - Expected type " + VarType(rhsType) + ", got type " + VarType(rhs->getType()), instAddress);
 					}
 
-					stack.push(new BinaryValueExpr(std::move(lhs), std::move(rhs), op));
-					asmLine = "calc " + VarType(lhsType) + " " + VarType(rhsType) + " 0x" + toHex(op, 2);
+					stack.push(new BinaryExpression(std::move(lhs), std::move(rhs), op));
+					asmLine = "calc2 " + VarType(lhsType) + " " + VarType(rhsType) + " 0x" + toHex(op, 2);
 				} break; 
 				case 0x30: {
 					unsigned int option = getInt();
 
-					unsigned int numArgs = getInt();
 					std::vector<unsigned int> argTypes;
-					for (unsigned int i = 0; i < numArgs; i++) {
-						unsigned int type = getInt();
-						argTypes.push_back(type);
-
-					}
-
-					asmLine = "call " + std::to_string(option) + " (";
-					for (auto it = argTypes.rbegin(); it != argTypes.rend(); it++) {
-						if (it != argTypes.rbegin())
-							asmLine += ", ";
-						asmLine += VarType(*it);
-					}
-					asmLine += ") ";
+					std::vector<Value> args;
+					getArgs(args, argTypes, info);
 
 					unsigned int numExtra = getInt();
 					std::vector<unsigned int> extraList;
-					if (numExtra > 0) {
-						asmLine += "(";
-						for (unsigned int i = 0; i < numExtra; i++) {
-							unsigned int u = getInt();
-							extraList.push_back(u);
-							asmLine += "0x" + toHex(u) + ", ";
-						}
-						asmLine += ") ";
+					for (unsigned int i = 0; i < numExtra; i++) {
+						unsigned int u = getInt();
+						extraList.push_back(u);
 					}
 
 					unsigned int returnType = getInt();
-					asmLine += VarType(returnType);
-
-					std::vector<Value> args;
-					
-					for (auto &type:argTypes) {
-						args.push_back(getArg(type, info));
-
-					}
 
 					// Reversed though
 					FunctionExpr* fn = getCallFunction(info);
+					unsigned int extra = 0;
 					if (fn->hasExtra) {
-						unsigned int extra = getInt();
+						extra = getInt();
 						fn->extraThing(extra);
-
-						asmLine += " <0x" + toHex(extra) + ">";
 					}
 
 					CallExpr* pCall = new CallExpr(fn, option, std::move(args), extraList, returnType);
 					
-					// Use it just one more time
-					if (fn->pushRet) {
+					if (returnType == ValueType::VOID)
+						pStatement = new ExpressionStatement(pCall);
+					else
 						stack.push(pCall);
-					} else {
-						pStatement = new ClearBufferStatement();
+
+					asmLine = "call " + std::to_string(option) + " " + printArgList(argTypes);
+					if (!extraList.empty()) {
+						asmLine += "(";
+						for (const auto& it:extraList)
+							asmLine += "0x" + toHex(it);
+						asmLine += ")";
 					}
-
-
+					if (returnType != ValueType::VOID)
+						asmLine += " → " + VarType(returnType);
+					if (fn->hasExtra)
+						asmLine += " <0x" + toHex(extra) + ">";
 				} break;
 				case 0x31: {
 					unsigned int id = getInt();
@@ -1137,8 +1083,9 @@ void BytecodeParser::parse(ControlFlowGraph& cfg, ScriptInfo& info, std::map<uns
 				// it's probably mostly line numbers though
 
 				if (opcode == 0x15 || opcode == 0x16) {
-					if (stack.values.size() > 0)
-						Logger::Warn(instAddress) << "Stack size is positive.\n";
+					if (!stack.empty()) {
+						Logger::Warn(instAddress) << "Stack size is positive.\n" << stack.print();
+					}
 
 					if (dumpAsm) {
 						if (pAsmLines->count(buf->getAddress()) == 0)
@@ -1173,10 +1120,57 @@ void BytecodeParser::parse(ControlFlowGraph& cfg, ScriptInfo& info, std::map<uns
 
 unsigned int BytecodeParser::getInt() {
 	return buf->getInt();
-};
+}
 unsigned char BytecodeParser::getChar() {
 	return buf->getChar();
-};
+}
+/*
+unsigned int BytecodeParser::getArgTypes(std::vector<unsigned int> &argTypes) {
+	unsigned int numArgs = getInt();
+	for (unsigned int i = 0; i < numArgs; i++) {
+		unsigned int type = getInt();
+		if (type == 0xFFFFFFFF) {
+			argTypes.push_back(getArgTypes(argTypes));
+		}
+		argTypes.push_back(type);
+	}
+	return numArgs;
+} */
+
+
+std::string printArgList(const std::vector<unsigned int>& argTypes) {
+	std::string argList = "(";
+	unsigned int type;
+	for (auto it = argTypes.rbegin(); it != argTypes.rend(); it++) {
+		type = *it;
+		if (it != argTypes.rbegin())
+			argList += ", ";
+		if (type == 0xFFFFFFFF) {
+			if (++it == argTypes.rend()) {
+				Logger::Error() << "Out of args.\n";
+				return argList;
+			}
+			unsigned int listSize = *it;
+			if (argTypes.rend() - it > listSize) {
+				argList += "{";
+				for (unsigned int i = 0; i < listSize; i++) {
+					it++;
+					if (i != 0) argList += ", ";
+					argList += VarType(*it);
+				}
+				argList += "}";
+			} else {
+				Logger::Error() << "Out of args.\n";
+				return argList;
+			}
+		} else {
+			argList += VarType(type);
+		}
+	}
+	argList += ")";
+	return argList;
+}
+
 
 //
 // Buffer of bytecode

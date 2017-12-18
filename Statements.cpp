@@ -25,7 +25,7 @@ Statement* Statement::makeStatement(Expression* expr) {
 	return pStatement;
 } */
 
-ExpressionStatement::ExpressionStatement(ValueExpr* expr_) : expr(expr_) {
+ExpressionStatement::ExpressionStatement(Expression* expr_) : expr(expr_) {
 	if (expr == nullptr)
 		throw std::logic_error("Null pointer passed into statement.");
 }
@@ -128,11 +128,11 @@ SwitchStatement* IfStatement::doFoldSwitch() {
 	if (pOrigCond == nullptr)
 		return nullptr;
 
-	if (pOrigCond->exprType != ValueExpr::BOOL_EXPR)
+	if (pOrigCond->exprType != Expression::BOOL_EXPR)
 		return nullptr;
 
 	// comp goes out of scope if exit
-	BinaryValueExpr* comp = static_cast<BinaryValueExpr*>(pOrigCond.get());
+	BinaryExpression* comp = static_cast<BinaryExpression*>(pOrigCond.get());
 	if (!comp->isEquality())
 		return nullptr;
 
@@ -147,10 +147,10 @@ SwitchStatement* IfStatement::doFoldSwitch() {
 		Value& pExpr = pBranch->condition;
 		if (pExpr == nullptr) {
 			switches.push_back(IfBranch(Value(), pBranch->block));
-		} else if (pExpr->exprType != ValueExpr::BOOL_EXPR) {
+		} else if (pExpr->exprType != Expression::BOOL_EXPR) {
 			return nullptr;
 		} else {
-			comp = static_cast<BinaryValueExpr*>(pExpr.get());
+			comp = static_cast<BinaryExpression*>(pExpr.get());
 			if (!comp->isEquality())
 				return nullptr;
 
@@ -323,13 +323,11 @@ AssignStatement::AssignStatement(Value lhs_, Value rhs_) {
 	lhs = std::move(lhs_);
 	rhs = std::move(rhs_);
 
-	if (!lhs->isLValue())
-		throw std::logic_error("error: lvalue required as left operand of assignment");
-
 	if (rhs->getType() == ValueType::UNDEF)
-		throw std::logic_error("right operand type undefined");
+		Logger::Error() << "right operand type undefined" << std::endl;
 
 	if (lhs->getType() == ValueType::UNDEF) {
+		Logger::Warn() << lhs->print() << " type undefined.\n";
 		lhs->setType(rhs->getType());
 	} 
 }
@@ -439,10 +437,6 @@ int WhileStatement::getSize() const {
 		}
 	}
 	return size;
-}
-
-void Op21Statement::print(std::ostream &out, int indentation) const {
-	out << std::string(indentation, '\t') << " op21 " << std::to_string(u1) << " " << std::to_string(u2) << printLineNum();
 }
 
 

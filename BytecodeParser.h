@@ -13,24 +13,32 @@ struct Label {
 	Label(unsigned int offset) : address(offset) {}
 };
 
-struct Stack {
+class Stack {
 	std::vector<Value> values;
 	std::vector<unsigned int> stackHeights;
-	Stack() : stackHeights({0}) {}
 
-	unsigned int size() { return values.size(); }
-	bool empty() { return size() == 0; }
+	public:
+		Stack();
+		Stack(const Stack& copy);
+		Stack& operator=(const Stack& copy);
 
-	// Caller needs to check for emptiness
-	Value& back() { return values.back(); }
+		bool empty() { return values.size() == 0; }
 
-	unsigned int& height() { return stackHeights.back(); }
-	void openFrame() { stackHeights.push_back(0); }
-	void closeFrame();
+		// Caller needs to check for emptiness
+		Value& back() { return values.back(); }
+		std::vector<Value>::iterator end() { return values.end(); }
+
+		unsigned int& height() { return stackHeights.back(); }
+		void openFrame();
+		void closeFrame();
+		void duplicateElement();
+		std::vector<Value>::iterator getFrame();
 
 
-	Value pop();
-	void push(ValueExpr* pValue);
+		Value pop();
+		void push(Expression* pValue);
+
+		std::string print();
 };
 
 struct BasicBlock;
@@ -68,7 +76,8 @@ class BytecodeParser {
 		unsigned int getInt();
 		unsigned char getChar();
 		Value getArg(unsigned int type, const ScriptInfo& info);
-		ValueExpr* getLValue(const ScriptInfo &info);
+		unsigned int getArgs(std::vector<Value> &args, std::vector<unsigned int> &argTypes, const ScriptInfo& info);
+		Expression* getLValue(const ScriptInfo &info);
 
 		FunctionExpr* getCallFunction(const ScriptInfo& info);
 	public:

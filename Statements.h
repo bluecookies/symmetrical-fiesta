@@ -7,36 +7,54 @@
 #include "Helper.h"
 
 namespace ValueType {
-	const unsigned int UNDEF    = 0xFFFFFFFF;
-	const unsigned int VOID     = 0x0;
-	const unsigned int INT      = 0xa;
-	const unsigned int INTLIST  = 0xb;
-	const unsigned int INTREF   = 0xd;
-	const unsigned int STR      = 0x14;
-	const unsigned int STRLIST  = 0x15;
-	const unsigned int STRREF   = 0x17;
-	const unsigned int OBJ_REF  = 0x514;
-	const unsigned int OBJ_STR  = 0x51e;
-	const unsigned int OBJLIST  = 0xFFFF0000;
+	const unsigned int UNDEF               = 0xFFFFFFFF;
+	const unsigned int VOID                = 0x0;
+	const unsigned int INT                 = 0xA;
+	const unsigned int INT_LIST            = 0xB;
+	const unsigned int STR                 = 0x14;
+	const unsigned int STR_LIST            = 0x15;
+
+	const unsigned int CALL_ELEMENT        = 0x3FC;
+	const unsigned int DATABASE_ELEMENT    = 0x46A;
+	const unsigned int COUNTER_ELEMENT     = 0x4B0;
+	const unsigned int COUNTER_LIST        = 0x4B1;
+	const unsigned int FRAMEACTION_ELEMENT = 0x4BA;
+	const unsigned int FRAMEACTION_LIST    = 0x4BB;
+
+	const unsigned int STAGE_ELEMENT       = 0x514;
+	const unsigned int STAGE_LIST          = 0x515;
+	const unsigned int OBJECT              = 0x51E;
+	const unsigned int OBJECT_LIST         = 0x51F;
+
+	const unsigned int SCREEN_ELEMENT      = 0x546;
+	const unsigned int QUAKE_ELEMENT       = 0x550;
+	const unsigned int QUAKE_LIST          = 0x551;
+	const unsigned int SNDBGM_ELEMENT      = 0x578;
+	const unsigned int SNDKOE_ELEMENT      = 0x582;
+	const unsigned int SNDPCMES_ELEMENT    = 0x58C;
+	const unsigned int SNDPCMCH_ELEMENT    = 0x58D;
+	const unsigned int SNDPCMCH_LIST       = 0x58E;
+	const unsigned int SNDSE_ELEMENT       = 0x596;
 };
 
 inline std::string VarType(unsigned int type) {
 	switch (type) {
 		case ValueType::VOID: return std::string("void");
 		case ValueType::INT: return std::string("int");
-		case ValueType::INTLIST: return std::string("intlist");
-		case ValueType::INTREF: return std::string("intref");
+		case ValueType::INT_LIST: return std::string("int_list");
 		case ValueType::STR: return std::string("str");
-		case ValueType::STRLIST: return std::string("strlist");
-		case ValueType::STRREF: return std::string("strref");
-		case ValueType::OBJ_REF: return std::string("objref");	//unsure
-		case ValueType::OBJ_STR: return std::string("obj");	//unsure
+		case ValueType::STR_LIST: return std::string("str_list");
+		case ValueType::OBJECT: return std::string("object");
+		case ValueType::OBJECT_LIST: return std::string("object_list");
+		case ValueType::STAGE_ELEMENT: return std::string("stage_element");
+		case ValueType::STAGE_LIST: return std::string("stage_list");
+
 		default:
 			return "<0x" + toHex(type) + ">";
 	}
 }
 
-// For ValueExpr of type INT
+// For Expression of type INT
 enum IntType {
 	IntegerInvalid,
 	IntegerSimple,
@@ -47,37 +65,30 @@ enum IntType {
 	IntegerBool,
 };
 
-class ValueExpr;
+class Expression;
 class Statement;
-typedef std::unique_ptr<ValueExpr> Value;
+typedef std::unique_ptr<Expression> Value;
 typedef std::vector<Statement*> StatementBlock;
 
 
 void negateCondition(Value& cond);
 
-class ValueExpr {
+class Expression {
 	private:
 		int lineNum = -1;
 	protected:
 		unsigned int type = ValueType::UNDEF;
-		ValueExpr(unsigned int type_) : type(type_) {}
-		ValueExpr() {}
+		int listLength = 0;
+		Expression(unsigned int type_) : type(type_) {}
+		Expression() {}
 	public:
-		virtual ~ValueExpr() {}
-		virtual ValueExpr* clone() const = 0;
+		virtual ~Expression() {}
+		virtual Expression* clone() const = 0;
 
 		unsigned int getType() const { return type; }
 		void setType(unsigned int type_) {
 			type = type_;
 		}
-
-
-		// This is some fake misleading naming here
-		// Not real lvalues and rvalues, more like just "assignable"
-		// At this point, now it just means something that can be gotten from an open frame
-		virtual bool isLValue() { return false; }
-		ValueExpr* toLValue();
-		ValueExpr* toRValue();
 
 		virtual bool hasSideEffect() { return false; }
 		virtual std::string print(bool hex=false) const;
@@ -98,17 +109,19 @@ class ValueExpr {
 		};
 
 		ExpressionType exprType = INVALID;
+
+		virtual int getPrecedence() const { return 0xFF; };
 };
 
-class BinaryValueExpr: public ValueExpr {
+class BinaryExpression: public Expression {
 	protected:
 		Value expr1 = nullptr;
 		Value expr2 = nullptr;
-		unsigned int op = 0;
+		unsigned char op = 0;
 	public:
-		BinaryValueExpr(Value e1, Value e2, unsigned int op_);
-		BinaryValueExpr(const BinaryValueExpr& copy) : ValueExpr(copy), expr1(copy.expr1->clone()), expr2(copy.expr2->clone()), op(copy.op) {}
-		virtual BinaryValueExpr* clone() const override { return new BinaryValueExpr(*this); }
+		BinaryExpression(Value e1, Value e2, unsigned char op_);
+		BinaryExpression(const BinaryExpression& copy) : Expression(copy), expr1(copy.expr1->clone()), expr2(copy.expr2->clone()), op(copy.op) {}
+		virtual BinaryExpression* clone() const override { return new BinaryExpression(*this); }
 
 		std::string print(bool hex=false) const override;
 		bool hasSideEffect() override { return expr1->hasSideEffect() || expr2->hasSideEffect(); }
@@ -119,35 +132,51 @@ class BinaryValueExpr: public ValueExpr {
 		bool isEquality() { return op == 0x11; }
 		Value& getLHS() { return expr1; }
 		Value& getRHS() { return expr2; }
+
+		virtual int getPrecedence() const override;
+
 };
 
-class IndexValueExpr: public BinaryValueExpr {
+class UnaryExpression: public Expression {
+	protected:
+		Value expr = nullptr;
+		unsigned char op = 0;
+	public:
+		UnaryExpression(Value expr_, unsigned char op_);
+		UnaryExpression(const UnaryExpression& copy) : Expression(copy), expr(copy.expr->clone()), op(copy.op) {}
+		virtual UnaryExpression* clone() const override { return new UnaryExpression(*this); }
+
+		std::string print(bool hex=false) const override;
+		bool hasSideEffect() override { return expr->hasSideEffect(); }
+		IntType getIntType() override { return (type == ValueType::INT) ? IntegerSimple : IntegerInvalid; }
+
+		virtual int getPrecedence() const override;
+
+};
+
+class IndexValueExpr: public BinaryExpression {
 	public:
 		IndexValueExpr(Value e1, Value e2);
 		virtual IndexValueExpr* clone() const override { return new IndexValueExpr(*this); }
 
 		std::string print(bool hex=false) const override;
-
-		virtual bool isLValue() override;
 };
 
-class MemberExpr: public BinaryValueExpr {
+class MemberExpr: public BinaryExpression {
 	public:
 		MemberExpr(Value e1, Value e2);
 		virtual MemberExpr* clone() const override { return new MemberExpr(*this); }
 
 		std::string print(bool hex=false) const override;
-
-		virtual bool isLValue() override { return true; }
 };
 
 
-class RawValueExpr: public ValueExpr {
+class RawValueExpr: public Expression {
 	unsigned int value = 0;
 	std::string str;
 	public:
-		RawValueExpr(unsigned int type_, unsigned int value_) : ValueExpr(type_), value(value_) {}
-		RawValueExpr(std::string str_, unsigned int value_) : ValueExpr(ValueType::STR), value(value_), str(str_) {}
+		RawValueExpr(unsigned int type_, unsigned int value_) : Expression(type_), value(value_) {}
+		RawValueExpr(std::string str_, unsigned int value_) : Expression(ValueType::STR), value(value_), str(str_) {}
 
 		virtual RawValueExpr* clone() const override { return new RawValueExpr(*this); }
 
@@ -156,27 +185,39 @@ class RawValueExpr: public ValueExpr {
 		unsigned int getIndex() override { return (value & 0x00FFFFFF); };
 };
 
-class VarValueExpr: public ValueExpr {
+class VariableExpression: public Expression {
 	private:
 		static unsigned int varCount;
 
 		std::string name;
-		unsigned int length = 0;
-		VarValueExpr() {}
+		VariableExpression() {}
 	public:
-		VarValueExpr(std::string name, unsigned int type, unsigned int length);
-		VarValueExpr(unsigned int type);
+		VariableExpression(std::string name, unsigned int type, unsigned int length = 0);
+		VariableExpression(unsigned int type);
 
-		virtual VarValueExpr* clone() const override { return new VarValueExpr(*this); }
+		virtual VariableExpression* clone() const override { return new VariableExpression(*this); }
 
 		std::string print(bool hex=false) const override;
 		bool hasSideEffect() override { return false; }
 		IntType getIntType() override { return (type == ValueType::INT) ? IntegerSimple : IntegerInvalid; }
-
-		virtual bool isLValue() override;
 };
 
-class ErrValueExpr: public ValueExpr {
+class ListExpression: public Expression {
+	private:
+		std::vector<Value> elements;
+	public:
+		ListExpression(std::vector<Value> elements_);
+		ListExpression(const ListExpression& copy);
+		virtual ListExpression* clone() const override { return new ListExpression(*this); }
+
+		std::string print(bool hex=false) const override;
+		// not really, have to check, but I don't want this to silently fail
+		bool hasSideEffect() override { return true; }
+
+
+};
+
+class ErrValueExpr: public Expression {
 	public:
 		ErrValueExpr(std::string err="", unsigned int address=0xFFFFFFFF);
 		std::string print(bool hex=false) const override;
@@ -187,19 +228,21 @@ class ErrValueExpr: public ValueExpr {
 };
 
 // This might only come up with weird debugging conditions
-class NotExpr: public ValueExpr {
+class NotExpr: public Expression {
 	Value cond;
 	public:
 		NotExpr(Value cond_) : cond(std::move(cond_)) {}
-		NotExpr(const NotExpr& copy) : ValueExpr(copy), cond(copy.cond->clone()) {}
+		NotExpr(const NotExpr& copy) : Expression(copy), cond(copy.cond->clone()) {}
 		virtual NotExpr* clone() const override { return new NotExpr(*this); }
 
 		std::string print(bool hex=false) const override;
 		IntType getIntType() override { return IntegerBool; }
+
+		virtual int getPrecedence() const override;
 };
 
 // Represents the target of the call (loosely)
-class FunctionExpr: public ValueExpr {
+class FunctionExpr: public Expression {
 	std::string name;
 	Value callValue;
 	public:
@@ -216,12 +259,11 @@ class FunctionExpr: public ValueExpr {
 		// if it is special
 		bool hasExtra = false;
 		unsigned int extraCall = 0;
-		bool pushRet = true;
 };
 
 
 // Far absolute call/system call
-class CallExpr: public ValueExpr {
+class CallExpr: public Expression {
 	FunctionExpr* callFunc = nullptr;
 	unsigned int fnOption = 0;
 	std::vector<unsigned int> fnExtra;
@@ -293,9 +335,9 @@ class Statement {
 };
 
 class ExpressionStatement : public Statement {
-	ValueExpr* expr = nullptr;
+	Expression* expr = nullptr;
 	public:
-		ExpressionStatement(ValueExpr* expr_);
+		ExpressionStatement(Expression* expr_);
 		~ExpressionStatement();
 
 		virtual void print(std::ostream &out, int indentation = 0) const override;
@@ -466,13 +508,6 @@ class DeclareVarStatement: public Statement {
 
 };
 
-class Op21Statement: public Statement {
-	unsigned int u1;
-	unsigned char u2;
-	public:
-		Op21Statement(unsigned int u1_, unsigned char u2_) : u1(u1_), u2(u2_) {}
-		virtual void print(std::ostream &out, int indentation = 0) const override;
-};
 
 #endif
 

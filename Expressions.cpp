@@ -9,10 +9,9 @@
 
 // TODO: some renaming, maybe have expression inherit statement
 
-
 void negateCondition(Value& cond) {
-	if (cond->exprType == ValueExpr::BOOL_EXPR) {
-		static_cast<BinaryValueExpr*>(cond.get())->negateBool();
+	if (cond->exprType == Expression::BOOL_EXPR) {
+		static_cast<BinaryExpression*>(cond.get())->negateBool();
 	} else {
 		// check if its a not, if so remove the not
 		cond = make_unique<NotExpr>(std::move(cond));
@@ -21,31 +20,26 @@ void negateCondition(Value& cond) {
 
 // Expressions
 
-std::string ValueExpr::print(bool) const {
+std::string Expression::print(bool) const {
 	return std::string("(value)");
 }
 
-ValueExpr* ValueExpr::toRValue() {
-	if (type == ValueType::INTREF)
-		type = ValueType::INT;
-	else if (type == ValueType::STRREF)
-		type = ValueType::STR;
 
-	return this;
-}
+//	Precedence table
+//  [-] [~] [!]
+//	* / %
+//  + -
+//  << >> >>>
+//  < <= > >=
+//  == !=
+//  &
+//  ^
+//  |
+//  &&
+//  ||
+//
 
-ValueExpr* ValueExpr::toLValue() {
-	if (type == ValueType::INT)
-		type = ValueType::INTREF;
-	else if (type == ValueType::STR)
-		type = ValueType::STRREF;
-
-	return this;
-}
-
-
-
-BinaryValueExpr::BinaryValueExpr(Value e1, Value e2, unsigned int op_) {
+BinaryExpression::BinaryExpression(Value e1, Value e2, unsigned char op_) {
 	if (e1 == nullptr || e2 == nullptr) {
 		throw std::logic_error("Assigning null pointers.");
 	}
@@ -55,20 +49,26 @@ BinaryValueExpr::BinaryValueExpr(Value e1, Value e2, unsigned int op_) {
 	expr2 = std::move(e2);
 	op = op_;
 
-	if (op == 0xFFFFFFFF)
+	if (op == 0xFF)
 		return;
 
-	if (expr1->getType() != expr2->getType())
-		Logger::Warn() << "Comparing different types: " << VarType(expr1->getType()) << ", " << VarType(expr2->getType()) << std::endl;
+	unsigned int type1 = expr1->getType();
+	unsigned int type2 = expr2->getType();
 
-	if (expr1->getType() == ValueType::INT)
+	if (type1 == ValueType::INT && type2 == ValueType::INT) {
 		type = ValueType::INT;
-	else if (expr1->getType() == ValueType::STR && expr2->getType() == ValueType::STR) {
-		if (op == 1)
+	} else if (type1 == ValueType::STR && type2 == ValueType::INT) {
+		if (op == 0x03)
 			type = ValueType::STR;
-		else
+	} else if (type1 == ValueType::STR && type2 == ValueType::STR) {
+		if (op == 0x01)
+			type = ValueType::STR;
+		else if (0x10 <= op && op <= 0x15)
 			type = ValueType::INT;
 	}
+
+	if (type == ValueType::UNDEF)
+		Logger::Warn() << expr1->print() << "(" << VarType(type1) << "), " << expr2->print() << "(" << VarType(type2) << "), 0x" << toHex(op, 2) << std::endl;
 
 	switch(op) {
 		case 0x10:
@@ -83,30 +83,54 @@ BinaryValueExpr::BinaryValueExpr(Value e1, Value e2, unsigned int op_) {
 	}
 }
 
-std::string BinaryValueExpr::print(bool hex) const {
+std::string BinaryExpression::print(bool hex) const {
 	std::string opRep;
 	switch (op) {
 		case 0x01: opRep = " + "; break;
 		case 0x02: opRep = " - "; break;
-		case 0x03: opRep = " / "; break;
-		case 0x04: opRep = " * "; break;
-		case 0x10: opRep = " != "; break;
-		case 0x11: opRep = " == "; break;
-		case 0x12: opRep = " <= "; break;
-		case 0x13: opRep = " < "; break;
-		case 0x14: opRep = " >= "; break;
-		case 0x15: opRep = " > (check this) "; break;
-		case 0x20: opRep = " & "; break;
-		case 0x21: opRep = " | (check this) "; break;
+		case 0x03: opRep = "*"; break;	
+		case 0x04: opRep = "/"; break;	// safe division
+		case 0x05: opRep = " % "; break;	// safe modulo
+		case 0x10: opRep = " == "; break;
+		case 0x11: opRep = " != "; break;
+		case 0x12: opRep = " > "; break;
+		case 0x13: opRep = " >= "; break;
+		case 0x14: opRep = " < "; break;
+		case 0x15: opRep = " <=  "; break;
+		case 0x20: opRep = " && "; break; // does not short circuit
+		case 0x21: opRep = " || "; break;
+		case 0x31: opRep = " & "; break; // bitwise
+		case 0x32: opRep = " | "; break;
+		case 0x33: opRep = " ^ "; break;
+		case 0x34: opRep = " << "; break;
+		case 0x35: opRep = " >> "; break;
+		case 0x36: opRep = " >>> "; break; // unsigned
 		default: 
 			opRep = " <op" + (hex ? ("0x" + toHex(op)) : std::to_string(op)) + "> ";
 			break;
 	}
+	int leftPrecedence = expr1->getPrecedence();
+	int rightPrecedence = expr2->getPrecedence();
+	int precedence = getPrecedence();
 
-	return expr1->print(hex) + opRep + expr2->print(hex);
+	std::string left = (leftPrecedence < precedence) ? ("(" + expr1->print(hex) + ")") : expr1->print(hex);
+	std::string right;
+	if (rightPrecedence < precedence) {
+		right = "(" + expr2->print(hex) + ")";
+	} else if (rightPrecedence > precedence) {
+		right = expr2->print(hex);
+	} else {
+		if (op == 0x02 || op == 0x04)
+			right = "(" + expr2->print(hex) + ")";
+		else
+			right = expr2->print(hex);
+	}
+
+
+	return left + opRep + right; 
 }
 
-void BinaryValueExpr::negateBool() {
+void BinaryExpression::negateBool() {
 	switch (op) {
 		case 0x10: op = 0x11; break;
 		case 0x11: op = 0x10; break;
@@ -129,8 +153,82 @@ void BinaryValueExpr::negateBool() {
 	}
 }
 
+
+UnaryExpression::UnaryExpression(Value expr_, unsigned char op_) {
+	if (expr_ == nullptr) {
+		throw std::logic_error("Assigning null pointers.");
+	}
+
+	expr = std::move(expr_);
+	op = op_;
+
+	if (op == 0xFF)
+		return;
+
+	type = expr->getType();
+
+
+	if (type != ValueType::INT) {
+		Logger::Warn() << expr->print() << "(" << VarType(type) << "), 0x" << toHex(op, 2) << std::endl;
+	}
+}
+
+std::string UnaryExpression::print(bool hex) const {
+	std::string opRep;
+	std::string node = expr->print(hex);
+	if (expr->getPrecedence() < getPrecedence() || op == 0x01)
+		node = "(" + node + ")";
+	switch (op) {
+		case 0x01: return "I" + node;	// identity
+		case 0x02: return "-" + node + "";
+		case 0x30: return "~" + node;	// bitwise NOT
+		default: // should actually pop the value
+			return "<op" + (hex ? ("0x" + toHex(op)) : std::to_string(op)) + ">" + node;
+	}
+}
+
+// TODO: make a lookup or something
+int BinaryExpression::getPrecedence() const {
+	if (op == 0x01 || op == 0x02)
+		return 20;
+
+	if (op == 0x03 || op == 0x04 || op == 0x05)
+		return 22;
+
+	if (op == 0x20)
+		return 6;
+	if (op == 0x21)
+		return 4;
+
+	if (op == 0x34 || op == 0x35 || op == 0x36)
+		return 18;
+
+	if (op >= 0x12 && op <= 0x15)
+		return 16;
+
+	if (op == 0x10 || op == 0x11)
+		return 14;
+
+	if (op == 0x31)
+		return 12;
+	if (op == 0x32)
+		return 10;
+	if (op == 0x33)
+		return 8;
+
+	return 0xFF;
+}
+
+int UnaryExpression::getPrecedence() const {
+	return 24;
+}
+
+int NotExpr::getPrecedence() const {
+	return 24;
+}
+
 // this looks weird, check the expiration date
-IndexValueExpr::IndexValueExpr(Value e1, Value e2) : BinaryValueExpr(std::move(e1), std::move(e2), 0xFFFFFFFF) {
+IndexValueExpr::IndexValueExpr(Value e1, Value e2) : BinaryExpression(std::move(e1), std::move(e2), 0xFF) {
 	if (expr2->getType() != ValueType::INT) {
 		Logger::Error() << "Indexing with non-int value.\n";
 		throw std::logic_error("Bad index");
@@ -140,36 +238,27 @@ IndexValueExpr::IndexValueExpr(Value e1, Value e2) : BinaryValueExpr(std::move(e
 
 	// Set type of value
 	unsigned int arrType = expr1->getType();
-	if (arrType == ValueType::INTLIST)
-		type = ValueType::INTREF;
-	else if (arrType == ValueType::STRLIST)
-		type = ValueType::STRREF;
-	else if (arrType == ValueType::OBJLIST)
-		type = ValueType::OBJ_STR;
+	if (arrType == ValueType::INT_LIST)
+		type = ValueType::INT;
+	else if (arrType == ValueType::STR_LIST)
+		type = ValueType::STR;
+	else if (arrType == ValueType::OBJECT_LIST)
+		type = ValueType::OBJECT;
 	else
-		type = ValueType::INTREF;
+		type = ValueType::INT;
 }
 
 std::string IndexValueExpr::print(bool hex) const {
 	return expr1->print(hex) + "[" + expr2->print(hex) + "]";
 }
 
-bool IndexValueExpr::isLValue() {
-	return (type == ValueType::INTREF || type == ValueType::STRREF || type == ValueType::OBJ_STR);
-}
-
-bool VarValueExpr::isLValue() {
-	return (type == ValueType::INTREF || type == ValueType::STRREF || type == ValueType::OBJ_STR || type == ValueType::OBJ_REF);
-}
-
-
-MemberExpr::MemberExpr(Value e1, Value e2) : BinaryValueExpr(std::move(e1), std::move(e2), 0xFFFFFFFF) {
+MemberExpr::MemberExpr(Value e1, Value e2) : BinaryExpression(std::move(e1), std::move(e2), 0xFF) {
 	if (expr2->getType() != ValueType::INT) {
 		Logger::Warn() << "Accessing with non-int value (is that bad?).\n";
 	}
 
 	// Temporary
-	type = ValueType::INTREF;
+	type = ValueType::INT;
 }
 
 std::string MemberExpr::print(bool hex) const {
@@ -196,7 +285,9 @@ IntType RawValueExpr::getIntType() {
 
 	unsigned char intType = value >> 24;
 	switch (intType) {
-		case 0x00:	return IntegerSimple;
+		case 0x00:
+		case 0x01:	// to remove and replace with kinetic handling
+			return IntegerSimple;
 		case 0x7d:	return IntegerLocalVar;
 		case 0x7e:	return IntegerFunction;
 		case 0x7f:	return IntegerGlobalVar;
@@ -213,35 +304,56 @@ IntType CallExpr::getIntType() {
 }
 
 std::string NotExpr::print(bool hex) const {
-	return "!(" + cond->print(hex) + ")";
+	if (cond->getPrecedence() < getPrecedence())
+		return "!(" + cond->print(hex) + ")";
+	else
+		return "!" + cond->print(hex);
 }
 
 
 // fix
-unsigned int VarValueExpr::varCount = 0;
-VarValueExpr::VarValueExpr(std::string name_, unsigned int type_, unsigned int length_) : ValueExpr(type_), name(name_), length(length_) {
-	if (type == ValueType::INTLIST || type == ValueType::STRLIST) {
-		if (length == 0)
-			Logger::Error() << VarType(type) << " must have positive length.\n";
-	} else if (type == ValueType::INT || type == ValueType::STR) {
-		if (length > 0)
+unsigned int VariableExpression::varCount = 0;
+VariableExpression::VariableExpression(std::string name_, unsigned int type_, unsigned int length_) : Expression(type_), name(name_) {
+	listLength = length_;
+	if (type == ValueType::INT || type == ValueType::STR) {
+		if (listLength > 0)
 			Logger::Error() << VarType(type) << " cannot have positive length.\n";
 	}
 
 	Logger::VDebug() << "Created var " << name << " (" << VarType(type) << ")\n";
-	this->toLValue();
 }
 
-VarValueExpr::VarValueExpr(unsigned int type) : ValueExpr(type) {
+VariableExpression::VariableExpression(unsigned int type) : Expression(type) {
 	name = "var" + std::to_string(varCount++);
 }
 
 
-std::string VarValueExpr::print(bool hex) const {
+std::string VariableExpression::print(bool hex) const {
 	if (!name.empty())
 		return name;
 	else
-		return ValueExpr::print(hex);
+		return Expression::print(hex);
+}
+
+ListExpression::ListExpression(std::vector<Value> elements_) : elements(std::move(elements_)) {
+	listLength = elements.size();
+	type = ValueType::INT_LIST;	// check
+}
+
+ListExpression::ListExpression(const ListExpression& copy) : Expression(copy) {
+	for (const auto& elem:copy.elements) {
+		elements.emplace_back(elem->clone());
+	}
+}
+
+std::string ListExpression::print(bool hex) const  {
+	std::string str = "{";
+	for (auto it = elements.begin(); it != elements.end(); it++) {
+		if (it != elements.begin()) str += ", ";
+		str += (*it)->print(hex);
+	}
+	str += "}";
+	return str;
 }
 
 ErrValueExpr::ErrValueExpr(std::string err, unsigned int address) {
@@ -261,7 +373,7 @@ CallExpr::CallExpr(FunctionExpr* fnCall_, unsigned int option_, std::vector<Valu
 	fnExtra = extraList_;
 }
 
-CallExpr::CallExpr(const CallExpr& copy) : ValueExpr(copy), callFunc(copy.callFunc->clone()), fnOption(copy.fnOption), fnExtra(copy.fnExtra) {
+CallExpr::CallExpr(const CallExpr& copy) : Expression(copy), callFunc(copy.callFunc->clone()), fnOption(copy.fnOption), fnExtra(copy.fnExtra) {
 	for (const auto& arg:copy.fnArgs) {
 		fnArgs.emplace_back(arg->clone());
 	}
